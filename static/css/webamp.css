@@ -1,0 +1,57 @@
+[data-panel="player"] {
+    flex-direction: row !important;
+    gap: 8px;
+    padding: 8px;
+    align-items: flex-start;
+}
+
+#midi-section {
+    flex-shrink: 0;
+    max-width: 340px;
+}
+
+#webamp-section {
+    flex: 1;
+    min-width: 0;
+}
+
+#webamp-container {
+    position: relative;
+    width: 100%;
+}
+
+#webamp-container > #webamp {
+    position: relative !important;
+    right: auto !important;
+    bottom: auto !important;
+}
+
+#webamp-grid {
+    display: grid;
+    grid-template-columns: auto 2fr;
+    grid-template-rows: auto auto;
+    gap: 0;
+}
+
+#webamp-grid > #main-window,
+#webamp-grid > #equalizer-window,
+#webamp-grid > #playlist-window {
+    position: relative !important;
+    touch-action: auto !important;
+    cursor: default !important;
+}
+
+#webamp-grid > #main-window {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+#webamp-grid > #equalizer-window {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+#webamp-grid > #playlist-window {
+    grid-column: 2;
+    grid-row: 1 / 3;
+}

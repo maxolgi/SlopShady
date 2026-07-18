@@ -1,0 +1,23 @@
+# Rust build artifacts
+slopshady/target/
+**/target/
+
+# WebView2 runtime data
+*.exe.WebView2/
+
+# Self-signed TLS certs (auto-generated into --data-dir on first run)
+cert.pem
+key.pem
+
+# App state (per AGENTS.md: shaders.json lives in --data-dir, gitignored)
+shaders.json
+
+# Logs and scratch
+logs/
+tmp/
+
+# Agent guidance (per AGENTS.md: this file is gitignored by design)
+AGENTS.md
+
+# opencode session state
+.opencode/

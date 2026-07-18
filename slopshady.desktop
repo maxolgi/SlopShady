@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=SlopShady
+Comment=Real-time WebGL2 GLSL shader editor with AI integration
+Exec=slopshady
+Icon=slopshady
+Categories=Graphics;AudioVideo;
+Terminal=false

@@ -1,0 +1,828 @@
+{
+  "version": 1,
+  "shaders": [
+    {
+      "id": "plasma-waves",
+      "name": "Plasma Waves",
+      "file": "plasma-waves.glsl",
+      "description": "Classic plasma effect with flowing color bands",
+      "tags": [
+        "color",
+        "animated",
+        "classic"
+      ]
+    },
+    {
+      "id": "voronoi-cells",
+      "name": "Voronoi Cells",
+      "file": "voronoi-cells.glsl",
+      "description": "Animated Voronoi diagram with glowing cell edges",
+      "tags": [
+        "voronoi",
+        "animated",
+        "geometric"
+      ]
+    },
+    {
+      "id": "tunnel",
+      "name": "Tunnel",
+      "file": "tunnel.glsl",
+      "description": "Infinite tunnel fly-through with polar coordinates",
+      "tags": [
+        "tunnel",
+        "animated",
+        "perspective"
+      ]
+    },
+    {
+      "id": "fractal-noise",
+      "name": "Fractal Noise",
+      "file": "fractal-noise.glsl",
+      "description": "Layered FBM noise with terrain-like color mapping",
+      "tags": [
+        "noise",
+        "fbm",
+        "organic"
+      ]
+    },
+    {
+      "id": "kaleidoscope",
+      "name": "Kaleidoscope",
+      "file": "kaleidoscope.glsl",
+      "description": "Kaleidoscopic symmetry with angular repetition",
+      "tags": [
+        "symmetry",
+        "color",
+        "animated"
+      ]
+    },
+    {
+      "id": "ripple-pond",
+      "name": "Ripple Pond",
+      "file": "ripple-pond.glsl",
+      "description": "Concentric ripples expanding with interference patterns",
+      "tags": [
+        "water",
+        "ripple",
+        "animated"
+      ]
+    },
+    {
+      "id": "fire-ball",
+      "name": "Fire Ball",
+      "file": "fire-ball.glsl",
+      "description": "Procedural fire effect using layered noise",
+      "tags": [
+        "fire",
+        "noise",
+        "organic"
+      ]
+    },
+    {
+      "id": "neon-rings",
+      "name": "Neon Rings",
+      "file": "neon-rings.glsl",
+      "description": "Glowing neon rings using signed distance functions",
+      "tags": [
+        "sdf",
+        "glow",
+        "animated"
+      ]
+    },
+    {
+      "id": "ocean-waves",
+      "name": "Ocean Waves",
+      "file": "ocean-waves.glsl",
+      "description": "Layered sine waves simulating ocean with foam",
+      "tags": [
+        "water",
+        "waves",
+        "animated"
+      ]
+    },
+    {
+      "id": "starfield",
+      "name": "Starfield",
+      "file": "starfield.glsl",
+      "description": "Parallax star field moving through space",
+      "tags": [
+        "stars",
+        "parallax",
+        "space"
+      ]
+    },
+    {
+      "id": "aurora",
+      "name": "Aurora",
+      "file": "aurora.glsl",
+      "description": "Aurora borealis with layered sine curtains and gradient coloring",
+      "tags": [
+        "aurora",
+        "animated",
+        "color"
+      ]
+    },
+    {
+      "id": "chromatic-aberration",
+      "name": "Chromatic Aberration",
+      "file": "chromatic-aberration.glsl",
+      "description": "RGB channel splitting with distortion",
+      "tags": [
+        "distortion",
+        "color",
+        "animated"
+      ]
+    },
+    {
+      "id": "cloud-drift",
+      "name": "Cloud Drift",
+      "file": "cloud-drift.glsl",
+      "description": "FBM noise-based drifting clouds",
+      "tags": [
+        "noise",
+        "clouds",
+        "animated"
+      ]
+    },
+    {
+      "id": "grid-pulse",
+      "name": "Grid Pulse",
+      "file": "grid-pulse.glsl",
+      "description": "Animated grid with distance-based wave pulsing",
+      "tags": [
+        "grid",
+        "animated",
+        "geometric"
+      ]
+    },
+    {
+      "id": "hex-tiles",
+      "name": "Hex Tiles",
+      "file": "hex-tiles.glsl",
+      "description": "Hexagonal tiling pattern with animated coloring",
+      "tags": [
+        "hexagonal",
+        "tiling",
+        "animated"
+      ]
+    },
+    {
+      "id": "lava-lamp",
+      "name": "Lava Lamp",
+      "file": "lava-lamp.glsl",
+      "description": "Metaball/lava lamp with smooth blending of animated blobs",
+      "tags": [
+        "metaball",
+        "animated",
+        "organic"
+      ]
+    },
+    {
+      "id": "lightning",
+      "name": "Lightning",
+      "file": "lightning.glsl",
+      "description": "Procedural lightning bolts with glow effect",
+      "tags": [
+        "lightning",
+        "glow",
+        "procedural"
+      ]
+    },
+    {
+      "id": "mandelbrot",
+      "name": "Mandelbrot",
+      "file": "mandelbrot.glsl",
+      "description": "Classic Mandelbrot set fractal with color cycling",
+      "tags": [
+        "fractal",
+        "classic",
+        "color"
+      ]
+    },
+    {
+      "id": "mosaic",
+      "name": "Mosaic",
+      "file": "mosaic.glsl",
+      "description": "Mosaic/tile pattern with quantized UV coordinates and borders",
+      "tags": [
+        "mosaic",
+        "tiling",
+        "geometric"
+      ]
+    },
+    {
+      "id": "rainbow-swirl",
+      "name": "Rainbow Swirl",
+      "file": "rainbow-swirl.glsl",
+      "description": "Rainbow spiral using polar coordinates and hue cycling",
+      "tags": [
+        "rainbow",
+        "spiral",
+        "color"
+      ]
+    },
+    {
+      "id": "midi-keys",
+      "name": "MIDI Keys",
+      "file": "midi-keys.glsl",
+      "description": "Piano keyboard that lights up with active MIDI notes and velocity",
+      "tags": [
+        "midi",
+        "voice",
+        "interactive"
+      ]
+    },
+    {
+      "id": "voice-blobs",
+      "name": "Voice Blobs",
+      "file": "voice-blobs.glsl",
+      "description": "Per-voice glowing orbs positioned by note pitch, sized by velocity",
+      "tags": [
+        "midi",
+        "voice",
+        "organic"
+      ]
+    },
+    {
+      "id": "voice-wave",
+      "name": "Voice Wave",
+      "file": "voice-wave.glsl",
+      "description": "Additive sine waves where each voice contributes a frequency component",
+      "tags": [
+        "midi",
+        "voice",
+        "animated"
+      ]
+    },
+    {
+      "id": "midi-chromatic",
+      "name": "MIDI Chromatic",
+      "file": "midi-chromatic.glsl",
+      "description": "12-segment color wheel mapped to pitch classes, lit by active voices",
+      "tags": [
+        "midi",
+        "voice",
+        "color"
+      ]
+    },
+    {
+      "id": "audio-ring",
+      "name": "Audio Ring",
+      "file": "audio-ring.glsl",
+      "description": "Circular audio spectrum visualization with frequency-driven bars",
+      "tags": [
+        "audio",
+        "spectrum",
+        "reactive"
+      ]
+    },
+    {
+      "id": "audio-bars",
+      "name": "Audio Bars",
+      "file": "audio-bars.glsl",
+      "description": "Classic bar-graph spectrum analyzer with glow and floor reflection",
+      "tags": [
+        "audio",
+        "spectrum",
+        "reactive"
+      ]
+    },
+    {
+      "id": "audio-pulse",
+      "name": "Audio Pulse",
+      "file": "audio-pulse.glsl",
+      "description": "Concentric rings pulsing with bass, mid, and high audio energy",
+      "tags": [
+        "audio",
+        "reactive",
+        "animated"
+      ]
+    },
+    {
+      "id": "mod-playground",
+      "name": "Mod Playground",
+      "file": "mod-playground.glsl",
+      "description": "Domain-warped pattern with many code dials for modulation routing tests",
+      "tags": [
+        "modulation",
+        "dials",
+        "interactive"
+      ]
+    },
+    {
+      "id": "obsidian-flow",
+      "name": "Obsidian Flow / Kinetic Bismuth",
+      "file": "obsidian-flow.glsl",
+      "description": "Obsidian Flow / Kinetic Bismuth",
+      "tags": [
+        "animated"
+      ]
+    },
+    {
+      "id": "obsidian-flow-vibrant",
+      "name": "Obsidian Flow / Kinetic Bismuth - Enhanced Vibrant Version",
+      "file": "obsidian-flow-vibrant.glsl",
+      "description": "Obsidian Flow / Kinetic Bismuth - Enhanced Vibrant Version",
+      "tags": [
+        "animated",
+        "color"
+      ]
+    },
+    {
+      "id": "obsidian-flow-max",
+      "name": "Obsidian Flow / Kinetic Bismuth - MAXIMIZED VIBRANCE & DYNAMICS",
+      "file": "obsidian-flow-max.glsl",
+      "description": "Obsidian Flow / Kinetic Bismuth - MAXIMIZED VIBRANCE & DYNAMICS",
+      "tags": [
+        "animated"
+      ]
+    },
+    {
+      "id": "cosmic-nebula-starfield",
+      "name": "Cosmic Nebula / Starfield",
+      "file": "cosmic-nebula-starfield.glsl",
+      "description": "Cosmic Nebula / Starfield",
+      "tags": [
+        "space"
+      ]
+    },
+    {
+      "id": "iridescent-oil-slick",
+      "name": "Iridescent Oil Slick / Liquid Rainbow",
+      "file": "iridescent-oil-slick.glsl",
+      "description": "Iridescent Oil Slick / Liquid Rainbow",
+      "tags": [
+        "color",
+        "water"
+      ]
+    },
+    {
+      "id": "digital-glitch-data-corruption",
+      "name": "Digital Glitch / Data Corruption",
+      "file": "digital-glitch-data-corruption.glsl",
+      "description": "Digital Glitch / Data Corruption",
+      "tags": [
+        "cyberpunk"
+      ]
+    },
+    {
+      "id": "liquid-neon-fluid",
+      "name": "Liquid Neon Fluid",
+      "file": "liquid-neon-fluid.glsl",
+      "description": "Liquid Neon Fluid",
+      "tags": [
+        "organic",
+        "cyberpunk",
+        "glow"
+      ]
+    },
+    {
+      "id": "electric-circuitry",
+      "name": "Electric Circuitry",
+      "file": "electric-circuitry.glsl",
+      "description": "Electric Circuitry",
+      "tags": [
+        "animated",
+        "color"
+      ]
+    },
+    {
+      "id": "iridescent-oil-slick-variant",
+      "name": "Iridescent Oil Slick",
+      "file": "iridescent-oil-slick-variant.glsl",
+      "description": "Iridescent Oil Slick",
+      "tags": [
+        "animated",
+        "color"
+      ]
+    },
+    {
+      "id": "molten-magma-flow",
+      "name": "Molten Magma Flow",
+      "file": "molten-magma-flow.glsl",
+      "description": "Molten Magma Flow",
+      "tags": [
+        "animated",
+        "organic"
+      ]
+    },
+    {
+      "id": "cosmic-nebula",
+      "name": "Cosmic Nebula",
+      "file": "cosmic-nebula.glsl",
+      "description": "Cosmic Nebula",
+      "tags": [
+        "space"
+      ]
+    },
+    {
+      "id": "ethereal-aurora",
+      "name": "Ethereal Aurora",
+      "file": "ethereal-aurora.glsl",
+      "description": "Ethereal Aurora",
+      "tags": [
+        "space"
+      ]
+    },
+    {
+      "id": "cyberpunk-neon-grid",
+      "name": "Cyberpunk Neon Grid",
+      "file": "cyberpunk-neon-grid.glsl",
+      "description": "Cyberpunk Neon Grid",
+      "tags": [
+        "geometric",
+        "cyberpunk",
+        "glow"
+      ]
+    },
+    {
+      "id": "cyberpunk-data-stream",
+      "name": "Cyberpunk Data Stream",
+      "file": "cyberpunk-data-stream.glsl",
+      "description": "Cyberpunk Data Stream",
+      "tags": [
+        "cyberpunk"
+      ]
+    },
+    {
+      "id": "neon-hyperdrive",
+      "name": "Neon Hyperdrive",
+      "file": "neon-hyperdrive.glsl",
+      "description": "Neon Hyperdrive",
+      "tags": [
+        "cyberpunk",
+        "glow"
+      ]
+    },
+    {
+      "id": "molten-lava-flow",
+      "name": "Molten Lava Flow",
+      "file": "molten-lava-flow.glsl",
+      "description": "Molten Lava Flow",
+      "tags": [
+        "animated",
+        "organic"
+      ]
+    },
+    {
+      "id": "bioluminescent-fluid-cells",
+      "name": "Bioluminescent Fluid Cells",
+      "file": "bioluminescent-fluid-cells.glsl",
+      "description": "Bioluminescent Fluid Cells",
+      "tags": [
+        "organic"
+      ]
+    },
+    {
+      "id": "liquid-gold-flow",
+      "name": "Liquid Gold Flow",
+      "file": "liquid-gold-flow.glsl",
+      "description": "Liquid Gold Flow",
+      "tags": [
+        "animated",
+        "water"
+      ]
+    },
+    {
+      "id": "cyberpunk-glitch",
+      "name": "Cyberpunk Glitch",
+      "file": "cyberpunk-glitch.glsl",
+      "description": "Cyberpunk Glitch",
+      "tags": [
+        "cyberpunk"
+      ]
+    },
+    {
+      "id": "neon-aurora",
+      "name": "Neon Aurora",
+      "file": "neon-aurora.glsl",
+      "description": "Neon Aurora",
+      "tags": [
+        "space",
+        "cyberpunk",
+        "glow"
+      ]
+    },
+    {
+      "id": "cybernetic-pulse",
+      "name": "Cybernetic Pulse",
+      "file": "cybernetic-pulse.glsl",
+      "description": "Cybernetic Pulse",
+      "tags": [
+        "reactive"
+      ]
+    },
+    {
+      "id": "nebula-swirl",
+      "name": "Nebula Swirl",
+      "file": "nebula-swirl.glsl",
+      "description": "Nebula Swirl",
+      "tags": [
+        "space"
+      ]
+    },
+    {
+      "id": "cyberpunk-glitch-clean",
+      "name": "Cyberpunk Glitch (Clean Version)",
+      "file": "cyberpunk-glitch-clean.glsl",
+      "description": "Cyberpunk Glitch (Clean Version)",
+      "tags": [
+        "cyberpunk"
+      ]
+    },
+    {
+      "id": "cyberpunk-neural-net",
+      "name": "Cyberpunk Neural Net",
+      "file": "cyberpunk-neural-net.glsl",
+      "description": "Cyberpunk Neural Net",
+      "tags": [
+        "cyberpunk"
+      ]
+    },
+    {
+      "id": "bioluminescent-deep-sea",
+      "name": "Bioluminescent Deep Sea Ecosystem",
+      "file": "bioluminescent-deep-sea.glsl",
+      "description": "Bioluminescent Deep Sea Ecosystem",
+      "tags": [
+        "organic"
+      ]
+    },
+    {
+      "id": "liquid-chrome-kaleidoscope",
+      "name": "Liquid Chrome Kaleidoscope",
+      "file": "liquid-chrome-kaleidoscope.glsl",
+      "description": "Liquid Chrome Kaleidoscope",
+      "tags": [
+        "water"
+      ]
+    },
+    {
+      "id": "cyberpunk-retro-sun-grid",
+      "name": "Cyberpunk Retro Sun & Grid",
+      "file": "cyberpunk-retro-sun-grid.glsl",
+      "description": "Cyberpunk Retro Sun & Grid",
+      "tags": [
+        "geometric",
+        "cyberpunk"
+      ]
+    },
+    {
+      "id": "retrowave-horizon",
+      "name": "Retrowave Horizon - Fixed Version",
+      "file": "retrowave-horizon.glsl",
+      "description": "Retrowave Horizon - Fixed Version",
+      "tags": [
+        "cyberpunk"
+      ]
+    },
+    {
+      "id": "retrowave-horizon-enhanced",
+      "name": "Retrowave Horizon - Enhanced Version",
+      "file": "retrowave-horizon-enhanced.glsl",
+      "description": "Retrowave Horizon - Enhanced Version",
+      "tags": [
+        "cyberpunk"
+      ]
+    },
+    {
+      "id": "nebula-dream-improved-version",
+      "name": "Nebula Dream - Improved Version",
+      "file": "nebula-dream-improved-version.glsl",
+      "description": "Nebula Dream - Improved Version",
+      "tags": [
+        "space"
+      ]
+    },
+    {
+      "id": "obsidian-flow-kinetic-bismuth-deep-blue-teal-variant",
+      "name": "Obsidian Flow / Kinetic Bismuth (Deep Blue & Teal Variant)",
+      "file": "obsidian-flow-kinetic-bismuth-deep-blue-teal-variant.glsl",
+      "description": "Obsidian Flow / Kinetic Bismuth (Deep Blue & Teal Variant)",
+      "tags": [
+        "animated"
+      ]
+    },
+    {
+      "id": "obsidian-flow-kinetic-bismuth-rich-gradient-liquid-variant",
+      "name": "Obsidian Flow / Kinetic Bismuth (Rich Gradient Liquid Variant)",
+      "file": "obsidian-flow-kinetic-bismuth-rich-gradient-liquid-variant.glsl",
+      "description": "Obsidian Flow / Kinetic Bismuth (Rich Gradient Liquid Variant)",
+      "tags": [
+        "animated",
+        "color",
+        "water"
+      ]
+    },
+    {
+      "id": "cosmic-nebula-flow-deep-space-gradient-shader",
+      "name": "Cosmic Nebula Flow - Deep Space Gradient Shader",
+      "file": "cosmic-nebula-flow-deep-space-gradient-shader.glsl",
+      "description": "Cosmic Nebula Flow - Deep Space Gradient Shader",
+      "tags": [
+        "animated",
+        "color",
+        "space"
+      ]
+    },
+    {
+      "id": "liquid-metal-flow-trippy-fluid-shader",
+      "name": "Liquid Metal Flow - Trippy Fluid Shader",
+      "file": "liquid-metal-flow-trippy-fluid-shader.glsl",
+      "description": "Liquid Metal Flow - Trippy Fluid Shader",
+      "tags": [
+        "animated",
+        "organic",
+        "abstract"
+      ]
+    },
+    {
+      "id": "thermal-gradient-flow-radiant-energy-shader",
+      "name": "Thermal Gradient Flow - Radiant Energy Shader",
+      "file": "thermal-gradient-flow-radiant-energy-shader.glsl",
+      "description": "Thermal Gradient Flow - Radiant Energy Shader",
+      "tags": [
+        "animated",
+        "color"
+      ]
+    },
+    {
+      "id": "ethereal-underwater-flow-deep-ocean-gradient-shader",
+      "name": "Ethereal Underwater Flow - Deep Ocean Gradient Shader",
+      "file": "ethereal-underwater-flow-deep-ocean-gradient-shader.glsl",
+      "description": "Ethereal Underwater Flow - Deep Ocean Gradient Shader",
+      "tags": [
+        "animated",
+        "color",
+        "water"
+      ]
+    },
+    {
+      "id": "psychedelic-geometric-flow-trippy-pattern-shader",
+      "name": "Psychedelic Geometric Flow - Trippy Pattern Shader",
+      "file": "psychedelic-geometric-flow-trippy-pattern-shader.glsl",
+      "description": "Psychedelic Geometric Flow - Trippy Pattern Shader",
+      "tags": [
+        "animated",
+        "geometric",
+        "abstract"
+      ]
+    },
+    {
+      "id": "fractal-flow-cascade-complex-recursive-pattern-shader",
+      "name": "Fractal Flow Cascade - Complex Recursive Pattern Shader",
+      "file": "fractal-flow-cascade-complex-recursive-pattern-shader.glsl",
+      "description": "Fractal Flow Cascade - Complex Recursive Pattern Shader",
+      "tags": [
+        "animated",
+        "geometric",
+        "fractal"
+      ]
+    },
+    {
+      "id": "ink-flow-galaxy-cosmic-fluid-gradient-shader",
+      "name": "Ink Flow Galaxy - Cosmic Fluid Gradient Shader",
+      "file": "ink-flow-galaxy-cosmic-fluid-gradient-shader.glsl",
+      "description": "Ink Flow Galaxy - Cosmic Fluid Gradient Shader",
+      "tags": [
+        "animated",
+        "color",
+        "organic"
+      ]
+    },
+    {
+      "id": "cosmic-flow-burst-dynamic-gradient-explosion-shader",
+      "name": "Cosmic Flow Burst - Dynamic Gradient Explosion Shader",
+      "file": "cosmic-flow-burst-dynamic-gradient-explosion-shader.glsl",
+      "description": "Cosmic Flow Burst - Dynamic Gradient Explosion Shader",
+      "tags": [
+        "animated",
+        "color",
+        "space"
+      ]
+    },
+    {
+      "id": "crystal-prism-flow-geometric-light-refraction-shader",
+      "name": "Crystal Prism Flow - Geometric Light Refraction Shader",
+      "file": "crystal-prism-flow-geometric-light-refraction-shader.glsl",
+      "description": "Crystal Prism Flow - Geometric Light Refraction Shader",
+      "tags": [
+        "animated",
+        "geometric",
+        "glow"
+      ]
+    },
+    {
+      "id": "flowing-sand-dunes-desert-gradient-shader",
+      "name": "Flowing Sand Dunes - Desert Gradient Shader",
+      "file": "flowing-sand-dunes-desert-gradient-shader.glsl",
+      "description": "Flowing Sand Dunes - Desert Gradient Shader",
+      "tags": [
+        "animated",
+        "color"
+      ]
+    },
+    {
+      "id": "aurora-flow-dreams-northern-lights-gradient-shader",
+      "name": "Aurora Flow Dreams - Northern Lights Gradient Shader",
+      "file": "aurora-flow-dreams-northern-lights-gradient-shader.glsl",
+      "description": "Aurora Flow Dreams - Northern Lights Gradient Shader",
+      "tags": [
+        "animated",
+        "color",
+        "space"
+      ]
+    },
+    {
+      "id": "cyber-wave-horizon-enhanced-edition",
+      "name": "Cyber-Wave Horizon - Enhanced Edition",
+      "file": "cyber-wave-horizon-enhanced-edition.glsl",
+      "description": "Cyber-Wave Horizon - Enhanced Edition",
+      "tags": [
+        "animated",
+        "color"
+      ]
+    },
+    {
+      "id": "synthwave-gridscape",
+      "name": "Synthwave Gridscape - Neon Dreams Edition",
+      "file": "synthwave-gridscape.glsl",
+      "description": "Synthwave Gridscape - Neon Dreams Edition",
+      "tags": [
+        "geometric",
+        "cyberpunk",
+        "glow"
+      ]
+    },
+    {
+      "id": "synthwave-gridscape-ultimate",
+      "name": "Synthwave Gridscape - Ultimate Neon Edition",
+      "file": "synthwave-gridscape-ultimate.glsl",
+      "description": "Synthwave Gridscape - Ultimate Neon Edition",
+      "tags": [
+        "geometric",
+        "cyberpunk",
+        "glow"
+      ]
+    },
+    {
+      "id": "synthwave-gridscape-max",
+      "name": "Synthwave Gridscape - Maximum Brightness Edition",
+      "file": "synthwave-gridscape-max.glsl",
+      "description": "Synthwave Gridscape - Maximum Brightness Edition",
+      "tags": [
+        "geometric",
+        "cyberpunk"
+      ]
+    },
+    {
+      "id": "plasma-vortex",
+      "name": "Plasma Vortex",
+      "file": "plasma-vortex.glsl",
+      "description": "Name: Plasma Vortex",
+      "tags": [
+        "animated",
+        "color"
+      ]
+    },
+    {
+      "id": "crystal-fractal-forest",
+      "name": "Crystal Fractal Forest",
+      "file": "crystal-fractal-forest.glsl",
+      "description": "Name: Crystal Fractal Forest",
+      "tags": [
+        "geometric",
+        "fractal"
+      ]
+    },
+    {
+      "id": "metaball-organism",
+      "name": "Metaball Organism",
+      "file": "metaball-organism.glsl",
+      "description": "Name: Metaball Organism",
+      "tags": [
+        "animated",
+        "color"
+      ]
+    },
+    {
+      "id": "quantum-wave-interference",
+      "name": "Quantum Wave Interference",
+      "file": "quantum-wave-interference.glsl",
+      "description": "Name: Quantum Wave Interference",
+      "tags": [
+        "animated",
+        "color"
+      ]
+    },
+    {
+      "id": "plasma-vortex-reactor-hyper-responsive-audio-voice-reactive",
+      "name": "Plasma Vortex Reactor - Hyper-Responsive Audio + Voice Reactive",
+      "file": "plasma-vortex-reactor-hyper-responsive-audio-voice-reactive.glsl",
+      "description": "Plasma Vortex Reactor - Hyper-Responsive Audio + Voice Reactive",
+      "tags": [
+        "reactive"
+      ]
+    }
+  ]
+}

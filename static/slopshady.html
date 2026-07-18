@@ -1,0 +1,1728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SlopShady</title>
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    <link rel="stylesheet" href="/static/css/litegraph.css">
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/webamp.css">
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<canvas id="graph-canvas"></canvas>
+
+
+
+<!-- VLAM Bottom Panel -->
+<div class="bottom-panel" id="bottom-panel">
+    <div class="resize-handle" id="panel-resize-handle"></div>
+    <div class="module-buttons">
+        <button class="tool-btn tool-btn--module active" data-module="mix">
+            <span class="module-btn__led"></span>
+            mix
+        </button>
+        <button class="tool-btn tool-btn--module" data-module="codedials">
+            <span class="module-btn__led"></span>
+            Code
+        </button>
+        <button class="tool-btn tool-btn--module" data-module="player">
+            <span class="module-btn__led"></span>
+            Player
+        </button>
+        <button class="tool-btn tool-btn--module" data-module="recorder">
+            <span class="module-btn__led"></span>
+            Recorder
+        </button>
+        <button class="tool-btn tool-btn--module" data-module="scanimate">
+            <span class="module-btn__led"></span>
+            Scanimate
+        </button>
+        <button class="tool-btn tool-btn--module" data-module="voices">
+            <span class="module-btn__led"></span>
+            Voices
+        </button>
+        <button class="tool-btn tool-btn--module" data-module="effects">
+            <span class="module-btn__led"></span>
+            Feedback
+        </button>
+        <button class="tool-btn tool-btn--module" data-module="llm">
+            <span class="module-btn__led"></span>
+            LLM
+        </button>
+        <button class="tool-btn tool-btn--module" data-module="settings">
+            <span class="module-btn__led"></span>
+            Settings
+        </button>
+    </div>
+
+    <div class="content-area">
+        <!-- mix Panel -->
+        <div class="content-panel content-panel--active content-panel--scrollable" data-panel="mix">
+            <div class="panel-section">
+                <div class="tool-grid tool-grid--2x2">
+                    <button class="tool-btn" id="mix-switch-btn">Switch</button>
+                </div>
+                <div class="tool-grid tool-grid--2x2">
+                    <button class="tool-btn" id="enableVideo">Camera</button>
+                    <button class="tool-btn" id="captureScreen">Screen</button>
+                </div>
+                <div class="bg-controls">
+                <button class="tool-btn tool-btn--expand " id="mix-bg-btn" data-expand-class="mix--bg-mode">
+                    <span>Background</span>
+                </button>
+                <button class="tool-btn tool-btn--expand " id="mix-edit-mode" data-expand-class="mix--edit-mode">
+                    <span>Edit</span>
+                </button>
+                <button class="tool-btn tool-btn--expand " id="mix-controls-btn" data-expand-class="mix--controls-mode">
+                    <span>Controls</span>
+                </button>
+                <button class="tool-btn tool-btn--expand " id="mix-mask-btn" data-expand-class="mix--mask-mode">
+                    <span>Mask</span>
+                </button>
+                <button class="tool-btn tool-btn--expand " id="mix-playlist-toggle" data-expand-class="mix--playlist-mode">
+                    <span>Playlist</span>
+                </button>
+                <button class="tool-btn tool-btn--expand " id="mix-brain-btn" data-expand-class="mix--brain-mode">
+                    <span>Brain</span>
+                </button>
+            </div>
+            </div>
+            <div class="panel-section" id="mix-bg-section">
+                <span class="content-title">BG</span>
+                <div class="bg-controls">
+                <div class="tool-grid tool-grid--2x2">
+                    <button class="tool-btn" id="mix-bg-toggle">BG</button>
+                    <div class="color-grid">
+                        <input type="color" class="bg-color" id="mix-bg-color">
+                    </div>
+                </div>
+                <div class="dropdown">
+                    <button class="dropdown__selected tool-btn" id="mix-bg-type-dropdown">
+                        <span>Solid</span>
+                    </button>
+                    <div class="dropdown__menu" id="mix-bg-type-menu">
+                        <div class="dropdown__item active" data-value="solid">Solid</div>
+                        <div class="dropdown__item" data-value="image">Image</div>
+                        <div class="dropdown__item" data-value="video">Video</div>
+                        <div class="dropdown__item" data-value="webcam">Camera</div>
+                        <div class="dropdown__item" data-value="screen">Screen</div>
+                    </div>
+                </div>
+                </div>
+                </div>
+            <div class="panel-section" id="mix-playlist-section">
+                <span class="content-title">Playlist</span>
+                <div class="pl-transport">
+                    <div class="tool-grid tool-grid--4x1">
+                        <button class="tool-btn" id="plPlay">▶</button>
+                        <button class="tool-btn" id="plStop" disabled>⏹</button>
+                        <button class="tool-btn" id="plPrev">⏮</button>
+                        <button class="tool-btn" id="plNext">⏭</button>
+                    </div>
+                <div class="toggle-group">
+                    <div class="toggle active" id="plLoop">
+                        <div class="toggle__handle"></div>
+                    </div>
+                    <span class="content-label">Loop</span>
+                </div>
+                </div>
+                <div class="pl-progress-row">
+                    <div class="slider" id="plProgressBar" data-min="0" data-max="100" data-step="1">
+                        <div class="slider__track">
+                            <div class="slider__fill">
+                                <div class="slider__handle"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <span id="plProgressText" class="pl-progress-text">No entries</span>
+                </div>
+                <div class="pl-add-controls">
+                    <button class="tool-btn" id="plAddCurrent">+ Current</button>
+                    <select id="plAddShaderSelect"><option value="">-- Saved --</option></select>
+                    <button class="tool-btn" id="plAddFromShader">+</button>
+                </div>
+                <div id="plEntries" class="pl-entries"></div>
+                <div class="pl-footer">
+                    <button class="tool-btn" id="plClearAll">Clear</button>
+                    <button class="tool-btn" id="plExport">Export</button>
+                    <button class="tool-btn" id="plImport">Import</button>
+                    <input type="file" id="plImportFile" accept=".json" class="hidden">
+                </div>
+            </div>
+            <div class="panel-section" id="mix-brain-section">
+                <div class="bg-controls">
+                <div class="tool-grid tool-grid--3x2">
+                    <button class="tool-btn" data-vb-bs="8">8px</button>
+                    <button class="tool-btn active" data-vb-bs="16">16px</button>
+                    <button class="tool-btn" data-vb-bs="32">32px</button>
+                </div>
+                <div class="tool-grid tool-grid--3x2">
+                    <button class="tool-btn" id="vb-record"><span>Record</span></button>
+                    <button class="tool-btn" id="vb-seed"><span>Seed</span></button>
+                    <button class="tool-btn" id="vb-clear"><span>Clear</span></button>
+                </div>
+                <div class="vb-stats">
+                    <div class="vb-stat-row"><span class="vb-stat-label">Corpus</span><span class="vb-stat-val" id="vb-stat-corpus">0</span></div>
+                    <div class="vb-stat-row"><span class="vb-stat-label">Grid</span><span class="vb-stat-val" id="vb-stat-grid">0x0</span></div>
+                    <div class="vb-stat-row"><span class="vb-stat-label">Active</span><span class="vb-stat-val" id="vb-stat-input">0/8 layers</span></div>
+                </div>
+                <div class="slider" id="vb-blend-slider" data-min="0" data-max="100" data-step="1" data-initial-value="100">
+                    <div class="slider__header">
+                        <span class="slider__label">Blend</span>
+                        <span class="slider__value">100%</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slider" id="vb-glitch-slider" data-min="0" data-max="100" data-step="1" data-initial-value="30">
+                    <div class="slider__header">
+                        <span class="slider__label">Glitch</span>
+                        <span class="slider__value">30%</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slider" id="vb-colorw-slider" data-min="0" data-max="100" data-step="1" data-initial-value="60">
+                    <div class="slider__header">
+                        <span class="slider__label">Color Wt</span>
+                        <span class="slider__value">3.0</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tool-grid tool-grid--3x2">
+                    <button class="tool-btn" id="vb-grid">Grid</button>
+                    <button class="tool-btn active" id="vb-scanline">Scan</button>
+                    <button class="tool-btn" id="vb-audio"><span>Mic</span></button>
+                </div>
+                <div class="slider" id="vb-audio-drive-slider" data-min="0" data-max="100" data-step="1" data-initial-value="50">
+                    <div class="slider__header">
+                        <span class="slider__label">Audio</span>
+                        <span class="slider__value">50%</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </div>
+            <div id="mix-channels-container"></div>
+        </div>
+
+        <!-- codedials Panel -->
+        <div class="content-panel content-panel--scrollable" data-panel="codedials">
+                <div class="panel-section">
+                    <span class="content-title" id="layerEditorName">Layer 1</span>
+                <div class="bg-controls">
+                <div class="tool-grid tool-grid--4x1">
+                    <button class="tool-btn tool-btn--small" id="layerPrev">&lt;</button>
+                    <button class="tool-btn tool-btn--small" id="layerNext">&gt;</button>
+                    <button class="tool-btn tool-btn--small" id="zoomOut">−</button>
+                    <button class="tool-btn tool-btn--small" id="zoomIn">+</button>
+                </div>
+                <button class="tool-btn tool-btn--expand " id="code-edit-mode" data-expand-target="code-col">
+                    <span>Edit</span>
+                </button>
+                <div class="tool-grid tool-grid--2x2">
+                    <button class="tool-btn active" id="pausePlay">Play</button>
+                    <button class="tool-btn" id="recompile">Compile</button>
+                </div>
+                <div class="slider" id="timeSliderWrap">
+                    <div class="slider__header">
+                        <span class="slider__label">Time</span>
+                        <span class="slider__value" id="timeDisplay">0%</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                    <input type="range" id="timeSlider" min="0" max="1000" value="0" class="hidden">
+                </div>
+                <div class="slider" id="timeSliderFineWrap">
+                    <div class="slider__header">
+                        <span class="slider__label">Fine</span>
+                        <span class="slider__value" id="timeDisplayFine">±0.0%</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                    <input type="range" id="timeSliderFine" min="-100" max="100" value="0" class="hidden">
+                </div>
+                </div>
+                <button class="tool-btn tool-btn--expand" id="codedials-help-btn" data-expand-target="codedials-help-section">
+                    <span>Help</span>
+                </button>
+            </div>
+            <div class="panel-section panel-section--hidden panel-section--code code-col" id="code-col" data-expand-hide>
+                <textarea id="shaderCode" rows="14" spellcheck="false"></textarea>
+            </div>
+            <div class="panel-section panel-section--code dials-col" id="dials-col" data-expand-hide>
+                <div id="codeDialsContainer"></div>
+            </div>
+<div class="panel-section panel-section--hidden" id="codedials-help-section">
+                <span class="content-title">Help</span>
+                <div class="bp-help-section">
+                    <h4>Code Dials</h4>
+                    <p><span class="text-orange">q-m</span>:<span class="text-green">hold×2</span> <span class="text-yellow">Shift</span>:<span class="text-green">×2↑</span> <span class="text-magenta">Alt</span>:<span class="text-orange">÷2↓</span> <span class="text-white">Alt+Shift</span>:<span class="text-green">reset</span> <span class="text-orange">⌫</span>:<span class="status-highlight-orange">reset all</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="content-panel content-panel--scrollable" data-panel="player">
+            <div class="panel-section" id="midi-section">
+                <div class="file-drop-zone" id="midiDropZone">
+                    <div class="file-drop-zone__icon">🎹</div>
+                    <div class="file-drop-zone__text">Drop MIDI file</div>
+                    <input type="file" id="midiFileInput" accept=".mid,.midi" class="hidden">
+                </div>
+                <div id="pianoRollContainer" class="piano-roll-container">
+                    <canvas id="pianoRollCanvas" width="800" height="128" class="piano-roll-canvas"></canvas>
+                    <div class="piano-roll-position">
+                        <div id="pianoRollPlayhead" class="piano-roll-playhead"></div>
+                    </div>
+                    <div class="flex-row mt-1">
+                        <span id="pianoRollTime" class="text-small piano-roll-time">0:00</span>
+                        <span id="pianoRollInfo" class="text-small piano-roll-info"></span>
+                        <span id="pianoRollDuration" class="text-small piano-roll-time">0:00</span>
+                    </div>
+                </div>
+                <div class="tool-grid tool-grid--3x2 tool-grid--spaced">
+                    <button class="tool-btn" id="playerPlay" disabled>▶</button>
+                    <button class="tool-btn" id="playerPause" disabled>⏸</button>
+                    <button class="tool-btn" id="playerStop" disabled>⏹</button>
+                </div>
+                <div class="slider" id="playerProgress" data-min="0" data-max="100" data-step="1">
+                    <div class="slider__track">
+                        <div class="slider__fill">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="panel-section" id="webamp-section">
+                <span class="content-title">Webamp</span>
+                <div id="webamp-container"></div>
+            </div>
+        </div>
+
+        <!-- Voices Panel -->
+        <div class="content-panel" data-panel="voices">
+            <div class="panel-section">
+                <button class="tool-btn tool-btn--expand" id="voices-lfo-btn" data-expand-class="voices--lfos-mode">
+                    <span>LFOs</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" id="voices-macro-btn" data-expand-class="voices--macro-mode">
+                    <span>Macros</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" id="voices-modgrid-btn" data-expand-class="voices--modgrid-mode">
+                    <span>Matrix</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" id="voices-voice-btn" data-expand-class="voices--voice-mode">
+                    <span>Voice</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" id="voices-midi-btn" data-expand-class="voices--midi-mode">
+                    <span>MIDI</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" id="voices-osc-btn" data-expand-class="voices--osc-mode">
+                    <span>OSC</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" id="voices-eg-btn" data-expand-class="voices--eg-mode">
+                    <span>EG</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" id="voices-kb-btn" data-expand-class="voices--kb-mode">
+                    <span>Keys</span>
+                </button>
+            </div>
+            <div class="panel-section" id="voices-section-lfos">
+                <span class="content-title">LFOs</span>
+                <div class="lfo-bpm-row">
+                    <div class="slider lfo-bpm-slider" id="lfo-bpm-slider" data-min="20" data-max="300" data-step="1" data-initial-value="120">
+                        <div class="slider__header">
+                            <span class="slider__label">BPM</span>
+                            <span class="slider__value" id="lfo-bpm-value">120</span>
+                        </div>
+                        <div class="slider__track">
+                            <div class="slider__fill">
+                                <div class="slider__handle"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="lfo-controls">
+                    <div class="lfo-row" data-lfo="0">
+                        <label class="voice-label">LFO 1</label>
+                        <div class="dropdown" data-lfo-waveform="0">
+                            <button class="dropdown__selected tool-btn" id="lfo-waveform-0">
+                                <span>Sine</span>
+                            </button>
+                            <div class="dropdown__menu" id="lfo-waveform-menu-0">
+                                <div class="dropdown__item active" data-value="sine">Sine</div>
+                                <div class="dropdown__item" data-value="square">Square</div>
+                                <div class="dropdown__item" data-value="triangle">Triangle</div>
+                                <div class="dropdown__item" data-value="saw">Saw</div>
+                                <div class="dropdown__item" data-value="snh">S&H</div>
+                                <div class="dropdown__item" data-value="noise">Noise</div>
+                            </div>
+                        </div>
+                        <div class="slider" id="lfo-rate-slider-0" data-min="0.1" data-max="20" data-step="0.1" data-initial-value="1">
+                            <div class="slider__header">
+                                <span class="slider__label">Rate</span>
+                                <span class="slider__value" id="lfo-rate-value-0">1.0 Hz</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <canvas class="lfo-canvas" id="lfo-canvas-0" width="150" height="40"></canvas>
+                        <button class="tool-btn tool-btn--square" id="lfo-expand-0">+</button>
+                    </div>
+                    <div class="lfo-advanced hidden" id="lfo-advanced-0">
+                        <div class="slider lfo-amp-slider" id="lfo-phase-slider-0" data-min="0" data-max="1" data-step="0.01" data-initial-value="0">
+                            <div class="slider__header">
+                                <span class="slider__label">Phase</span>
+                                <span class="slider__value" id="lfo-phase-value-0">0.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="slider lfo-amp-slider" id="lfo-amp-slider-0" data-min="0" data-max="1" data-step="0.01" data-initial-value="1">
+                            <div class="slider__header">
+                                <span class="slider__label">Amp</span>
+                                <span class="slider__value" id="lfo-amp-value-0">1.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="slider lfo-amp-slider" id="lfo-offset-slider-0" data-min="-1" data-max="1" data-step="0.01" data-initial-value="0">
+                            <div class="slider__header">
+                                <span class="slider__label">Offset</span>
+                                <span class="slider__value" id="lfo-offset-value-0">0.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lfo-sync-controls">
+                            <div class="toggle-group">
+                                <div class="toggle" id="lfo-sync-toggle-0">
+                                    <div class="toggle__handle"></div>
+                                </div>
+                                <span class="content-label">Sync</span>
+                            </div>
+                            <div class="dropdown" data-lfo-sync-rate="0">
+                                <button class="dropdown__selected tool-btn" id="lfo-sync-rate-0">
+                                    <span>1/4</span>
+                                </button>
+                                <div class="dropdown__menu" id="lfo-sync-rate-menu-0">
+                                    <div class="dropdown__item" data-value="1/1">1/1</div>
+                                    <div class="dropdown__item" data-value="1/2">1/2</div>
+                                    <div class="dropdown__item active" data-value="1/4">1/4</div>
+                                    <div class="dropdown__item" data-value="1/8">1/8</div>
+                                    <div class="dropdown__item" data-value="1/16">1/16</div>
+                                </div>
+                            </div>
+                            <div class="toggle-group">
+                                <div class="toggle" id="lfo-keysync-toggle-0">
+                                    <div class="toggle__handle"></div>
+                                </div>
+                                <span class="content-label">Key</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lfo-row" data-lfo="1">
+                        <label class="voice-label">LFO 2</label>
+                        <div class="dropdown" data-lfo-waveform="1">
+                            <button class="dropdown__selected tool-btn" id="lfo-waveform-1">
+                                <span>Sine</span>
+                            </button>
+                            <div class="dropdown__menu" id="lfo-waveform-menu-1">
+                                <div class="dropdown__item active" data-value="sine">Sine</div>
+                                <div class="dropdown__item" data-value="square">Square</div>
+                                <div class="dropdown__item" data-value="triangle">Triangle</div>
+                                <div class="dropdown__item" data-value="saw">Saw</div>
+                                <div class="dropdown__item" data-value="snh">S&H</div>
+                                <div class="dropdown__item" data-value="noise">Noise</div>
+                            </div>
+                        </div>
+                        <div class="slider" id="lfo-rate-slider-1" data-min="0.1" data-max="20" data-step="0.1" data-initial-value="1">
+                            <div class="slider__header">
+                                <span class="slider__label">Rate</span>
+                                <span class="slider__value" id="lfo-rate-value-1">1.0 Hz</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <canvas class="lfo-canvas" id="lfo-canvas-1" width="150" height="40"></canvas>
+                        <button class="tool-btn tool-btn--square" id="lfo-expand-1">+</button>
+                    </div>
+                    <div class="lfo-advanced hidden" id="lfo-advanced-1">
+                        <div class="slider lfo-amp-slider" id="lfo-phase-slider-1" data-min="0" data-max="1" data-step="0.01" data-initial-value="0">
+                            <div class="slider__header">
+                                <span class="slider__label">Phase</span>
+                                <span class="slider__value" id="lfo-phase-value-1">0.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="slider lfo-amp-slider" id="lfo-amp-slider-1" data-min="0" data-max="1" data-step="0.01" data-initial-value="1">
+                            <div class="slider__header">
+                                <span class="slider__label">Amp</span>
+                                <span class="slider__value" id="lfo-amp-value-1">1.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="slider lfo-amp-slider" id="lfo-offset-slider-1" data-min="-1" data-max="1" data-step="0.01" data-initial-value="0">
+                            <div class="slider__header">
+                                <span class="slider__label">Offset</span>
+                                <span class="slider__value" id="lfo-offset-value-1">0.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lfo-sync-controls">
+                            <div class="toggle-group">
+                                <div class="toggle" id="lfo-sync-toggle-1">
+                                    <div class="toggle__handle"></div>
+                                </div>
+                                <span class="content-label">Sync</span>
+                            </div>
+                            <div class="dropdown" data-lfo-sync-rate="1">
+                                <button class="dropdown__selected tool-btn" id="lfo-sync-rate-1">
+                                    <span>1/4</span>
+                                </button>
+                                <div class="dropdown__menu" id="lfo-sync-rate-menu-1">
+                                    <div class="dropdown__item" data-value="1/1">1/1</div>
+                                    <div class="dropdown__item" data-value="1/2">1/2</div>
+                                    <div class="dropdown__item active" data-value="1/4">1/4</div>
+                                    <div class="dropdown__item" data-value="1/8">1/8</div>
+                                    <div class="dropdown__item" data-value="1/16">1/16</div>
+                                </div>
+                            </div>
+                            <div class="toggle-group">
+                                <div class="toggle" id="lfo-keysync-toggle-1">
+                                    <div class="toggle__handle"></div>
+                                </div>
+                                <span class="content-label">Key</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lfo-row" data-lfo="2">
+                        <label class="voice-label">LFO 3</label>
+                        <div class="dropdown" data-lfo-waveform="2">
+                            <button class="dropdown__selected tool-btn" id="lfo-waveform-2">
+                                <span>Sine</span>
+                            </button>
+                            <div class="dropdown__menu" id="lfo-waveform-menu-2">
+                                <div class="dropdown__item active" data-value="sine">Sine</div>
+                                <div class="dropdown__item" data-value="square">Square</div>
+                                <div class="dropdown__item" data-value="triangle">Triangle</div>
+                                <div class="dropdown__item" data-value="saw">Saw</div>
+                                <div class="dropdown__item" data-value="snh">S&H</div>
+                                <div class="dropdown__item" data-value="noise">Noise</div>
+                            </div>
+                        </div>
+                        <div class="slider" id="lfo-rate-slider-2" data-min="0.1" data-max="20" data-step="0.1" data-initial-value="1">
+                            <div class="slider__header">
+                                <span class="slider__label">Rate</span>
+                                <span class="slider__value" id="lfo-rate-value-2">1.0 Hz</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <canvas class="lfo-canvas" id="lfo-canvas-2" width="150" height="40"></canvas>
+                        <button class="tool-btn tool-btn--square" id="lfo-expand-2">+</button>
+                    </div>
+                    <div class="lfo-advanced hidden" id="lfo-advanced-2">
+                        <div class="slider lfo-amp-slider" id="lfo-phase-slider-2" data-min="0" data-max="1" data-step="0.01" data-initial-value="0">
+                            <div class="slider__header">
+                                <span class="slider__label">Phase</span>
+                                <span class="slider__value" id="lfo-phase-value-2">0.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="slider lfo-amp-slider" id="lfo-amp-slider-2" data-min="0" data-max="1" data-step="0.01" data-initial-value="1">
+                            <div class="slider__header">
+                                <span class="slider__label">Amp</span>
+                                <span class="slider__value" id="lfo-amp-value-2">1.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="slider lfo-amp-slider" id="lfo-offset-slider-2" data-min="-1" data-max="1" data-step="0.01" data-initial-value="0">
+                            <div class="slider__header">
+                                <span class="slider__label">Offset</span>
+                                <span class="slider__value" id="lfo-offset-value-2">0.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lfo-sync-controls">
+                            <div class="toggle-group">
+                                <div class="toggle" id="lfo-sync-toggle-2">
+                                    <div class="toggle__handle"></div>
+                                </div>
+                                <span class="content-label">Sync</span>
+                            </div>
+                            <div class="dropdown" data-lfo-sync-rate="2">
+                                <button class="dropdown__selected tool-btn" id="lfo-sync-rate-2">
+                                    <span>1/4</span>
+                                </button>
+                                <div class="dropdown__menu" id="lfo-sync-rate-menu-2">
+                                    <div class="dropdown__item" data-value="1/1">1/1</div>
+                                    <div class="dropdown__item" data-value="1/2">1/2</div>
+                                    <div class="dropdown__item active" data-value="1/4">1/4</div>
+                                    <div class="dropdown__item" data-value="1/8">1/8</div>
+                                    <div class="dropdown__item" data-value="1/16">1/16</div>
+                                </div>
+                            </div>
+                            <div class="toggle-group">
+                                <div class="toggle" id="lfo-keysync-toggle-2">
+                                    <div class="toggle__handle"></div>
+                                </div>
+                                <span class="content-label">Key</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lfo-row" data-lfo="3">
+                        <label class="voice-label">LFO 4</label>
+                        <div class="dropdown" data-lfo-waveform="3">
+                            <button class="dropdown__selected tool-btn" id="lfo-waveform-3">
+                                <span>Sine</span>
+                            </button>
+                            <div class="dropdown__menu" id="lfo-waveform-menu-3">
+                                <div class="dropdown__item active" data-value="sine">Sine</div>
+                                <div class="dropdown__item" data-value="square">Square</div>
+                                <div class="dropdown__item" data-value="triangle">Triangle</div>
+                                <div class="dropdown__item" data-value="saw">Saw</div>
+                                <div class="dropdown__item" data-value="snh">S&H</div>
+                                <div class="dropdown__item" data-value="noise">Noise</div>
+                            </div>
+                        </div>
+                        <div class="slider" id="lfo-rate-slider-3" data-min="0.1" data-max="20" data-step="0.1" data-initial-value="1">
+                            <div class="slider__header">
+                                <span class="slider__label">Rate</span>
+                                <span class="slider__value" id="lfo-rate-value-3">1.0 Hz</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <canvas class="lfo-canvas" id="lfo-canvas-3" width="150" height="40"></canvas>
+                        <button class="tool-btn tool-btn--square" id="lfo-expand-3">+</button>
+                    </div>
+                    <div class="lfo-advanced hidden" id="lfo-advanced-3">
+                        <div class="slider lfo-amp-slider" id="lfo-phase-slider-3" data-min="0" data-max="1" data-step="0.01" data-initial-value="0">
+                            <div class="slider__header">
+                                <span class="slider__label">Phase</span>
+                                <span class="slider__value" id="lfo-phase-value-3">0.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="slider lfo-amp-slider" id="lfo-amp-slider-3" data-min="0" data-max="1" data-step="0.01" data-initial-value="1">
+                            <div class="slider__header">
+                                <span class="slider__label">Amp</span>
+                                <span class="slider__value" id="lfo-amp-value-3">1.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="slider lfo-amp-slider" id="lfo-offset-slider-3" data-min="-1" data-max="1" data-step="0.01" data-initial-value="0">
+                            <div class="slider__header">
+                                <span class="slider__label">Offset</span>
+                                <span class="slider__value" id="lfo-offset-value-3">0.00</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lfo-sync-controls">
+                            <div class="toggle-group">
+                                <div class="toggle" id="lfo-sync-toggle-3">
+                                    <div class="toggle__handle"></div>
+                                </div>
+                                <span class="content-label">Sync</span>
+                            </div>
+                            <div class="dropdown" data-lfo-sync-rate="3">
+                                <button class="dropdown__selected tool-btn" id="lfo-sync-rate-3">
+                                    <span>1/4</span>
+                                </button>
+                                <div class="dropdown__menu" id="lfo-sync-rate-menu-3">
+                                    <div class="dropdown__item" data-value="1/1">1/1</div>
+                                    <div class="dropdown__item" data-value="1/2">1/2</div>
+                                    <div class="dropdown__item active" data-value="1/4">1/4</div>
+                                    <div class="dropdown__item" data-value="1/8">1/8</div>
+                                    <div class="dropdown__item" data-value="1/16">1/16</div>
+                                </div>
+                            </div>
+                            <div class="toggle-group">
+                                <div class="toggle" id="lfo-keysync-toggle-3">
+                                    <div class="toggle__handle"></div>
+                                </div>
+                                <span class="content-label">Key</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="panel-section" id="voices-section-macros">
+                <span class="content-title">Macros</span>
+                <div class="macro-controls" id="macro-controls"></div>
+            </div>
+            <div class="panel-section" id="modulation-grid-section">
+                <span class="content-title">Mod Grid</span>
+                <div id="modulation-grid-rows"></div>
+            </div>
+            <div class="panel-section" id="voices-section-voice">
+                <span class="content-title">Voice Mode</span>
+                    <div class="voice-controls">
+                    <div class="voice-mode-row">
+                        <label class="voice-label">Mode</label>
+                        <div class="voice-mode-buttons">
+                            <button class="tool-btn active" data-voice-mode="poly" id="voiceModePoly">Poly</button>
+                            <button class="tool-btn" data-voice-mode="mono" id="voiceModeMono">Mono</button>
+                            <button class="tool-btn" data-voice-mode="glide" id="voiceModeGlide">Glide</button>
+                        </div>
+                    </div>
+                    <div class="voice-glide-row" id="voiceGlideRow">
+                        <div class="slider" id="glideTimeSlider" data-min="0" data-max="2" data-step="0.01" data-initial-value="0.1">
+                            <div class="slider__header">
+                                <span class="slider__label">Glide Time</span>
+                                <span class="slider__value" id="voiceGlideTimeDisplay">0.10s</span>
+                            </div>
+                            <div class="slider__track">
+                                <div class="slider__fill">
+                                    <div class="slider__handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="voice-status-section">
+                        <div class="voice-label">Status <span class="voice-layer-indicator" id="voiceLayerIndicator">Layer 1 (Main)</span></div>
+                        <div class="voice-status-grid" id="voiceStatusGrid">
+                            <div class="voice-status-item" id="voiceStatus0">
+                                <div class="voice-dot"></div>
+                                <span class="voice-note">—</span>
+                                <span class="voice-vel"></span>
+                            </div>
+                            <div class="voice-status-item" id="voiceStatus1">
+                                <div class="voice-dot"></div>
+                                <span class="voice-note">—</span>
+                                <span class="voice-vel"></span>
+                            </div>
+                            <div class="voice-status-item" id="voiceStatus2">
+                                <div class="voice-dot"></div>
+                                <span class="voice-note">—</span>
+                                <span class="voice-vel"></span>
+                            </div>
+                            <div class="voice-status-item" id="voiceStatus3">
+                                <div class="voice-dot"></div>
+                                <span class="voice-note">—</span>
+                                <span class="voice-vel"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-2 p-2 rounded text-small text-muted voice-info">
+                    <strong>Voice System:</strong> Each layer supports up to 4 polyphonic voices.<br>
+                    <strong>Poly:</strong> Multiple simultaneous voices<br>
+                    <strong>Mono:</strong> Single voice, last-note priority<br>
+                    <strong>Glide:</strong> Mono with portamento between notes<br>
+                    <strong>MIDI:</strong> Note-on/off triggers voices, CC routes to modulation
+                </div>
+            </div>
+            <div class="panel-section" id="voices-section-midi">
+                <span class="content-title">MIDI Input Filter</span>
+                <div class="voice-label">Channels</div>
+                <div class="tool-grid tool-grid--4x1" id="midiChannelGrid">
+                    <button class="tool-btn tool-btn--radio active" data-midi-channel="all">All</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="0">1</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="1">2</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="2">3</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="3">4</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="4">5</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="5">6</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="6">7</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="7">8</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="8">9</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="9">10</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="10">11</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="11">12</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="12">13</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="13">14</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="14">15</button>
+                    <button class="tool-btn tool-btn--radio" data-midi-channel="15">16</button>
+                </div>
+                <div class="voice-label mt-2">Note Range</div>
+                <div class="slider" id="midiNoteMinSlider" data-min="0" data-max="127" data-step="1">
+                    <div class="slider__header">
+                        <span class="slider__label">Min</span>
+                        <span class="slider__value" id="midiNoteMinDisplay">C-1</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slider" id="midiNoteMaxSlider" data-min="0" data-max="127" data-step="1" data-initial-value="127">
+                    <div class="slider__header">
+                        <span class="slider__label">Max</span>
+                        <span class="slider__value" id="midiNoteMaxDisplay">G9</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="panel-section" id="voices-section-osc">
+                <span class="content-title">OSC Input</span>
+                <div class="voice-label mt-2">Port</div>
+                <div class="flex-row">
+                    <input type="number" id="oscPortInput" min="1" max="65535" value="8101">
+                    <button class="tool-btn" id="oscPortApply">Apply</button>
+                </div>
+                <button class="tool-btn active mt-2" id="oscEnableToggle">Listen</button>
+            </div>
+            <div class="panel-section" id="voices-section-osc-info">
+                <span class="content-title">OSC Schema</span>
+                <div class="voice-label">Address Schema</div>
+                <div>
+                    <span class="text-orange">/note/{ch}</span> [V/oct, vel]<br>
+                    <span class="text-orange">/noteon</span> [ch, note, vel]<br>
+                    <span class="text-orange">/noteoff</span> [ch, note]<br>
+                    <span class="text-orange">/cc</span> [ch, cc, val]<br>
+                    <span class="text-orange">/pitchbend</span> [ch, val]<br>
+                    <span class="text-orange">/channelpressure</span> [ch, val]<br>
+                    <span class="text-orange">/ch/{n}</span> [value 0-1]
+                </div>
+                <div class="voice-label mt-2">Last Message</div>
+                <div id="oscMonitor">—</div>
+            </div>
+            <div class="panel-section" id="voices-section-eg-0a">
+                <span class="content-title">EG 1</span>
+                <div id="section-eg-0a"></div>
+            </div>
+            <div class="panel-section" id="voices-section-eg-0b">
+                <span class="content-title">&nbsp;</span>
+                <div id="section-eg-0b"></div>
+            </div>
+            <div class="panel-section" id="voices-section-eg-1a">
+                <span class="content-title">EG 2</span>
+                <div id="section-eg-1a"></div>
+            </div>
+            <div class="panel-section" id="voices-section-eg-1b">
+                <span class="content-title">&nbsp;</span>
+                <div id="section-eg-1b"></div>
+            </div>
+            <div class="panel-section" id="voices-section-eg-2a">
+                <span class="content-title">EG 3</span>
+                <div id="section-eg-2a"></div>
+            </div>
+            <div class="panel-section" id="voices-section-eg-2b">
+                <span class="content-title">&nbsp;</span>
+                <div id="section-eg-2b"></div>
+            </div>
+            <div class="panel-section" id="voices-section-eg-3a">
+                <span class="content-title">EG 4</span>
+                <div id="section-eg-3a"></div>
+            </div>
+            <div class="panel-section" id="voices-section-eg-3b">
+                <span class="content-title">&nbsp;</span>
+                <div id="section-eg-3b"></div>
+            </div>
+            <div class="panel-section" id="voices-section-kb">
+                <span class="content-title">Keyboard</span>
+                <div id="onScreenKeyboard"></div>
+                <div class="osk-controls">
+                    <button id="oskOctaveDown" class="tool-btn">◀ Octave -</button>
+                    <span id="oskRangeDisplay" class="osk-range-display">C3 - B4</span>
+                    <button id="oskOctaveUp" class="tool-btn">Octave + ▶</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Feedback Panel -->
+        <div class="content-panel" data-panel="effects">
+            <div class="panel-section" id="feedback-section">
+                <button class="tool-btn" id="feedbackEnabled">Mix</button>
+                <div class="dropdown">
+                    <button class="dropdown__selected tool-btn" id="feedback-blend-dropdown">
+                        <span>Mix</span>
+                    </button>
+                    <div class="dropdown__menu" id="feedback-blend-menu">
+                        <div class="dropdown__item active" data-value="0">Mix</div>
+                        <div class="dropdown__item" data-value="1">Add</div>
+                        <div class="dropdown__item" data-value="2">Multiply</div>
+                        <div class="dropdown__item" data-value="3">Screen</div>
+                        <div class="dropdown__item" data-value="4">Overlay</div>
+                        <div class="dropdown__item" data-value="5">Lighten</div>
+                        <div class="dropdown__item" data-value="6">Darken</div>
+                        <div class="dropdown__item" data-value="7">Subtract</div>
+                        <div class="dropdown__item" data-value="8">Difference</div>
+                    </div>
+                </div>
+                <div class="slider" data-min="0" data-max="1" data-step="0.01" data-param="feedbackAmount">
+                    <div class="slider__header">
+                        <span class="slider__label">Amount</span>
+                        <span class="slider__value">0.50</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill" data-fill="50">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slider" data-min="0" data-max="1" data-step="0.01" data-param="feedbackDecay">
+                    <div class="slider__header">
+                        <span class="slider__label">Decay</span>
+                        <span class="slider__value">0.90</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill" data-fill="90">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slider" data-min="0.5" data-max="2" data-step="0.01" data-param="feedbackZoom">
+                    <div class="slider__header">
+                        <span class="slider__label">Zoom</span>
+                        <span class="slider__value">1.00</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill" data-fill="25">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slider" data-min="-3.14" data-max="3.14" data-step="0.01" data-param="feedbackRotate">
+                    <div class="slider__header">
+                        <span class="slider__label">Rotate</span>
+                        <span class="slider__value">0.00</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill" data-fill="50">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slider" data-min="-0.5" data-max="0.5" data-step="0.01" data-param="feedbackOffsetX">
+                    <div class="slider__header">
+                        <span class="slider__label">Offset X</span>
+                        <span class="slider__value">0.00</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill" data-fill="50">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slider" data-min="-0.5" data-max="0.5" data-step="0.01" data-param="feedbackOffsetY">
+                    <div class="slider__header">
+                        <span class="slider__label">Offset Y</span>
+                        <span class="slider__value">0.00</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill" data-fill="50">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slider" data-min="0" data-max="3" data-step="0.01" data-param="feedbackSaturation">
+                    <div class="slider__header">
+                        <span class="slider__label">Saturation</span>
+                        <span class="slider__value">1.00</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill" data-fill="33">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slider" data-min="0" data-max="3" data-step="0.01" data-param="feedbackBrightness">
+                    <div class="slider__header">
+                        <span class="slider__label">Brightness</span>
+                        <span class="slider__value">1.00</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill" data-fill="33">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div class="content-panel" data-panel="settings">
+            <div class="panel-section" data-expand-hide>
+                <button class="tool-btn tool-btn--expand" data-expand-target="nodes-section">
+                    <span>Nodes</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" id="settings-rendering-toggle" data-expand-target="rendering-section">
+                    <span>Rendering</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" id="config-btn" data-expand-target="config-section">
+                    <span>Config</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" id="device-btn" data-expand-target="device-section">
+                    <span>Device</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" id="help-btn" data-expand-target="help-section">
+                    <span>Help</span>
+                </button>
+                <button class="tool-btn tool-btn--expand" data-expand-target="color-section">
+                    <span>Color</span>
+                </button>
+            </div>
+            <div class="panel-section" data-expand-hide>
+                <div class="tool-grid tool-grid--2x2">
+                    <button class="tool-btn active" id="toggle-tooltips">Tooltips</button>
+                    <button class="tool-btn" id="view-hide-btn">Hide</button>
+                    <button class="tool-btn" id="toggle-sync">Sync</button>
+                </div>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="resetSettings">Reset</button>
+                    <button class="tool-btn" id="saveSettings">Save</button>
+                </div>
+            </div>
+            <div class="panel-section panel-section--hidden" id="device-section">
+                <span class="content-title">Device Input</span>
+                <div class="dropdown">
+                    <button class="dropdown__selected tool-btn" id="camera-device-dropdown">
+                        <span>Default Camera</span>
+                    </button>
+                    <div class="dropdown__menu" id="camera-device-menu">
+                    </div>
+                </div>
+                <div class="dropdown">
+                    <button class="dropdown__selected tool-btn" id="screen-device-dropdown">
+                        <span>Primary Screen</span>
+                    </button>
+                    <div class="dropdown__menu" id="screen-device-menu">
+                    </div>
+                </div>
+                <div class="dropdown">
+                    <button class="dropdown__selected tool-btn" id="midi-device-dropdown">
+                        <span>All MIDI Devices</span>
+                    </button>
+                    <div class="dropdown__menu" id="midi-device-menu">
+                    </div>
+                </div>
+            </div>
+            <div class="panel-section panel-section--hidden" id="nodes-section">
+                <span class="content-title">Nodes</span>
+                <div class="tool-grid tool-grid--2x1 hidden">
+                    <button class="tool-btn" id="toggle-wires">Wires</button>
+                    <button class="tool-btn" id="toggle-autolayout">Auto</button>
+                </div>
+                <button class="tool-btn hidden" id="btn-fit">Fit</button>
+            </div>
+            <div class="panel-section panel-section--hidden" id="rendering-section">
+                <span class="content-title">Rendering</span>
+                <div class="dropdown">
+                    <button class="dropdown__selected tool-btn" id="precision-dropdown">
+                        <span>RGBA8 (8-bit)</span>
+                    </button>
+                    <div class="dropdown__menu" id="precision-menu">
+                    </div>
+                </div>
+                <div class="dropdown">
+                    <button class="dropdown__selected tool-btn" id="resolution-dropdown">
+                        <span>1x (CSS)</span>
+                    </button>
+                    <div class="dropdown__menu" id="resolution-menu">
+                        <div class="dropdown__item" data-value="0.25">0.25x</div>
+                        <div class="dropdown__item" data-value="0.5">0.5x</div>
+                        <div class="dropdown__item" data-value="0.75">0.75x</div>
+                        <div class="dropdown__item active" data-value="1">1x (CSS)</div>
+                        <div class="dropdown__item" data-value="dpr">Native (DPR)</div>
+                        <div class="dropdown__item" data-value="1.5">1.5x</div>
+                        <div class="dropdown__item" data-value="2">2x (Retina)</div>
+                    </div>
+                </div>
+                <button class="tool-btn tool-btn--expand" id="settings-debug-mode" data-expand-target="debug-section">
+                    <span>Debug</span>
+                </button>
+            </div>
+            <div class="panel-section panel-section--hidden" id="debug-section">
+                <div class="debug-info">
+                    <div class="debug-row"><span class="debug-key">Renderer</span><span class="debug-val" id="dbg-renderer">—</span></div>
+                    <div class="debug-row"><span class="debug-key">Vendor</span><span class="debug-val" id="dbg-vendor">—</span></div>
+                    <div class="debug-row"><span class="debug-key">GL Version</span><span class="debug-val" id="dbg-gl-version">—</span></div>
+                    <div class="debug-row"><span class="debug-key">GLSL Version</span><span class="debug-val" id="dbg-glsl-version">—</span></div>
+                    <div class="debug-sep"></div>
+                    <div class="debug-row"><span class="debug-key">EXT_color_buffer_float</span><span class="debug-val" id="dbg-ext-cbf">—</span></div>
+                    <div class="debug-row"><span class="debug-key">OES_texture_float_linear</span><span class="debug-val" id="dbg-ext-fl">—</span></div>
+                    <div class="debug-sep"></div>
+                    <div class="debug-row"><span class="debug-key">FBO Precision</span><span class="debug-val" id="dbg-precision">—</span></div>
+                    <div class="debug-row"><span class="debug-key">FBO Filter</span><span class="debug-val" id="dbg-filter">—</span></div>
+                    <div class="debug-row"><span class="debug-key">FBO Status</span><span class="debug-val" id="dbg-fbo-status">—</span></div>
+                    <div class="debug-row"><span class="debug-key">FBO Count</span><span class="debug-val" id="dbg-fbo-count">—</span></div>
+                    <div class="debug-row"><span class="debug-key">FBO Dimensions</span><span class="debug-val" id="dbg-fbo-dims">—</span></div>
+                    <div class="debug-row"><span class="debug-key">Device Pixel Ratio</span><span class="debug-val" id="dbg-dpr">—</span></div>
+                    <div class="debug-row"><span class="debug-key">VRAM (est.)</span><span class="debug-val" id="dbg-vram">—</span></div>
+                    <div class="debug-sep"></div>
+                    <div class="debug-row"><span class="debug-key">Max Texture Size</span><span class="debug-val" id="dbg-max-tex">—</span></div>
+                    <div class="debug-row"><span class="debug-key">Max Renderbuffer</span><span class="debug-val" id="dbg-max-rb">—</span></div>
+                    <div class="debug-sep"></div>
+                    <div class="debug-row"><span class="debug-key text-underline">Format Probe Results</span></div>
+                    <div id="dbg-format-probe"></div>
+                </div>
+                <button class="tool-btn mt-2" id="dbg-refresh">Refresh</button>
+            </div>
+            <div class="config-cols panel-section--hidden custom-scrollbar" id="config-section">
+                <div class="panel-section">
+                    <span class="content-title">Screenshot</span>
+                    <span class="content-label">Capture Resolution</span>
+                    <div class="dropdown" id="captureResolution-dropdown">
+                        <button class="dropdown__selected tool-btn"><span>Half (1/2)</span></button>
+                        <div class="dropdown__menu" id="captureResolution-menu">
+                            <div class="dropdown__item" data-value="1">Full (1x)</div>
+                            <div class="dropdown__item active" data-value="0.5">Half (1/2)</div>
+                            <div class="dropdown__item" data-value="0.25">Quarter (1/4)</div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="captureResolution" value="0.5">
+                    <span class="content-label">Image Format</span>
+                    <div class="dropdown" id="captureFormat-dropdown">
+                        <button class="dropdown__selected tool-btn"><span>WebP (compressed)</span></button>
+                        <div class="dropdown__menu" id="captureFormat-menu">
+                            <div class="dropdown__item" data-value="png">PNG (lossless)</div>
+                            <div class="dropdown__item active" data-value="webp">WebP (compressed)</div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="captureFormat" value="webp">
+                    <div class="slider" id="captureQualitySlider" data-min="10" data-max="100" data-step="1">
+                        <div class="slider__header">
+                            <span class="slider__label">Quality</span>
+                            <span class="slider__value" id="qualityDisplay">80%</span>
+                        </div>
+                        <div class="slider__track">
+                            <div class="slider__fill">
+                                <div class="slider__handle"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <span class="content-title">LLM</span>
+                    <span class="content-label">Server URL</span>
+                    <input id="apiUrl" type="text" value="http://localhost:1234/v1/" />
+                    <span class="content-label">Bearer Token</span>
+                    <input id="bearerKey" type="password" placeholder="sk-..." />
+                    <div class="flex-row">
+                        <span class="content-label flex-1">Model (images)</span>
+                        <button id="refreshModels" class="tool-btn">Refresh</button>
+                    </div>
+                    <div class="dropdown" id="modelSelectImage-dropdown">
+                        <button class="dropdown__selected tool-btn"><span>Loading models...</span></button>
+                        <div class="dropdown__menu" id="modelSelectImage-menu"></div>
+                    </div>
+                    <input id="modelNameImage" type="hidden" value="qwen/qwen3.5-9b" />
+                    <span class="content-label">Model (text)</span>
+                    <div class="dropdown" id="modelSelectText-dropdown">
+                        <button class="dropdown__selected tool-btn"><span>Loading models...</span></button>
+                        <div class="dropdown__menu" id="modelSelectText-menu"></div>
+                    </div>
+                    <input id="modelNameText" type="hidden" value="" />
+                    <span class="content-label">Live Tuning Max Iterations</span>
+                    <input id="liveTuningMaxIterations" type="number" min="1" max="100" value="20" />
+                </div>
+            </div>
+            <div class="panel-section panel-section--hidden panel-section--help" id="help-section">
+                <span class="content-title">Help</span>
+                <div class="bp-help-section">
+                    <h4>Overview</h4>
+                    <p><strong>SlopShady</strong> is a real-time GLSL shader editor with AI integration, modulation routing, and live performance controls.</p>
+                </div>
+                <div class="bp-help-section">
+                    <h4>Multi-Layer System</h4>
+                    <p>Supports up to 8 shader layers that can be blended together.</p>
+                    <ul>
+                        <li><strong>Layer Selection:</strong> Click a layer strip in the mixer to select it for editing</li>
+                        <li><span class="bp-help-key">Ctrl+1</span> to <span class="bp-help-key">Ctrl+8</span> — Select layer 1-8 for editing</li>
+                    </ul>
+                </div>
+                <div class="bp-help-section">
+                    <h4>Voice System</h4>
+                    <p>Each layer has up to 4 polyphonic voices triggered via MIDI or on-screen keyboard.</p>
+                    <ul>
+                        <li><strong>Poly:</strong> Multiple simultaneous voices with voice stealing</li>
+                        <li><strong>Mono:</strong> Single voice, last-note priority</li>
+                        <li><strong>Glide:</strong> Mono with portamento between notes</li>
+                        <li><strong>MIDI:</strong> Note-on/off triggers voices, CC routes to modulation</li>
+                    </ul>
+                </div>
+                <div class="bp-help-section">
+                    <h4>Keyboard Shortcuts</h4>
+                    <ul>
+                        <li><span class="bp-help-key">Ctrl+S</span> — Save full state to JSON file</li>
+                        <li><span class="bp-help-key">Ctrl+Shift+S</span> — Save shaders list only</li>
+                        <li><span class="bp-help-key">Ctrl+F</span> — Toggle fullscreen</li>
+                        <li><span class="bp-help-key">Ctrl+M</span> — Toggle layer mixer panel</li>
+                        <li><span class="bp-help-key">Tab</span> — Toggle UI panel visibility</li>
+                        <li><span class="bp-help-key">Space</span> — Pause/Play shader animation</li>
+                        <li><span class="bp-help-key">Ctrl+Shift+Space</span> — Start/Stop playlist</li>
+                        <li><span class="bp-help-key">Ctrl+Shift+Backspace</span> — Master reset (clear all settings)</li>
+                        <li><span class="bp-help-key">Ctrl+Shift+R</span> — Start/Stop recording</li>
+                        <li><span class="bp-help-key">Ctrl+Shift+L</span> — Show modulation matrix</li>
+                    </ul>
+                </div>
+                <div class="bp-help-section">
+                    <h4>Layers</h4>
+                    <ul>
+                        <li><span class="bp-help-key">1</span>–<span class="bp-help-key">8</span> — Select layer</li>
+                        <li><span class="bp-help-key">Ctrl+1</span>–<span class="bp-help-key">Ctrl+8</span> — Select layer</li>
+                        <li><span class="bp-help-key">Shift+1</span>–<span class="bp-help-key">Shift+8</span> — Toggle layer enabled</li>
+                        <li><span class="bp-help-key">Insert</span> — Crossfade to selected layer</li>
+                        <li><span class="bp-help-key">Delete</span> — Switch to previous layer</li>
+                    </ul>
+                </div>
+                <div class="bp-help-section">
+                    <h4>Shader Navigation</h4>
+                    <ul>
+                        <li><span class="bp-help-key">+</span> / <span class="bp-help-key">=</span> — Next shader/preset</li>
+                        <li><span class="bp-help-key">-</span> — Previous shader/preset</li>
+                        <li><span class="bp-help-key">Shift+Delete</span> — Delete current shader</li>
+                    </ul>
+                </div>
+                <div class="bp-help-section">
+                    <h4>Code Dials</h4>
+                    <ul>
+                        <li><span class="bp-help-key">q</span>–<span class="bp-help-key">m</span> hold — Momentary dial (×2 while held)</li>
+                        <li><span class="bp-help-key">Shift+key</span> — Dial ×2</li>
+                        <li><span class="bp-help-key">Alt+key</span> — Dial ÷2</li>
+                        <li><span class="bp-help-key">Alt+Shift+key</span> — Reset single dial</li>
+                        <li><span class="bp-help-key">Backspace</span> — Reset all dials</li>
+                    </ul>
+                </div>
+                <div class="bp-help-section">
+                    <h4>Misc</h4>
+                    <ul>
+                        <li><span class="bp-help-key">`</span> / <span class="bp-help-key">~</span> — Toggle feedback</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="panel-section--hidden" id="color-section">
+                <div class="panel-section">
+                    <span class="content-title">Primary</span>
+                    <div class="knob-row">
+                        <div class="knob-group">
+                            <div class="knob">
+                                <div class="knob__track">
+                                    <svg width="36" height="36" viewBox="0 0 36 36">
+                                        <circle class="knob__track-bg" cx="18" cy="18" r="14"/>
+                                        <circle class="knob__track-fill" cx="18" cy="18" r="14" stroke-dasharray="44 88" stroke-dashoffset="0"/>
+                                    </svg>
+                                </div>
+                                <div class="knob__indicator" data-rotation="90"></div>
+                            </div>
+                            <span class="knob__label">Lift</span>
+                        </div>
+                        <div class="knob-group">
+                            <div class="knob">
+                                <div class="knob__track">
+                                    <svg width="36" height="36" viewBox="0 0 36 36">
+                                        <circle class="knob__track-bg" cx="18" cy="18" r="14"/>
+                                        <circle class="knob__track-fill" cx="18" cy="18" r="14" stroke-dasharray="66 88" stroke-dashoffset="0"/>
+                                    </svg>
+                                </div>
+                                <div class="knob__indicator" data-rotation="135"></div>
+                            </div>
+                            <span class="knob__label">Gamma</span>
+                        </div>
+                        <div class="knob-group">
+                            <div class="knob">
+                                <div class="knob__track">
+                                    <svg width="36" height="36" viewBox="0 0 36 36">
+                                        <circle class="knob__track-bg" cx="18" cy="18" r="14"/>
+                                        <circle class="knob__track-fill" cx="18" cy="18" r="14" stroke-dasharray="66 88" stroke-dashoffset="0"/>
+                                    </svg>
+                                </div>
+                                <div class="knob__indicator" data-rotation="135"></div>
+                            </div>
+                            <span class="knob__label">Gain</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <span class="content-title">Curves</span>
+                    <div class="tool-grid tool-grid--2x2">
+                        <button class="tool-btn tool-btn--radio">Master</button>
+                        <button class="tool-btn tool-btn--radio">RGB</button>
+                        <button class="tool-btn tool-btn--radio">HSL</button>
+                        <button class="tool-btn tool-btn--radio">Lum</button>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <span class="content-title">Wheels</span>
+                    <div class="color-grid">
+                        <div class="color-swatch" data-color="#8B4513"></div>
+                        <div class="color-swatch active" data-color="#808080"></div>
+                        <div class="color-swatch" data-color="#F5F5DC"></div>
+                        <div class="color-swatch" data-color="#000000"></div>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <span class="content-title">Scopes</span>
+                    <div class="tool-grid tool-grid--2x2">
+                        <button class="tool-btn tool-btn--radio">Wave</button>
+                        <button class="tool-btn tool-btn--radio active">Vector</button>
+                        <button class="tool-btn tool-btn--radio">Hist</button>
+                        <button class="tool-btn tool-btn--radio">RGB P</button>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <span class="content-title">LUTs</span>
+                    <div class="tool-group">
+                        <div class="dropdown">
+                            <button class="dropdown__selected tool-btn" id="lut-dropdown">
+                                <span>None</span>
+                            </button>
+                            <div class="dropdown__menu" id="lut-menu">
+                                <div class="dropdown__item active" data-value="None">None</div>
+                                <div class="dropdown__item" data-value="Rec709">Rec709</div>
+                                <div class="dropdown__item" data-value="LogC">LogC</div>
+                                <div class="dropdown__item" data-value="S-Log3">S-Log3</div>
+                            </div>
+                        </div>
+                        <div class="lut-buttons">
+                            <button class="tool-btn">Load</button>
+                            <button class="tool-btn">Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- LLM Panel -->
+        <div class="content-panel content-panel--scrollable" data-panel="llm">
+            <div class="panel-section panel-section--wide">
+                <span class="content-title">Conversation</span>
+                <div class="flex-row mb-2">
+                    <button id="modeShader" class="tool-btn tool-btn--mode active">Shader</button>
+                    <button id="modeChat" class="tool-btn tool-btn--mode inactive">Chat</button>
+                </div>
+                <textarea id="userMessage" rows="2" placeholder="Enter your request here..."></textarea>
+                <div class="flex-row mt-2">
+                    <button id="askLLM" class="tool-btn flex-1">Send</button>
+                    <button id="askLLMWithImage" class="tool-btn flex-1">+ Image</button>
+                    <button id="clearHistory" class="tool-btn w-auto">Clear</button>
+                </div>
+                <div id="tokenCount" class="text-right text-small text-muted mt-1"></div>
+            </div>
+            <div class="panel-section" style="width:560px;min-width:560px;flex-shrink:0;">
+                <span class="content-title">Response</span>
+                <div id="response"></div>
+                <div id="status" class="status"></div>
+            </div>
+            <div class="panel-section panel-section--medium">
+                <span class="content-title">Live Tuning</span>
+                <textarea id="liveTuningPrompt" rows="2" placeholder="Describe what you want to tune...">Make new shaders, be creative, never stop</textarea>
+                <div class="flex-row mt-2">
+                    <button id="startLiveTuning" class="tool-btn flex-1">Start</button>
+                    <button id="stopLiveTuning" class="tool-btn flex-1" disabled>Stop</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recorder Panel -->
+        <div class="content-panel content-panel--scrollable" data-panel="recorder">
+            <div class="panel-section">
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="startRecording">⏺ Rec</button>
+                    <button class="tool-btn disabled" id="stopRecording">⏹ Stop</button>
+                </div>
+                <div class="dropdown" id="rec-format-dropdown">
+                    <div class="dropdown__selected tool-btn">
+                        <span>WebM (VP9)</span>
+
+                    </div>
+                    <div class="dropdown__menu" id="rec-format-menu">
+                        <div class="dropdown__item active" data-value="webm">WebM (VP9)</div>
+                        <div class="dropdown__item" data-value="webm-vp8">WebM (VP8)</div>
+                    </div>
+                </div>
+                <div class="dropdown" id="rec-resolution-dropdown">
+                    <div class="dropdown__selected tool-btn">
+                        <span>1080p Full HD</span>
+
+                    </div>
+                    <div class="dropdown__menu" id="rec-resolution-menu">
+                        <div class="dropdown__item" data-value="720p">720p HD</div>
+                        <div class="dropdown__item active" data-value="1080p">1080p Full HD</div>
+                        <div class="dropdown__item" data-value="1440p">1440p 2K</div>
+                        <div class="dropdown__item" data-value="4k">4K UHD</div>
+                    </div>
+                </div>
+                <div class="dropdown" id="rec-fps-dropdown">
+                    <div class="dropdown__selected tool-btn">
+                        <span>60 fps</span>
+
+                    </div>
+                    <div class="dropdown__menu" id="rec-fps-menu">
+                        <div class="dropdown__item" data-value="30">30 fps</div>
+                        <div class="dropdown__item active" data-value="60">60 fps</div>
+                    </div>
+                </div>
+                <div class="slider" id="rec-bitrate-slider" data-param="recordBitrate" data-min="1" data-max="100" data-initial-value="25">
+                    <div class="slider__header">
+                        <span class="slider__label">Bitrate</span>
+                        <span class="slider__value" id="recordBitrateVal">25 Mbps</span>
+                    </div>
+                    <div class="slider__track">
+                        <div class="slider__fill">
+                            <div class="slider__handle"></div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="panel-divider"></div>
+            <div class="panel-section" id="stream-panel">
+                <div class="content-title">Live Stream (WebSRT)</div>
+                <input type="text" id="stream-gateway-url" value="https://127.0.0.1:4433/wt" placeholder="Gateway WT URL">
+                <input type="text" id="stream-name" value="slopshady" placeholder="Stream name">
+                <div class="dropdown" id="stream-codec-dropdown">
+                    <button class="dropdown__selected tool-btn"><span>AV1</span></button>
+                    <div class="dropdown__menu" id="stream-codec-menu"></div>
+                </div>
+                <div class="tool-grid tool-grid--2x1">
+                    <label class="stream-input-label">Bitrate (Mbps)
+                        <input type="number" id="stream-bitrate" value="8" min="0.1" max="100" step="0.1">
+                    </label>
+                    <label class="stream-input-label">FPS
+                        <input type="number" id="stream-fps" value="60" min="1" max="120" step="1">
+                    </label>
+                </div>
+                <div class="tool-grid tool-grid--2x1">
+                    <label class="stream-input-label">Latency (ms)
+                        <input type="number" id="stream-latency" value="300" min="20" max="8000" step="10">
+                    </label>
+                    <label class="stream-input-label">Keyframe (ms)
+                        <input type="number" id="stream-keyframe" value="2000" min="100" max="60000" step="100">
+                    </label>
+                </div>
+                <button class="tool-btn" id="stream-abr-toggle">Adaptive Bitrate</button>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="startStream">▶ Stream</button>
+                    <button class="tool-btn disabled" id="stopStream">⏹ Stop</button>
+                </div>
+                <div id="stream-status"></div>
+                <div id="stream-stats"></div>
+                <div id="stream-config"></div>
+                <div id="stream-codecs"></div>
+            </div>
+        </div>
+
+        <!-- Scanimate Panel -->
+        <div class="content-panel content-panel--scrollable" data-panel="scanimate">
+            <div class="panel-section">
+                <div class="bg-controls">
+                    <button class="tool-btn tool-btn--expand " id="scanimate-input-btn" data-expand-class="scanimate--input-mode"><span>Input</span></button>
+                    <button class="tool-btn tool-btn--expand " id="scanimate-osc-btn" data-expand-class="scanimate--osc-mode"><span>Oscillators</span></button>
+                    <button class="tool-btn tool-btn--expand " id="scanimate-patch-btn" data-expand-class="scanimate--patch-mode"><span>Patch Bay</span></button>
+                </div>
+            </div>
+            <div class="panel-section" id="scanimate-section-input">
+                <span class="content-title">Input</span>
+                <span class="content-label">Source URL</span>
+                <input type="text" id="scanimate-url" placeholder="https://...">
+                <span class="content-label">File</span>
+                <input type="file" id="scanimate-file" accept="image/*">
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="scanimate-enabled-toggle">Enabled</button>
+                    <div class="dropdown" id="scanimate-fit-dropdown">
+                        <button class="dropdown__selected tool-btn"><span>Cover</span></button>
+                        <div class="dropdown__menu" id="scanimate-fit-menu">
+                            <div class="dropdown__item active" data-value="cover">Cover</div>
+                            <div class="dropdown__item" data-value="contain">Contain</div>
+                            <div class="dropdown__item" data-value="stretch">Stretch</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slider" id="scanimate-speed-slider" data-min="0" data-max="5" data-step="0.01" data-initial-value="1">
+                    <div class="slider__header">
+                        <span class="slider__label">Speed</span>
+                        <span class="slider__value" id="scanimate-speed-value">1.00</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+            </div>
+            <div id="scanimate-osc-insert"></div>
+            <div class="panel-section" id="scanimate-section-deflect" data-expand-hide>
+                <span class="content-title">Deflection</span>
+                <div class="slider" id="scanimate-waveXDepth-slider" data-min="0" data-max="0.2" data-step="0.001" data-initial-value="0.04">
+                    <div class="slider__header">
+                        <span class="slider__label">Wave X</span>
+                        <span class="slider__value" id="scanimate-waveXDepth-value">0.040</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="slider" id="scanimate-waveYDepth-slider" data-min="0" data-max="0.2" data-step="0.001" data-initial-value="0.03">
+                    <div class="slider__header">
+                        <span class="slider__label">Wave Y</span>
+                        <span class="slider__value" id="scanimate-waveYDepth-value">0.030</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="slider" id="scanimate-rotation-slider" data-min="-3.14" data-max="3.14" data-step="0.01" data-initial-value="0">
+                    <div class="slider__header">
+                        <span class="slider__label">Rotation</span>
+                        <span class="slider__value" id="scanimate-rotation-value">0.00</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="slider" id="scanimate-barrelAmount-slider" data-min="0" data-max="1" data-step="0.01" data-initial-value="0">
+                    <div class="slider__header">
+                        <span class="slider__label">Barrel</span>
+                        <span class="slider__value" id="scanimate-barrelAmount-value">0.00</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="slider" id="scanimate-domainWarpIterations-slider" data-min="1" data-max="5" data-step="1" data-initial-value="3">
+                    <div class="slider__header">
+                        <span class="slider__label">Warp Iters</span>
+                        <span class="slider__value" id="scanimate-domainWarpIterations-value">3</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <span class="content-label">Segments</span>
+                <div class="dropdown" id="scanimate-segmentCount-dropdown">
+                    <button class="dropdown__selected tool-btn"><span>1</span></button>
+                    <div class="dropdown__menu" id="scanimate-segmentCount-menu">
+                        <div class="dropdown__item active" data-value="1">1</div>
+                        <div class="dropdown__item" data-value="2">2</div>
+                        <div class="dropdown__item" data-value="3">3</div>
+                        <div class="dropdown__item" data-value="4">4</div>
+                        <div class="dropdown__item" data-value="5">5</div>
+                    </div>
+                </div>
+                <div id="scanimate-segment-controls"></div>
+            </div>
+            <div class="panel-section" id="scanimate-section-anim" data-expand-hide>
+                <span class="content-title">Animation</span>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="scanimate-anim-enabled">Enabled</button>
+                    <button class="tool-btn" id="scanimate-anim-loop">Loop</button>
+                </div>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="scanimate-anim-play">Play</button>
+                    <button class="tool-btn" id="scanimate-set-initial">Set Init</button>
+                </div>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="scanimate-set-final">Set Final</button>
+                </div>
+                <div class="slider" id="scanimate-anim-duration-slider" data-min="0.1" data-max="30" data-step="0.1" data-initial-value="5">
+                    <div class="slider__header">
+                        <span class="slider__label">Duration</span>
+                        <span class="slider__value" id="scanimate-anim-duration-value">5.0s</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="slider" id="scanimate-anim-rateA-slider" data-min="0.1" data-max="5" data-step="0.01" data-initial-value="1">
+                    <div class="slider__header">
+                        <span class="slider__label">Rate A</span>
+                        <span class="slider__value" id="scanimate-anim-rateA-value">1.00</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="slider" id="scanimate-anim-rateB-slider" data-min="0.1" data-max="5" data-step="0.01" data-initial-value="1">
+                    <div class="slider__header">
+                        <span class="slider__label">Rate B</span>
+                        <span class="slider__value" id="scanimate-anim-rateB-value">1.00</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="slider" id="scanimate-anim-progress-slider" data-min="0" data-max="1" data-step="0.001" data-initial-value="0">
+                    <div class="slider__header">
+                        <span class="slider__label">Progress</span>
+                        <span class="slider__value" id="scanimate-anim-progress-value">0.0%</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+            </div>
+            <div class="panel-section" id="scanimate-section-color" data-expand-hide>
+                <span class="content-title">Colorizer</span>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn active" id="scanimate-colorizer-enabled">Enabled</button>
+                </div>
+                <div class="tool-grid tool-grid--3x2 tool-grid--3x2--fixed">
+                    <button class="tool-btn tool-btn--color" id="scanimate-colorA-btn" style="--btn-color:#00ccff"><span class="tool-btn__swatch"></span></button>
+                    <button class="tool-btn tool-btn--color" id="scanimate-colorB-btn" style="--btn-color:#ff33aa"><span class="tool-btn__swatch"></span></button>
+                    <button class="tool-btn tool-btn--color" id="scanimate-colorC-btn" style="--btn-color:#ffee33"><span class="tool-btn__swatch"></span></button>
+                </div>
+                <input type="color" id="scanimate-colorA" value="#00ccff" hidden>
+                <input type="color" id="scanimate-colorB" value="#ff33aa" hidden>
+                <input type="color" id="scanimate-colorC" value="#ffee33" hidden>
+                <div class="slider" id="scanimate-colorCycleSpeed-slider" data-min="0" data-max="5" data-step="0.01" data-initial-value="1">
+                    <div class="slider__header">
+                        <span class="slider__label">Cycle Speed</span>
+                        <span class="slider__value" id="scanimate-colorCycleSpeed-value">1.00</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="slider" id="scanimate-brightnessBoost-slider" data-min="0" data-max="3" data-step="0.01" data-initial-value="0.9">
+                    <div class="slider__header">
+                        <span class="slider__label">Brightness</span>
+                        <span class="slider__value" id="scanimate-brightnessBoost-value">0.90</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+            </div>
+            <div class="panel-section" id="scanimate-section-crt" data-expand-hide>
+                <span class="content-title">CRT</span>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn active" id="scanimate-crt-scanlines">Scanlines</button>
+                    <button class="tool-btn active" id="scanimate-crt-glow">Glow</button>
+                </div>
+                <div class="slider" id="scanimate-scanlineIntensity-slider" data-min="0" data-max="0.5" data-step="0.005" data-initial-value="0.08">
+                    <div class="slider__header">
+                        <span class="slider__label">Scanlines</span>
+                        <span class="slider__value" id="scanimate-scanlineIntensity-value">0.08</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="slider" id="scanimate-glowAmount-slider" data-min="0" data-max="2" data-step="0.01" data-initial-value="0.3">
+                    <div class="slider__header">
+                        <span class="slider__label">Phosphor</span>
+                        <span class="slider__value" id="scanimate-glowAmount-value">0.30</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="scanimate-crt-chromatic">RGB Shift</button>
+                    <button class="tool-btn active" id="scanimate-crt-vignette">Vignette</button>
+                </div>
+                <div class="slider" id="scanimate-chromaticAmount-slider" data-min="0" data-max="0.05" data-step="0.001" data-initial-value="0.008">
+                    <div class="slider__header">
+                        <span class="slider__label">RGB Shift</span>
+                        <span class="slider__value" id="scanimate-chromaticAmount-value">0.008</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="slider" id="scanimate-vignetteAmount-slider" data-min="0" data-max="2" data-step="0.01" data-initial-value="0.6">
+                    <div class="slider__header">
+                        <span class="slider__label">Vignette</span>
+                        <span class="slider__value" id="scanimate-vignetteAmount-value">0.60</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+            </div>
+            <div class="panel-section" id="scanimate-section-feedback" data-expand-hide>
+                <span class="content-title">Feedback</span>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="scanimate-feedback-enabled">Enabled</button>
+                </div>
+                <div class="slider" id="scanimate-feedback-amount-slider" data-min="0" data-max="1" data-step="0.01" data-initial-value="0.5">
+                    <div class="slider__header">
+                        <span class="slider__label">Amount</span>
+                        <span class="slider__value" id="scanimate-feedback-amount-value">0.50</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+                <div class="slider" id="scanimate-feedback-decay-slider" data-min="0" data-max="1" data-step="0.01" data-initial-value="0.9">
+                    <div class="slider__header">
+                        <span class="slider__label">Decay</span>
+                        <span class="slider__value" id="scanimate-feedback-decay-value">0.90</span>
+                    </div>
+                    <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
+                </div>
+            </div>
+            <div class="panel-section" id="scanimate-section-patch">
+                <span class="content-title">Patch Bay</span>
+                <div id="scanimate-patch-grid"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="shader-modal">
+    <div id="shader-modal-content">
+        <h2 id="modal-title"></h2>
+        <pre id="modal-code"></pre>
+        <button id="modal-close">Close</button>
+    </div>
+</div>
+
+<div id="node-inspector" style="display:none">
+    <div id="node-inspector-title"></div>
+    <div id="node-inspector-props"></div>
+    <div id="node-inspector-conns"></div>
+</div>
+
+<script src="/static/js/lib/litegraph.min.js"></script>
+<script defer src="/static/js/lib/butterchurn.min.js"></script>
+<script defer src="/static/js/lib/butterchurn-presets-base.min.js"></script>
+<script defer src="/static/js/lib/butterchurn-presets-extra.min.js"></script>
+<!-- Application Modules -->
+<script type="module" src="/static/js/main.js"></script>
+
+</body>
+</html>

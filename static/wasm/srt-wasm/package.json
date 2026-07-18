@@ -1,0 +1,15 @@
+{
+  "name": "srt-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "srt_wasm_bg.wasm",
+    "srt_wasm.js",
+    "srt_wasm.d.ts"
+  ],
+  "main": "srt_wasm.js",
+  "types": "srt_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
