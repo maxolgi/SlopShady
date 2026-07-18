@@ -3,12 +3,16 @@
  *
  * Loads two WASM modules (srt-wasm + ts-muxer-wasm), runs the SRT receiver that
  * both ingests incoming datagrams and publishes upstream TS, and exchanges
- * datagrams with the main thread (StreamingUI).
+ * datagrams with the main thread (StreamingUI). Owns the Opus AudioEncoder
+ * (fed from a transferred AudioWorklet MessagePort).
  *
  * Message protocol (main → worker):
- *   { type:'init', latencyMs }                 load wasm, build rx+muxer, start poll/stats loops
+ *   { type:'init', latencyMs, videoCodec, epochMs }
+ *                                              load wasm, build rx+muxer, start poll/stats loops
  *   { type:'video', data, timestamp, isKey }   one encoded video chunk (H.264/HEVC Annex B, or AV1 raw OBUs)
- *   { type:'audio', data, timestamp }          one Opus packet (push to muxer)
+ *   { type:'audio-port', port }                MessagePort owned by the StreamAudioProcessor
+ *                                              (Phase 2 — replaces the old 'audio' message;
+ *                                              AudioEncoder runs in the worker)
  *   { type:'datagram', data }                  one WebTransport datagram from gateway
  *   { type:'tick' }                            rAF-driven poll wakeup (supplements setInterval)
  *   { type:'stop' }                            stop loops, flush remaining TS
@@ -34,6 +38,9 @@ let videoCodec = 'h264';
 let spsPps = null; // Annex B SPS+PPS bytes (from encoder avcC description); prepended on keyframes
 let lastPoll = 0;
 let driftWarned = false;
+let epochMs = 0;          // stream-epoch in performance.now() ms (audio PTS reference)
+let audioEncoder = null;
+let audioPort = null;
 
 const nowUs = () => performance.now() * 1000;
 
@@ -78,6 +85,7 @@ self.onmessage = async (e) => {
                 rx = SrtReceiver.newWithLatency(m.latencyMs || 120);
                 muxer = new TsMuxer();
                 videoCodec = m.videoCodec || 'h264';
+                epochMs = m.epochMs || 0;
                 try { muxer.setVideoCodec(videoCodec); } catch (e) { /* older wasm: ignore */ }
                 spsPps = null;
                 if (pollTimer) clearInterval(pollTimer);
@@ -129,11 +137,59 @@ self.onmessage = async (e) => {
                 }
                 flushTsToSrt();
             }
-        } else if (m.type === 'audio') {
-            if (rx && rx.isHandshakeComplete() && muxer) {
-                muxer.push_audio(new Uint8Array(m.data), m.timestamp);
-                flushTsToSrt();
-            }
+        } else if (m.type === 'audio-port') {
+            // Phase 2: AudioWorklet tap. The transferred MessagePort delivers
+            // { ts, data: Float32Array(1920) } messages directly from the audio
+            // render thread. AudioEncoder is constructed lazily on first frame
+            // (so init doesn't fail if the encoder isn't available).
+            audioPort = m.port;
+            audioPort.onmessage = (e) => {
+                const { ts, data } = e.data;
+                if (!rx || !rx.isHandshakeComplete() || !muxer) return;
+                if (!audioEncoder) {
+                    try {
+                        audioEncoder = new AudioEncoder({
+                            output: (chunk) => {
+                                if (!rx || !rx.isHandshakeComplete() || !muxer) return;
+                                const buf = new ArrayBuffer(chunk.byteLength);
+                                chunk.copyTo(new Uint8Array(buf));
+                                // chunk.timestamp was set on the input AudioData
+                                // (see below) — WebCodecs propagates it through
+                                // the Opus encoder, so it's already on the
+                                // stream-epoch clock.
+                                muxer.push_audio(new Uint8Array(buf), chunk.timestamp);
+                                flushTsToSrt();
+                            },
+                            error: (err) => console.error('[worker] AudioEncoder', err),
+                        });
+                        audioEncoder.configure({
+                            codec: 'opus',
+                            sampleRate: 48000,
+                            numberOfChannels: 2,
+                            bitrate: 128000,
+                        });
+                    } catch (err) {
+                        postMessage({ type: 'log', msg: 'AudioEncoder init failed: ' + (err && err.message || err) });
+                        return;
+                    }
+                }
+                // PTS in microseconds, on the same wall-clock-derived epoch as
+                // video. The worklet stamps `ts` with performance.now() at the
+                // instant the 960-sample frame filled.
+                const pts = Math.round((ts - epochMs) * 1000);
+                const audioData = new AudioData({
+                    format: 'f32-planar',
+                    sampleRate: 48000,
+                    numberOfFrames: 960,
+                    numberOfChannels: 2,
+                    timestamp: pts,
+                    data: data,
+                });
+                if (audioEncoder.encodeQueueSize < 10) {
+                    audioEncoder.encode(audioData);
+                }
+                audioData.close();
+            };
         } else if (m.type === 'datagram') {
             if (rx) processActions(rx.handle_datagram(new Uint8Array(m.data), nowUs()));
         } else if (m.type === 'tick') {
@@ -144,6 +200,12 @@ self.onmessage = async (e) => {
         } else if (m.type === 'stop') {
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
             if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
+            if (audioPort) { try { audioPort.close(); } catch (e) { /* ignore */ } audioPort = null; }
+            if (audioEncoder) {
+                try { audioEncoder.flush(); } catch (e) { /* ignore */ }
+                try { audioEncoder.close(); } catch (e) { /* ignore */ }
+                audioEncoder = null;
+            }
             if (muxer) flushTsToSrt();
             postMessage({ type: 'stopped' });
         }

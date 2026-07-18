@@ -1,28 +1,33 @@
 /**
  * StreamingUI — main-thread coordinator for WebSRT publishing.
  *
- * Captures the WebGL canvas (H.264 Annex B HW encode via WebCodecs VideoEncoder)
- * and the Webamp audio (Opus via AudioEncoder), ships them to a module worker
- * that runs the TS muxer + SRT receiver WASM, and exchanges datagrams with the
- * WebSRT gateway over WebTransport.
+ * Captures the WebGL canvas (H.264/HEVC/AV1 HW encode via WebCodecs VideoEncoder)
+ * and ships encoded chunks to a module worker that runs the TS muxer + SRT
+ * receiver WASM + Opus AudioEncoder, exchanging datagrams with the WebSRT
+ * gateway over WebTransport.
+ *
+ * Audio path: an AudioWorklet (see features/stream-audio.js +
+ * features/stream-audio-worklet.js) taps the Webamp analyser and ships 20ms
+ * Float32 frames directly to the worker via a transferred MessagePort. The
+ * AudioEncoder lives in the worker. Capture and encode are both off the main
+ * thread — panel reflow cannot starve audio.
  *
  * Conventions follow recorder.js: singleton object, init() wires DOM buttons
  * via getEl, state read from ../state.js. Streaming is frontend-local state —
  * it does NOT use Sync.send().
  */
 import { state, getEl } from '../state.js';
+import { StreamAudio } from '../features/stream-audio.js';
 
 export const StreamingUI = {
     // ---- runtime handles ----
     worker: null,
     transport: null,
     videoEncoder: null,
-    audioEncoder: null,
     isStreaming: false,
     _epoch: 0,
     _forceKeyframe: false,
     _handshakeDone: false,
-    _audioReader: null,
     datagramQueue: [],
     reconnectTimer: null,
     reconnectAttempts: 0,
@@ -296,10 +301,17 @@ export const StreamingUI = {
             return;
         }
 
-        // 4) Spawn worker (module worker; loads both WASM modules)
+        // 4) Spawn worker (module worker; loads both WASM modules).
+        //    Pass the stream-epoch (ms) so the worker can stamp audio PTS
+        //    on the same clock as video.
         this.worker = new Worker('/js/features/stream-worker.js', { type: 'module' });
         this.worker.onmessage = (e) => this.onWorkerMessage(e.data);
-        this.worker.postMessage({ type: 'init', latencyMs: this._latencyMs, videoCodec: this._codecFamily(this._codec) });
+        this.worker.postMessage({
+            type: 'init',
+            latencyMs: this._latencyMs,
+            videoCodec: this._codecFamily(this._codec),
+            epochMs: this._epoch,
+        });
 
         // 5) VideoEncoder (H.264 avcC → worker normalizes to Annex B + prepends
         //    SPS/PPS; AV1 → raw OBUs pass through unchanged.)
@@ -331,36 +343,16 @@ export const StreamingUI = {
         this._encH = state.canvas.height & ~1;
         this.videoEncoder.configure(this._videoConfig());
 
-        // 6) AudioEncoder (Opus) — tap the Webamp analyser node
+        // 6) Audio (Opus) — AudioWorklet taps the Webamp analyser and ships
+        //    Float32 frames directly to the worker via a transferred
+        //    MessagePort. AudioEncoder lives in the worker (see stream-worker.js
+        //    audio-port handler). Capture AND encode are off the main thread —
+        //    panel reflow can no longer starve audio. Video-only fallback if the
+        //    worklet fails to load.
         if (state.audioPlayerAnalyser) {
-            const ctx = state.audioPlayerAnalyser.context;
-            const dest = ctx.createMediaStreamDestination();
-            state.audioPlayerAnalyser.connect(dest);
-            const track = dest.stream.getAudioTracks()[0];
-            const proc = new MediaStreamTrackProcessor({ track });
-            this._audioReader = proc.readable.getReader();
-            this.audioEncoder = new AudioEncoder({
-                output: (chunk) => {
-                    const buf = new ArrayBuffer(chunk.byteLength);
-                    chunk.copyTo(new Uint8Array(buf));
-                    // Stamp audio with the same wall-clock-derived, stream-start
-                    // epoch as video ((performance.now() - this._epoch) * 1000).
-                    // We deliberately ignore chunk.timestamp: for SlopShady the
-                    // analyser taps Webamp's <audio> media graph, whose
-                    // AudioData timestamps ride on the underlying media file's
-                    // playback clock (accumulated play position across tracks /
-                    // seeks), not on AudioContext.currentTime nor performance.now().
-                    // Observed values are ~10^12 us (days), which puts audio PTS
-                    // on a totally different epoch from video PTS and breaks A/V
-                    // sync. performance.now() advances at the same ~20 ms cadence
-                    // as the Opus frames, so inter-chunk spacing is preserved.
-                    const ts = (performance.now() - this._epoch) * 1000;
-                    this.worker.postMessage({ type: 'audio', data: buf, timestamp: ts }, [buf]);
-                },
-                error: (e) => console.error('AudioEncoder', e),
+            StreamAudio.init(state.audioPlayerAnalyser, this.worker).then((ok) => {
+                if (!ok) this._setStatus('Audio tap failed — streaming video-only');
             });
-            this.audioEncoder.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 2, bitrate: 128000 });
-            this._pumpAudio();
         }
 
         // 7) Receive loop (datagrams from gateway → worker)
@@ -399,14 +391,10 @@ export const StreamingUI = {
             try { this.videoEncoder.close(); } catch (e) { /* ignore */ }
             this.videoEncoder = null;
         }
-        if (this.audioEncoder) {
-            try { this.audioEncoder.close(); } catch (e) { /* ignore */ }
-            this.audioEncoder = null;
-        }
-        if (this._audioReader) {
-            try { await this._audioReader.cancel(); } catch (e) { /* ignore */ }
-            this._audioReader = null;
-        }
+        // Audio tap is torn down via StreamAudio (disconnects the AudioWorkletNode).
+        // The AudioEncoder lives in the worker and is closed when the worker
+        // receives `stop` (or is terminated below).
+        StreamAudio.stop();
         if (this._receiveReader) {
             try { await this._receiveReader.cancel(); } catch (e) { /* ignore */ }
             this._receiveReader = null;
@@ -498,21 +486,6 @@ export const StreamingUI = {
         this.datagramQueue = [];
         for (const buf of batch) {
             this.worker.postMessage({ type: 'datagram', data: buf }, [buf]);
-        }
-    },
-
-    async _pumpAudio() {
-        try {
-            while (this.isStreaming) {
-                const { done, value } = await this._audioReader.read();
-                if (done) break;
-                if (this.audioEncoder.encodeQueueSize < 10) {
-                    this.audioEncoder.encode(value);
-                }
-                value.close();
-            }
-        } catch (e) {
-            console.warn('audio pump', e);
         }
     },
 
@@ -888,8 +861,7 @@ export const StreamingUI = {
         this._stopAntiThrottle();
         if (this._receiveReader) { try { this._receiveReader.cancel(); } catch (e) { /* ignore */ } this._receiveReader = null; }
         if (this.videoEncoder) { try { this.videoEncoder.close(); } catch (e) { /* ignore */ } this.videoEncoder = null; }
-        if (this.audioEncoder) { try { this.audioEncoder.close(); } catch (e) { /* ignore */ } this.audioEncoder = null; }
-        if (this._audioReader) { try { this._audioReader.cancel(); } catch (e) { /* ignore */ } this._audioReader = null; }
+        StreamAudio.stop();
         if (this.transport) { try { this.transport.close(); } catch (e) { /* ignore */ } this.transport = null; }
         if (this.worker) { try { this.worker.terminate(); } catch (e) { /* ignore */ } this.worker = null; }
         this.datagramQueue.length = 0;
