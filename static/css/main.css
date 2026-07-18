@@ -1170,13 +1170,15 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
     transition: transform 0.3s ease;
     visibility: hidden;
-    /* Isolate layout/paint subtree from the rest of the document so reflow
-       cost scales with panel content, not whole-document content. Critical
-       during panel resize (see bottom-panel.js) — without this, the --panel-height
-       CSS-var change forces the document to re-layout, starving rAF and the
-       streaming encode path. `size` is omitted because the panel's size IS what
-       changes during resize. */
-    contain: layout style paint;
+    /* Isolate the panel's layout subtree from the rest of the document so
+       reflow cost scales with panel content, not whole-document content.
+       Critical during panel resize (see bottom-panel.js) — without this, the
+       --panel-height CSS-var change forces the document to re-layout, starving
+       rAF and the streaming encode path.
+       NOTE: `paint` is deliberately omitted — it would clip the resize handle
+       (positioned at top:-6px, outside the panel's box) and any dropdown menus
+       that open upward out of the panel. */
+    contain: layout style;
 }
 
 .bottom-panel.rendering {
