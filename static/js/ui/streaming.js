@@ -598,6 +598,11 @@ export const StreamingUI = {
             bitrate: this._currentBitrate,
             framerate: this._fps,
             latencyMode: 'realtime',
+            // Prefer HW encode (NVENC / VAAPI / VideoToolbox). Without this hint
+            // Chrome often picks a software encoder (openh264 / libsvtav1) which
+            // is dramatically more sensitive to main-thread pressure. Falls back
+            // to SW if no HW encoder is available for the chosen codec.
+            hardwareAcceleration: 'prefer-hardware',
         };
         if (this._codecFamily(this._codec) === 'h264') cfg.avc = { format: 'avc' };
         return cfg;
@@ -750,6 +755,9 @@ export const StreamingUI = {
                     const cfg = {
                         codec: c.codec, width: w, height: h,
                         bitrate: this._videoBitrate, framerate: this._fps, latencyMode: 'realtime',
+                        // Match the live encoder's HW preference so `supported`
+                        // reflects HW availability, not just SW capability.
+                        hardwareAcceleration: 'prefer-hardware',
                     };
                     const r = await VideoEncoder.isConfigSupported(cfg);
                     ok = !!(r && r.supported);

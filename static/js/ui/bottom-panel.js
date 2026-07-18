@@ -538,6 +538,21 @@ export const BottomPanel = {
             e.preventDefault();
         });
 
+        // rAF-batched resize: coalesce mousemove bursts (60-120/s during a drag)
+        // into one CSS write per frame. Without this, every mousemove forces a
+        // layout reflow of the entire panel (Webamp, node graph, sliders, knobs),
+        // which starves the main thread and starves the WebGL render loop / the
+        // streaming audio pump — visibly dropping streamed video frames and
+        // glitching audio during panel drags.
+        let pendingHeight = null;
+        let resizeRafId = null;
+        const flushResize = () => {
+            resizeRafId = null;
+            if (pendingHeight !== null) {
+                bottomPanel.style.setProperty('--panel-height', pendingHeight + 'px');
+            }
+        };
+
         document.addEventListener('mousemove', (e) => {
             if (!isResizing) return;
 
@@ -546,12 +561,23 @@ export const BottomPanel = {
 
             newHeight = Math.max(MIN_PANEL_HEIGHT, Math.min(MAX_PANEL_HEIGHT, newHeight));
 
-            bottomPanel.style.setProperty('--panel-height', newHeight + 'px');
+            pendingHeight = newHeight;
+            if (resizeRafId === null) resizeRafId = requestAnimationFrame(flushResize);
         });
 
         document.addEventListener('mouseup', () => {
             if (isResizing) {
                 isResizing = false;
+                // Cancel the pending rAF and apply the final position synchronously
+                // so the user sees the exact end position immediately.
+                if (resizeRafId !== null) {
+                    cancelAnimationFrame(resizeRafId);
+                    resizeRafId = null;
+                }
+                if (pendingHeight !== null) {
+                    bottomPanel.style.setProperty('--panel-height', pendingHeight + 'px');
+                    pendingHeight = null;
+                }
                 document.body.classList.remove('cursor-ns-resize');
                 resizeHandle.classList.remove('dragging');
             }
