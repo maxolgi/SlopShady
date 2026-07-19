@@ -2842,3 +2842,53 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     opacity: 0.4;
     pointer-events: none;
 }
+
+/* Live Stream Inputs panel (WebSRT receive) — master-detail */
+#stream-input-panel .content-title { margin-bottom: 6px; }
+#stream-input-panel input[type="text"] {
+    padding: 6px 8px;
+    font-size: 0.85em;
+    border-radius: 4px;
+    background: #1a1a1a;
+    width: 100%;
+    margin-bottom: 6px;
+    box-sizing: border-box;
+}
+#stream-input-panel input[type="number"] {
+    padding: 6px 8px;
+    font-size: 0.85em;
+    border-radius: 4px;
+    background: #1a1a1a;
+    width: 100%;
+    margin-top: 2px;
+    box-sizing: border-box;
+}
+#stream-input-panel label.stream-input-label {
+    display: flex;
+    flex-direction: column;
+    font-size: 10px;
+    color: #E0E0E0;
+    opacity: 0.7;
+    margin-bottom: 2px;
+}
+#stream-input-status {
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 8px;
+    min-height: 14px;
+}
+#stream-input-start.active {
+    background: var(--slop-active);
+}
+#stream-input-stop.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+.stream-input-stats {
+    font-size: 10px;
+    color: #888;
+    margin-top: 6px;
+    white-space: pre;
+    line-height: 1.5;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}

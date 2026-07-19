@@ -9,7 +9,7 @@ import { LayerMixer } from './layerMixer.js';
 import { LayerSystem } from '../webgl/layers.js';
 import { Shaders } from '../api/shaders.js';
 import { Sync } from '../features/sync.js';
-import { saveState, loadShadersOnly, loadState } from './persistence.js';
+import { saveState, saveShadersOnly, loadShadersOnly, loadState } from './persistence.js';
 import { escapeHtml, toggleFullscreen } from '../utils.js';
 import { RecorderUI } from './recorder.js';
 import { StreamingUI } from './streaming.js';
@@ -46,10 +46,17 @@ export const Keyboard = {
             return;
         }
 
-        // Ctrl+Shift+S: Start/Stop live stream (must precede the Ctrl+S handler below)
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 's' || e.key === 'S')) {
+        // Ctrl+Insert: Start/Stop live stream (must precede the bare Insert crossfade handler below)
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Insert') {
             e.preventDefault();
             StreamingUI.isStreaming ? StreamingUI.stop() : StreamingUI.start();
+            return;
+        }
+
+        // Ctrl+Shift+S: Save shaders list only (must precede the Ctrl+S handler below)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 's' || e.key === 'S')) {
+            e.preventDefault();
+            saveShadersOnly();
             return;
         }
 

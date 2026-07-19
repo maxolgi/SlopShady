@@ -15,6 +15,7 @@ import { MilkdropFeature } from '../features/milkdrop.js';
 import { ModulationMatrix } from '../features/modulationMatrix.js';
 import { ScanimateEngine } from '../features/scanimate.js';
 import { VisualBrain } from '../features/visualBrain.js';
+import { StreamingInputUI } from '../ui/streaming-input.js';
 import { compileUtilityProgram, hexToRgb } from '../utils.js';
 
 export class Layer {
@@ -26,6 +27,8 @@ export class Layer {
         this.enabled = config.enabled !== undefined ? config.enabled : (index === 0);
         this.solo = config.solo !== undefined ? config.solo : false;
         this.opacity = config.opacity !== undefined ? config.opacity : (index === 0 ? 1.0 : 0.0);
+        this.volume = config.volume !== undefined ? config.volume : 1.0;
+        this.audioMuted = config.audioMuted !== undefined ? config.audioMuted : false;
         this.blendMode = config.blendMode || 'normal';
         this.material = config.material || { type: 'shader', source: '', params: {}, shaderRef: null };
         if (this.material.shaderRef === undefined) this.material.shaderRef = null;
@@ -649,6 +652,12 @@ export const LayerSystem = {
             return;
         }
 
+        // Handle WebSRT input type — upload latest decoded VideoFrame.
+        if (layer.material && layer.material.type === 'websrt') {
+            this.renderWebSRT(layer, layerFBO);
+            return;
+        }
+
         if (!layer.program) return;
         
         gl.bindFramebuffer(gl.FRAMEBUFFER, layerFBO.fbo);
@@ -1109,7 +1118,6 @@ export const LayerSystem = {
         const fitMode = params.fit || 'cover';
 
         if (!source) return;
-
         // Ensure the texture is loading (fire-and-forget). Render only once the
         // image has decoded — until then clear the FBO so no stale frame shows.
         const imageData = this._ensureImageTexture(source);
@@ -1155,7 +1163,59 @@ export const LayerSystem = {
         this._drawQuad(this.imagePosLoc);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     },
-    
+
+    /**
+     * Render a WebSRT input VideoFrame to the layer FBO. Reuses the image
+     * shader (cover/contain/stretch). One texture per layer index, uploaded
+     * fresh each frame from the latest decoded VideoFrame.
+     */
+    renderWebSRT(layer, layerFBO) {
+        const gl = state.gl;
+        if (!gl || !this.imageProgram) return;
+        const inputIndex = layer.material?.params?.inputIndex;
+        if (!Number.isFinite(inputIndex)) { this._clearLayerFBO(layerFBO); return; }
+        const frame = StreamingInputUI.latestVideoFrame(inputIndex);
+        if (!frame) { this._clearLayerFBO(layerFBO); return; }
+
+        // Lazy per-layer texture cache.
+        if (!this._websrtTextures) this._websrtTextures = new Map();
+        let entry = this._websrtTextures.get(layer.index);
+        if (!entry) {
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            entry = { tex, w: 0, h: 0 };
+            this._websrtTextures.set(layer.index, entry);
+        }
+
+        // Upload this frame.
+        gl.bindTexture(gl.TEXTURE_2D, entry.tex);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+        entry.w = frame.codedWidth || frame.displayWidth || entry.w;
+        entry.h = frame.codedHeight || frame.displayHeight || entry.h;
+
+        const fitModeInt = {
+            'cover': 0, 'contain': 1, 'stretch': 2,
+        }[layer.material?.params?.fit || 'cover'] || 0;
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, layerFBO.fbo);
+        gl.viewport(0, 0, layerFBO.width, layerFBO.height);
+        gl.useProgram(this.imageProgram);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, entry.tex);
+        if (this.imageUniforms.u_image) gl.uniform1i(this.imageUniforms.u_image, 0);
+        if (this.imageUniforms.u_imageRes) gl.uniform2f(this.imageUniforms.u_imageRes, entry.w || layerFBO.width, entry.h || layerFBO.height);
+        if (this.imageUniforms.u_canvasRes) gl.uniform2f(this.imageUniforms.u_canvasRes, layerFBO.width, layerFBO.height);
+        if (this.imageUniforms.u_fitMode) gl.uniform1i(this.imageUniforms.u_fitMode, fitModeInt);
+        if (this.imageUniforms.u_flipY) gl.uniform1f(this.imageUniforms.u_flipY, 0.0);
+        this._drawQuad(this.imagePosLoc);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    },
+
     /**
      * Load a video and create a WebGL texture
      * @param {string} source - Video URL
@@ -1496,6 +1556,8 @@ export const LayerSystem = {
                 enabled: l.enabled,
                 solo: l.solo,
                 opacity: l.opacity,
+                volume: l.volume,
+                audioMuted: l.audioMuted,
                 blendMode: l.blendMode,
                 material: {
                     type: l.material.type,
@@ -1577,6 +1639,8 @@ export const LayerSystem = {
                     if (layerData.enabled !== undefined) layer.enabled = layerData.enabled;
                     if (layerData.solo !== undefined) layer.solo = layerData.solo;
                     if (layerData.opacity !== undefined) layer.opacity = layerData.opacity;
+                    if (layerData.volume !== undefined) layer.volume = layerData.volume;
+                    if (layerData.audioMuted !== undefined) layer.audioMuted = layerData.audioMuted;
                     if (layerData.blendMode !== undefined) layer.blendMode = layerData.blendMode;
                     if (layerData.material) {
                         layer.material = {

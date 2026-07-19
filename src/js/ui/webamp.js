@@ -1,4 +1,4 @@
-import Webamp from '../lib/webamp.min.mjs';
+import Webamp from '../../lib/webamp.min.mjs';
 import { state } from '../state.js';
 import { AudioTexture } from '../features/audio.js';
 import { MilkdropFeature } from '../features/milkdrop.js';

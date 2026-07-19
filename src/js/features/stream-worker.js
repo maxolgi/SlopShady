@@ -10,12 +10,18 @@
  *
  * Message protocol (main → worker):
  *   { type:'init', latencyMs, videoCodec, videoCodecString, videoBitrate,
- *     videoFps, encW, encH, keyframeMs, epochMs }
+ *     videoFps, videoHwMode, cbrEnabled, encW, encH, keyframeMs, epochMs }
  *                                              load wasm, build rx+muxer, construct
  *                                              + configure VideoEncoder, start poll/stats loops
+ *                                              (videoHwMode: 'prefer-hardware' if HW probe
+ *                                              passed on main, null for SW fallback)
  *   { type:'frame', frame, isKey }            one VideoFrame captured from the canvas
  *                                              (transferable; worker encodes + closes it)
  *   { type:'resize', width, height }          canvas resized — worker reconfigures VideoEncoder
+ *   { type:'setBitrate', bitrate }            ABR / manual bitrate change — worker reconfigures
+ *                                              VideoEncoder (restores the adaptive-bitrate path that
+ *                                              became inert when VideoEncoder moved to the worker)
+ *   { type:'setBitrateMode', cbr }            CBR (true) ↔ VBR (false) toggle from main
  *   { type:'audio-port', port }               MessagePort owned by the StreamAudioProcessor
  *                                              (Phase 2 — replaces the old 'audio' message;
  *                                              AudioEncoder runs in the worker)
@@ -32,6 +38,10 @@
  *   { type:'initFailed', msg }       worker WASM/muxer/VideoEncoder init failed (no retry)
  *   { type:'requestKeyframe' }       VideoEncoder backpressure — frame dropped; main forces
  *                                    a keyframe on the next capture (Phase 1 recovery)
+ *   { type:'frameCredit', count }    flow-control credit grant — main may send N more frames.
+ *                                    Issued: 2 at init, 1 per encoded chunk, 1 per drop.
+ *                                    Bounds in-flight count to prevent postMessage backlog
+ *                                    during slow-encode scenes.
  *   { type:'videoEncoderFailed', msg } VideoEncoder rejected config or threw at runtime
  *   { type:'stopped' }               ack of `stop` — safe to terminate
  */
@@ -45,8 +55,10 @@ let statsTimer = null;
 let wasmReady = false;
 let videoCodec = 'h264';          // family: h264 / hevc / av1 (Annex B vs AV1 routing)
 let videoCodecString = 'avc1.640028'; // exact codec string for VideoEncoder.configure
-let videoBitrate = 8_000_000;     // bps (captured at init; ABR still on main — follow-up)
+let videoBitrate = 8_000_000;     // bps (initial value from init; updated via setBitrate)
 let videoFps = 60;
+let videoHwMode = null;           // 'prefer-hardware' if HW probe passed; null for SW
+let cbrEnabled = true;            // CBR (constant) vs VBR (variable); set via init + setBitrateMode
 let encW = 1280;
 let encH = 720;
 let spsPps = null;                // Annex B SPS+PPS bytes (from encoder avcC description); prepended on keyframes
@@ -56,6 +68,7 @@ let epochMs = 0;          // stream-epoch in performance.now() ms (audio PTS ref
 let audioEncoder = null;
 let audioPort = null;
 let videoEncoder = null;
+let videoChunkCount = 0;  // for diagnostic logging
 
 const nowUs = () => performance.now() * 1000;
 
@@ -105,6 +118,10 @@ self.onmessage = async (e) => {
                 videoCodecString = m.videoCodecString || videoCodecString;
                 videoBitrate = m.videoBitrate || videoBitrate;
                 videoFps = m.videoFps || videoFps;
+                // HW mode is what actually passed probe on main — avoids blindly
+                // preferring HW when the probe flaked and SW was the fallback.
+                videoHwMode = (typeof m.videoHwMode === 'string') ? m.videoHwMode : null;
+                if (typeof m.cbrEnabled === 'boolean') cbrEnabled = m.cbrEnabled;
                 encW = m.encW || encW;
                 encH = m.encH || encH;
                 try { muxer.setVideoCodec(videoCodec); } catch (e) { /* older wasm: ignore */ }
@@ -160,6 +177,21 @@ self.onmessage = async (e) => {
                             }
                             muxer.push_video(nal, chunk.timestamp, chunk.timestamp, chunk.type === 'key');
                             flushTsToSrt();
+                            // Flow control: grant one credit back per encoded
+                            // chunk so main can capture the next frame. Without
+                            // this, main's _frameCredits drains to 0 during
+                            // slow encodes and capture pauses — which is the
+                            // point (prevents postMessage backlog).
+                            videoChunkCount++;
+                            if (videoChunkCount === 1 || videoChunkCount === 30) {
+                                console.log(`[stream-worker] encoded video chunk #${videoChunkCount}`, {
+                                    bytes: chunk.byteLength,
+                                    timestamp: chunk.timestamp,
+                                    type: chunk.type,
+                                    isHw: videoConfig().hardwareAcceleration === 'prefer-hardware' ? 'likely' : 'unknown',
+                                });
+                            }
+                            postMessage({ type: 'frameCredit', count: 1 });
                         },
                         error: (err) => {
                             console.error('[worker] VideoEncoder', err);
@@ -168,6 +200,10 @@ self.onmessage = async (e) => {
                     });
                     videoEncoder.configure(videoConfig());
                     console.log('[stream-worker] VideoEncoder configured', videoEncoder.state, videoCodecString, encW + 'x' + encH);
+                    // Grant initial credits so main can start shipping frames
+                    // immediately. 2 = small pipeline; main can capture the
+                    // next frame while the previous is still encoding.
+                    postMessage({ type: 'frameCredit', count: 2 });
                 } catch (err) {
                     postMessage({ type: 'initFailed', msg: 'VideoEncoder init failed: ' + ((err && err.message) || err) });
                     return;
@@ -184,6 +220,9 @@ self.onmessage = async (e) => {
             // after encode (or on any early-out path — frames must not leak).
             if (!videoEncoder || videoEncoder.state !== 'configured') {
                 try { m.frame.close(); } catch (e) { /* ignore */ }
+                // Return the credit main spent on this frame so it can retry
+                // once the encoder is ready.
+                postMessage({ type: 'frameCredit', count: 1 });
                 return;
             }
             if (videoEncoder.encodeQueueSize >= 4) {
@@ -192,14 +231,23 @@ self.onmessage = async (e) => {
                 // queue drains (preserves the Phase 1 recovery behavior).
                 try { m.frame.close(); } catch (e) { /* ignore */ }
                 postMessage({ type: 'requestKeyframe' });
+                // Return the credit too — main is allowed to send again
+                // immediately; if the queue is still full we'll just drop
+                // again on the next frame.
+                postMessage({ type: 'frameCredit', count: 1 });
                 return;
             }
             try {
                 videoEncoder.encode(m.frame, { keyFrame: m.isKey });
             } catch (e) {
                 console.warn('[worker] encode failed', e);
+                postMessage({ type: 'frameCredit', count: 1 });
             }
             try { m.frame.close(); } catch (e) { /* ignore */ }
+            // NOTE: credit for this frame is granted in the encoder's output
+            // callback when the encoded chunk is emitted. That's the true
+            // "slot freed" point — keeps main's capture rate locked to the
+            // encoder's actual throughput.
         } else if (m.type === 'resize') {
             // Phase 3: main signaled a canvas-size change — reconfigure the
             // encoder for the new even dims before the next frame arrives.
@@ -209,6 +257,24 @@ self.onmessage = async (e) => {
                 try { videoEncoder.configure(videoConfig()); }
                 catch (e) { console.warn('[worker] reconfigure failed', e); }
             }
+        } else if (m.type === 'setBitrate') {
+            // ABR / manual bitrate change from main. Reconfigure the live
+            // encoder. Restores the adaptive-bitrate path that became inert
+            // when VideoEncoder moved to the worker in Phase 3.
+            videoBitrate = m.bitrate | 0;
+            if (videoEncoder && videoEncoder.state === 'configured') {
+                try { videoEncoder.configure(videoConfig()); }
+                catch (e) { console.warn('[worker] bitrate reconfigure failed', e); }
+            }
+            console.log('[stream-worker] bitrate set to', videoBitrate);
+        } else if (m.type === 'setBitrateMode') {
+            // CBR ↔ VBR toggle from main.
+            cbrEnabled = !!m.cbr;
+            if (videoEncoder && videoEncoder.state === 'configured') {
+                try { videoEncoder.configure(videoConfig()); }
+                catch (e) { console.warn('[worker] bitrate-mode reconfigure failed', e); }
+            }
+            console.log('[stream-worker] bitrate mode set to', cbrEnabled ? 'constant' : 'variable');
         } else if (m.type === 'audio-port') {
             // Phase 2: AudioWorklet tap. The transferred MessagePort delivers
             // { ts, data: Float32Array(1920) } messages directly from the audio
@@ -349,8 +415,18 @@ function videoConfig() {
         bitrate: videoBitrate,
         framerate: videoFps,
         latencyMode: 'realtime',
+        // CBR produces a steady bitrate (better for streaming: no bursts during
+        // complex scenes that the network can't absorb). VBR trades steady
+        // rate for higher instantaneous quality on hard frames.
+        bitrateMode: cbrEnabled ? 'constant' : 'variable',
     };
     if (videoCodec === 'h264') cfg.avc = { format: 'avc' };
+    // Apply the HW mode that actually passed probe on main. videoHwMode is
+    // 'prefer-hardware' when HW probed clean, or null when HW flaked (NVENC
+    // session limit, GPU mid-init after refresh, OS GPU switch) and SW was
+    // used as the fallback. Without this guard the worker would blindly
+    // prefer-HW and could fail at configure() time.
+    if (videoHwMode) cfg.hardwareAcceleration = videoHwMode;
     return cfg;
 }
 

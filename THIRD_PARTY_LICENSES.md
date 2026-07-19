@@ -2,7 +2,7 @@
 
 SlopShady is licensed under the [MIT License](LICENSE). The following third-party libraries are included in or referenced by this repository:
 
-## Bundled with the webview frontend (`static/js/lib/`)
+## Bundled with the webview frontend (`static/lib/`)
 
 | Library | License | Source |
 |---------|---------|--------|
@@ -10,7 +10,7 @@ SlopShady is licensed under the [MIT License](LICENSE). The following third-part
 | [Butterchurn](https://github.com/niclas-niclas/butterchurn) | MIT | Milkdrop visualizer renderer for WebGL |
 | [LiteGraph.js](https://github.com/jagenjo/litegraph.js) | MIT | Node graph editor |
 
-These are vendored as minified bundles in `static/js/lib/`. Do not hand-edit them.
+These are vendored as minified bundles in `static/lib/`. Do not hand-edit them.
 
 ## Vendored fork (`slopshady/patches/wry/`)
 

@@ -1230,6 +1230,7 @@
                         <li><span class="bp-help-key">Ctrl+Shift+Space</span> — Start/Stop playlist</li>
                         <li><span class="bp-help-key">Ctrl+Shift+Backspace</span> — Master reset (clear all settings)</li>
                         <li><span class="bp-help-key">Ctrl+Shift+R</span> — Start/Stop recording</li>
+                        <li><span class="bp-help-key">Ctrl+Insert</span> — Start/Stop live stream</li>
                         <li><span class="bp-help-key">Ctrl+Shift+L</span> — Show modulation matrix</li>
                     </ul>
                 </div>
@@ -1469,7 +1470,10 @@
                         <input type="number" id="stream-keyframe" value="2000" min="100" max="60000" step="100">
                     </label>
                 </div>
-                <button class="tool-btn" id="stream-abr-toggle">Adaptive Bitrate</button>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="stream-abr-toggle">Adaptive Bitrate</button>
+                    <button class="tool-btn" id="stream-cbr-toggle">Constant Bitrate</button>
+                </div>
                 <div class="tool-grid tool-grid--2x1">
                     <button class="tool-btn" id="startStream">▶ Stream</button>
                     <button class="tool-btn disabled" id="stopStream">⏹ Stop</button>
@@ -1478,6 +1482,33 @@
                 <div id="stream-stats"></div>
                 <div id="stream-config"></div>
                 <div id="stream-codecs"></div>
+            </div>
+            <div class="panel-section" id="stream-input-panel">
+                <div class="content-title">Live Stream Inputs (WebSRT)</div>
+                <div class="tool-grid tool-grid--2x1">
+                    <div class="dropdown" id="stream-input-selector">
+                        <button class="dropdown__selected tool-btn"><span>Input 1</span></button>
+                        <div class="dropdown__menu" id="stream-input-selector-menu"></div>
+                    </div>
+                    <div class="dropdown" id="stream-input-analyser-dropdown">
+                        <button class="dropdown__selected tool-btn"><span>Webamp</span></button>
+                        <div class="dropdown__menu" id="stream-input-analyser-menu"></div>
+                    </div>
+                </div>
+                <input type="text" id="stream-input-url" placeholder="Gateway WT URL (https://host:port/wt)">
+                <input type="text" id="stream-input-name" placeholder="Stream name (?stream=)">
+                <div class="tool-grid tool-grid--2x1">
+                    <label class="stream-input-label">Latency (ms)
+                        <input type="number" id="stream-input-latency" value="300" min="20" max="8000" step="10">
+                    </label>
+                    <div></div>
+                </div>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="stream-input-start">▶ Start</button>
+                    <button class="tool-btn disabled" id="stream-input-stop">⏹ Stop</button>
+                </div>
+                <div id="stream-input-status"></div>
+                <div id="stream-input-stats" class="stream-input-stats"></div>
             </div>
         </div>
 
@@ -1717,10 +1748,10 @@
     <div id="node-inspector-conns"></div>
 </div>
 
-<script src="/static/js/lib/litegraph.min.js"></script>
-<script defer src="/static/js/lib/butterchurn.min.js"></script>
-<script defer src="/static/js/lib/butterchurn-presets-base.min.js"></script>
-<script defer src="/static/js/lib/butterchurn-presets-extra.min.js"></script>
+<script src="/static/lib/litegraph.min.js"></script>
+<script defer src="/static/lib/butterchurn.min.js"></script>
+<script defer src="/static/lib/butterchurn-presets-base.min.js"></script>
+<script defer src="/static/lib/butterchurn-presets-extra.min.js"></script>
 <!-- Application Modules -->
 <script type="module" src="/static/js/main.js"></script>
 

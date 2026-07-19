@@ -79,7 +79,7 @@ This installs `projectM-4.dll`/`.lib` + headers into `projectm-install/` (gitign
 - ES6 modules with relative paths. No framework, plain DOM.
 - `camelCase` for variables and functions; `PascalCase` for module singletons (`WebGL`, `MIDISystem`).
 - Each module exports a singleton or an `init()` function wired in `main.js`.
-- `static/js/lib/` contains vendored minified bundles (butterchurn, litegraph, webamp). **Do not hand-edit these.**
+- `static/lib/` contains vendored minified bundles (butterchurn, litegraph, webamp). **Do not hand-edit these.**
 - **All CSS goes in `static/css/`.** No inline styles. If you find inline styles, move them.
 
 ### UI patterns

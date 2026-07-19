@@ -393,12 +393,13 @@ export const OSCSystem = {
             if (sub === 'input')  return this._oscDropdown(`mix-type-menu-${i}`, args);
             if (sub === 'preset') return this._oscDropdown(`mix-shader-menu-${i}`, args);
             if (sub === 'blend')  return this._oscDropdown(`mix-blend-menu-${i}`, args);
-            if (sub === 'solo')   return this._oscToggle(`mix-solo-${i}`, args);
-            if (sub === 'mute')   return this._oscToggle(`mix-mute-${i}`, args);
-            if (sub === 'brain')  return this._oscToggle(`mix-brain-${i}`, args);
+            if (sub === 'solo')      return this._oscToggle(`mix-solo-${i}`, args);
+            if (sub === 'show')      return this._oscToggle(`mix-show-${i}`, args);
+            if (sub === 'audioMute') return this._oscToggle(`mix-audio-mute-${i}`, args);
+            if (sub === 'brain')     return this._oscToggle(`mix-brain-${i}`, args);
 
             const sliderParamMap = {
-                opacity: 'opacity', brightness: 'brightness', speed: 'speed',
+                opacity: 'opacity', volume: 'volume', brightness: 'brightness', speed: 'speed',
                 posX: 'posX', posY: 'posY', scale: 'scale', amount: 'amount',
                 rotation: 'rotation', stretch: 'stretch', radius: 'radius',
                 maskX: 'maskPosX', maskY: 'maskPosY', maskSoft: 'maskSoftness',

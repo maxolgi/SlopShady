@@ -1,0 +1,37 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "ES2022",
+        "moduleResolution": "Bundler",
+        "allowJs": true,
+        "checkJs": false,
+        "outDir": "static/js",
+        "rootDir": "src/js",
+        "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+        "strict": false,
+        "noImplicitAny": false,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "verbatimModuleSyntax": false,
+        "baseUrl": ".",
+        "paths": {
+            "/wasm/*": ["static/wasm/*"],
+            "/static/vendor/WebSRT/web/src/*": ["static/vendor/WebSRT/web/src/*"]
+        },
+        "typeRoots": ["./node_modules/@types", "./src/types"],
+        "types": []
+    },
+    "include": [
+        "src/js/**/*",
+        "src/types/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "static",
+        "slopshady",
+        "vendor/WebSRT/target",
+        "vendor/WebSRT/web/node_modules"
+    ]
+}

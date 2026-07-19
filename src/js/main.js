@@ -40,6 +40,7 @@ import { PlayerUI } from './ui/player.js';
 import { WebampUI } from './ui/webamp.js';
 import { RecorderUI } from './ui/recorder.js';
 import { StreamingUI } from './ui/streaming.js';
+import { StreamingInputUI } from './ui/streaming-input.js';
 import { PlaylistSystem } from './features/playlist.js';
 import { PlaylistUI } from './ui/playlistUI.js';
 import { ContentBrowser } from './ui/contentBrowser.js';
@@ -164,6 +165,7 @@ const SlopShady = {
         WebampUI.init();
         RecorderUI.init();
         StreamingUI.init();
+        StreamingInputUI.init();
         PlaylistUI.init();
         ContentBrowser.init();
         BottomPanel.init();

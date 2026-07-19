@@ -8,6 +8,7 @@ A real-time WebGL2 GLSL shader editor featuring AI-powered shader generation via
 - [Getting Started](#getting-started)
 - [Architecture](#architecture)
 - [Capture & Export](#capture--export)
+- [Live Stream (WebSRT)](#live-stream-websrt)
 - [Live Tuning](#live-tuning)
 - [Content Browser](#content-browser)
 - [Scanimate Engine](#scanimate-engine)
@@ -42,6 +43,7 @@ A real-time WebGL2 GLSL shader editor featuring AI-powered shader generation via
 - **Shader Library**: Save, load, and manage shaders with no storage limit
 - **Screenshot Capture**: Export shader output as PNG or WebP with configurable resolution and quality
 - **Video Recording**: Record shader output as WebM video with configurable codec, bitrate, and resolution
+- **Live Stream**: Publish the canvas + Webamp audio over WebSRT (WebTransport + SRT) with H.264 / HEVC / AV1 + Opus, adaptive or constant bitrate
 - **Playlist**: Automated shader sequencing with configurable duration, crossfade, MIDI triggering, and loop mode
 - **Feedback Effect**: Global and per-layer frame feedback with configurable zoom, rotation, blend mode, saturation, and decay
 - **Sync**: Beat-synced LFOs with configurable BPM
@@ -86,25 +88,56 @@ Screenshots are encoded as base64 data URLs for transmission to the LLM API.
 
 ---
 
+## Live Stream (WebSRT)
+
+Publish the canvas and Webamp audio to a WebSRT gateway for browser viewing. The pipeline runs almost entirely off the main thread:
+
+```
+canvas → VideoFrame (WebCodecs, main thread, 1 GPU copy + postMessage/frame)
+       → module worker: VideoEncoder → TS muxer (ts-muxer-wasm) → SRT sender (srt-wasm)
+                                                                → WebTransport datagrams
+Webamp analyser → AudioWorklet → worker: Opus AudioEncoder → TS muxer → SRT → WebTransport
+```
+
+### Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Gateway URL** | `https://127.0.0.1:4433/wt` | WebTransport URL of your WebSRT gateway |
+| **Stream name** | `slopshady` | Viewers connect with `?stream=<name>` |
+| **Codec** | AV1 (auto-detected) | H.264 / HEVC / AV1; codecs are probed on load and filtered to what the local muxer + viewer can carry |
+| **Bitrate** | 8 Mbps | Target video bitrate (live-adjustable when ABR is off) |
+| **FPS** | 60 | Capture rate |
+| **Latency** | 300 ms | SRT latency buffer |
+| **Keyframe** | 2000 ms | Keyframe interval |
+| **Constant Bitrate (CBR)** | On | Steady bitrate — reduces packet bursts in complex scenes (recommended) |
+| **Adaptive Bitrate (ABR)** | Off | Auto-reduce target when the SRT sender queue grows (experimental — tune constants in `streaming.js`) |
+
+### Architecture notes
+
+- Audio is Opus-only (AAC is listed but disabled). The Webamp analyser tap ships 20 ms Float32 frames straight to the worker via a transferred `MessagePort`.
+- A flow-control credit scheme bounds in-flight frames between the main thread and the worker so complex scenes cannot accumulate an unbounded backlog (which would arrive at the muxer as a stale-PTS burst).
+- The gateway cert hash is fetched via the local `/api/stream/cert-hash` proxy so the browser pins it for WebTransport without a separate trust flow.
+- Streaming state is frontend-local (localStorage) — it is **not** synced over `Sync.send()` and does not appear in `shaders.json`.
+
+### Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Insert` | Start/Stop live stream |
+
+---
+
 ## Getting Started
 
 Single binary, no Python or Node dependencies. Frontend assets are embedded into the binary at compile time.
 
 1. Install [Rust](https://rustup.rs/)
 
-2. Clone with submodules (for the native port's `oneamp/` and `projectm/` dependencies):
+2. Clone and build:
    ```bash
-   git clone --recursive https://github.com/YOUR_USER/SlopShadyRust.git
-   cd SlopShadyRust
-   ```
-   If you already cloned without `--recursive`:
-   ```bash
-   git submodule update --init --recursive
-   ```
-
-3. Build and run the webview version:
-   ```bash
-   cd slopshady
+   git clone https://github.com/YOUR_USER/SlopShadyRust.git
+   cd SlopShadyRust/slopshady
    cargo run
    ```
 
@@ -115,6 +148,8 @@ Options:
 cargo run -- --port 8200          # custom port
 cargo run -- --data-dir /path     # custom data directory (shaders.json, certs)
 cargo run -- --no-browser         # server-only build: don't auto-open
+cargo run -- --osc-port 9000      # custom OSC UDP port (default 8101)
+cargo run -- --osc-bind 127.0.0.1 # OSC bind address (default 0.0.0.0)
 cargo build --release             # optimized binary (~8-12 MB)
 ```
 
@@ -122,7 +157,7 @@ cargo build --release             # optimized binary (~8-12 MB)
 
 ### Next Steps
 
-Configure LM Studio URL in Settings (default: `http://localhost:1234/v1/chat/completions`)
+Configure LM Studio URL in Settings (default: `http://localhost:1234/v1/`). The backend proxies `/chat/completions` and `/models` from there.
 
 ### Status Messages
 
@@ -173,6 +208,8 @@ SlopShady consists of two components:
 | `POST /api/live-tuning/shader-result` | POST | Receives shader compilation results during tuning |
 | `POST /api/live-tuning/stop` | POST | Aborts active tuning session |
 | `GET /api/shaders/download` | GET | Downloads the `shaders.json` file |
+| `GET /api/screen-capture` | GET | Returns a base64 PNG of the primary monitor (webview build only) |
+| `GET /api/stream/cert-hash?url=<gateway>` | GET | Proxies the WebSRT gateway's `cert-hash.js` so the browser can pin it for WebTransport (same-origin; avoids CORS + self-signed trust prompts) |
 
 ---
 
@@ -415,7 +452,8 @@ Nodes can be connected by dragging from outputs to inputs to build visual proces
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+S` | Save full state to JSON file |
-| `Ctrl+Shift+S` | Save shaders list only to JSON |
+| `Ctrl+Shift+S` | Save shaders list only to JSON file |
+| `Ctrl+Insert` | Start/Stop live stream |
 | `Ctrl+F` | Toggle fullscreen mode |
 | `Ctrl+M` | (reserved) |
 | `Ctrl+Shift+R` | Start/Stop video recording |
@@ -486,7 +524,7 @@ State is automatically synced to the server via WebSocket and persisted to `shad
 
 - **Ctrl+S**: Exports full state JSON (shaders, settings, conversation, modulation routes)
 - **Ctrl+Shift+S**: Exports shaders-only JSON for sharing
-- **Save to JSON button**: Manual export from Settings panel
+- **Save to JSON button** (Settings): Manual export from Settings panel
 
 ### Load via Drag & Drop
 
@@ -872,7 +910,7 @@ The application loads with "Obsidian Flow / Kinetic Bismuth" as the default shad
 ## Project Structure
 
 ```
-├── slopshady/                 # Rust backend
+├── slopshady/                 # Rust backend (the only Cargo crate in this repo)
 │   ├── Cargo.toml             # deps + [patch.crates-io] wry override
 │   ├── Cargo.lock             # committed (app binary)
 │   ├── build.rs               # Windows icon resource
@@ -880,9 +918,9 @@ The application loads with "Obsidian Flow / Kinetic Bismuth" as the default shad
 │   ├── src/
 │   │   ├── main.rs            # Entry point, CLI args, server/webview startup
 │   │   ├── state.rs           # State load/save/normalize
-│   │   ├── server.rs          # axum router, static file serving
-│   │   ├── ws.rs              # WebSocket handler, state sync
-│   │   ├── llm.rs             # LLM API proxy (models, chat/completions)
+│   │   ├── server.rs          # axum router, static file serving, stream cert-hash proxy
+│   │   ├── ws.rs              # WebSocket handler, state sync, OSC hot-swap
+│   │   ├── llm.rs             # LLM API proxy (models, chat/completions) + URL validator
 │   │   ├── live_tuning.rs     # Iterative tuning loop
 │   │   ├── osc.rs             # Native OSC UDP bridge
 │   │   ├── screen.rs          # Native screen capture (webview feature only)
@@ -909,50 +947,21 @@ The application loads with "Obsidian Flow / Kinetic Bismuth" as the default shad
 │   │   ├── config.js          # Constants, templates, uniform defs
 │   │   ├── utils.js           # Shared utilities
 │   │   ├── webgl/             # WebGL2 rendering engine
-│   │   ├── features/          # Audio, MIDI, LFO, modulation, playlist, etc.
-│   │   ├── ui/                # All DOM/panel UI modules
-│   │   ├── api/               # LLM chat, live tuning, model listing
-│   │   ├── utils/             # Migration helpers
-│   │   └── lib/               # Vendored third-party libraries
+│   │   ├── features/          # Audio, MIDI, OSC, LFO, modulation, playlist, Scanimate, VisualBrain,
+│   │   │                      #   stream-worker (encoder+SRT+WASM), stream-audio(-worklet)
+│   │   ├── ui/                # All DOM/panel UI modules (incl. streaming.js)
+│   │   ├── api/               # LLM chat, live tuning, model listing, shaders
+│   │   └── utils/             # Migration helpers
+│   ├── lib/                   # Vendored third-party libraries (butterchurn, litegraph, webamp)
+│   ├── wasm/
+│   │   ├── srt-wasm/          # Browser-side SRT receiver/sender (used by stream-worker)
+│   │   └── ts-muxer-wasm/     # MPEG-TS muxer (used by stream-worker)
 │   └── content/
 │       ├── manifest.json      # Factory shader catalog
 │       └── shaders/factory/   # 80 built-in GLSL shaders
 ```
 
 > **Note on `slopshady/patches/wry/`**: this is a full vendored copy of the [`wry`](https://github.com/tauri-apps/wry) crate with local modifications (TLS-ignore + the Windows WebView2 shutdown path). It is wired in via `[patch.crates-io]` in `slopshady/Cargo.toml` and **must not be upgraded or removed** — the default `webview` build depends on these patches. Build from inside `slopshady/` so the relative patch path resolves.
-
-### Native Port (`slopshady-native/`)
-
-An experimental native Rust port using `glow` (OpenGL 4.1) + `egui` + `winit`, with `oneamp` for audio playback and `libprojectM` for Milkdrop visualization. This is a separate Cargo workspace with 10 crates:
-
-```
-slopshady-native/
-├── Cargo.toml              # workspace (edition 2024, rust-version 1.85)
-├── crates/
-│   ├── slopshady-app/      # main binary, egui UI, render loop
-│   ├── slopshady-render/   # glow compositor, layers, FBOs, scanimate, visualbrain
-│   ├── slopshady-shadersrc/# GLSL header translation (WebGL2 → OpenGL 4.1)
-│   ├── slopshady-codedial/ # numeric literal → uniform extraction
-│   ├── slopshady-mod/      # EG/LFO/VoiceManager/ModMatrix DSP core (std only)
-│   ├── slopshady-midi/     # live MIDI input (midir) + SMF parser/player
-│   ├── slopshady-audio/    # FFT audio analyser + test oscillator
-│   ├── slopshady-capture/  # screen capture via xcap
-│   └── slopshady-milkdrop/ # libprojectM FFI wrapper
-├── presets/                # test Milkdrop presets (.milk)
-└── ui.md                   # egui UI developer reference
-```
-
-Build from inside `slopshady-native/`:
-
-```bash
-cd slopshady-native
-cargo run                   # opens native window
-cargo build --release       # optimized binary
-```
-
-The native port depends on `oneamp/` (audio player) and `projectm/` (Milkdrop visualizer) as path dependencies / linked libraries. Both are included as git submodules — clone with `git clone --recursive`.
-
-To build projectM for the native port, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -964,9 +973,10 @@ Third-party libraries are subject to their respective licenses (see [THIRD_PARTY
 
 | Library | License | Component |
 |---------|---------|-----------|
-| [Webamp](https://webamp.org/) | MIT | Browser Winamp clone (`static/js/lib/`) |
-| [Butterchurn](https://github.com/niclas-niclas/butterchurn) | MIT | Milkdrop visualizer for WebGL (`static/js/lib/`) |
-| [LiteGraph.js](https://github.com/jagenjo/litegraph.js) | MIT | Node graph editor (`static/js/lib/`) |
+| [Webamp](https://webamp.org/) | MIT | Browser Winamp clone (`static/lib/`) |
+| [Butterchurn](https://github.com/niclas-niclas/butterchurn) | MIT | Milkdrop visualizer for WebGL (`static/lib/`) |
+| [LiteGraph.js](https://github.com/jagenjo/litegraph.js) | MIT | Node graph editor (`static/lib/`) |
 | [wry](https://github.com/tauri-apps/wry) (patched fork) | Apache-2.0/MIT | WebView wrapper (`slopshady/patches/wry/`) |
-| [oneamp](https://github.com/all3f0r1/oneamp) | MIT/Apache-2.0 | Audio player (native port, `oneamp/` submodule) |
-| [projectM](https://github.com/projectM-Visualizer/projectm) | LGPL-2.1 | Milkdrop visualizer (native port, `projectm/` submodule, dynamically linked) |
+| [srt-wasm](https://github.com/maxolgi/WebSRT/tree/master/crates/srt-wasm) | MPL-2.0 | SRT receiver/sender WASM (`static/wasm/srt-wasm/`), built from `vendor/WebSRT/` submodule |
+| [ts-muxer-wasm](https://github.com/maxolgi/WebSRT/tree/master/crates/ts-muxer-wasm) | MPL-2.0 | MPEG-TS muxer WASM (`static/wasm/ts-muxer-wasm/`), built from `vendor/WebSRT/` submodule |
+| [mpeg2ts-wasm](https://github.com/maxolgi/WebSRT/tree/master/crates/mpeg2ts-wasm) | MPL-2.0 | MPEG-TS demuxer WASM (`static/wasm/mpeg2ts-wasm/`), built from `vendor/WebSRT/` submodule |

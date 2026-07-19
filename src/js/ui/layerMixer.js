@@ -14,6 +14,7 @@ import { ContentBrowser } from './contentBrowser.js';
 import { AudioTexture } from '../features/audio.js';
 import { initSlider, getSliderController } from './slider.js';
 import { ti, escapeAttr } from './tooltips.js';
+import { StreamingInputUI } from './streaming-input.js';
 
 const TYPE_OPTIONS = [
     { value: 'shader', label: 'Shader' },
@@ -25,6 +26,7 @@ const TYPE_OPTIONS = [
     { value: 'visualizer', label: 'Visualizer' },
     { value: 'milkdrop', label: 'Milkdrop' },
     { value: 'scanimate', label: 'Scanimate' },
+    { value: 'websrt', label: 'WebSRT' },
 ];
 
 const BLEND_OPTIONS = [
@@ -129,6 +131,8 @@ export const LayerMixer = {
             const first = i === 0;
             const opacityDisplay = first ? '100%' : '0%';
             const opacityFill = first ? ' data-fill="100"' : '';
+            const volumeDisplay = '100%';
+            const volumeFill = ' data-fill="100"';
 
             const n = i + 1;
             html += `<div class="panel-section mix-channel" data-expand-hide>
@@ -139,7 +143,7 @@ export const LayerMixer = {
                     ${dropdownHtml(`mix-blend-dropdown-${i}`, `mix-blend-menu-${i}`, BLEND_OPTIONS, 'normal', ti('LAYER_BLEND', {n}))}
                     <div class="tool-grid tool-grid--2x2">
                         <button class="tool-btn" id="mix-solo-${i}" data-tooltip="${escapeAttr(ti('LAYER_SOLO', {n}))}">Solo</button>
-                        <button class="tool-btn" id="mix-mute-${i}" data-tooltip="${escapeAttr(ti('LAYER_MUTE', {n}))}">Mute</button>
+                        <button class="tool-btn" id="mix-show-${i}" data-tooltip="${escapeAttr(ti('LAYER_SHOW', {n}))}">Show</button>
                     </div>
                     <button class="tool-btn" id="mix-brain-${i}" data-tooltip="${escapeAttr(ti('MIX_BRAIN_TOGGLE', {n}))}">Brain</button>
                     <div class="slider" id="mix-opacity-slider-${i}" data-tooltip="${escapeAttr(ti('LAYER_OPACITY', {n}))}">
@@ -154,6 +158,19 @@ export const LayerMixer = {
                             </div>
                         </div>
                     </div>
+                    <div class="slider" id="mix-volume-slider-${i}" data-tooltip="${escapeAttr(ti('LAYER_VOLUME', {n}))}">
+                        <div class="slider__header">
+                            <span class="slider__label">Volume</span>
+                            <span class="slider__value" id="mix-volume-value-${i}">${volumeDisplay}</span>
+                        </div>
+                        <div class="slider__track">
+                            <div class="slider__fill slider__fill--modulated"></div>
+                            <div class="slider__fill"${volumeFill}>
+                                <div class="slider__handle"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="tool-btn" id="mix-audio-mute-${i}" data-tooltip="${escapeAttr(ti('LAYER_AUDIO_MUTE', {n}))}">Mute</button>
                 </div>
                 <div id="mix-controls-panel-${i}" class="mix-controls-panel">
                     ${slidersHtml(CONTROLS_SLIDERS, i)}
@@ -230,14 +247,18 @@ export const LayerMixer = {
                 });
             }
             
-            // Solo/Mute/Brain
+            // Solo/Show/Brain
             const soloBtn = getEl(`mix-solo-${i}`);
             if (soloBtn) {
                 soloBtn.addEventListener('click', () => this.toggleSolo(idx));
             }
-            const muteBtn = getEl(`mix-mute-${i}`);
-            if (muteBtn) {
-                muteBtn.addEventListener('click', () => this.toggleMute(idx));
+            const showBtn = getEl(`mix-show-${i}`);
+            if (showBtn) {
+                showBtn.addEventListener('click', () => this.toggleShow(idx));
+            }
+            const audioMuteBtn = getEl(`mix-audio-mute-${i}`);
+            if (audioMuteBtn) {
+                audioMuteBtn.addEventListener('click', () => this.toggleAudioMute(idx));
             }
             const brainBtn = getEl(`mix-brain-${i}`);
             if (brainBtn) {
@@ -253,6 +274,17 @@ export const LayerMixer = {
                     onChange: (val) => { this.setLayerOpacity(idx, val); },
                 });
                 if (ctrl) sliderControllers.set(slider, ctrl);
+            }
+            
+            // Volume slider (WebSRT audio per-layer)
+            const volSlider = getEl(`mix-volume-slider-${i}`);
+            if (volSlider) {
+                const ctrl = initSlider(volSlider, {
+                    min: 0, max: 1, step: 0.01, defaultValue: 1,
+                    format: v => Math.round(v * 100) + '%',
+                    onChange: (val) => { this.setLayerVolume(idx, val); },
+                });
+                if (ctrl) sliderControllers.set(volSlider, ctrl);
             }
             
             // Layer parameter sliders
@@ -599,6 +631,15 @@ export const LayerMixer = {
         return html;
     },
 
+    _buildWebSRTMenuItems() {
+        let html = '';
+        for (let i = 0; i < 8; i++) {
+            const name = StreamingInputUI.getInputName(i) || `Input ${i + 1}`;
+            html += `<div class="dropdown__item" data-value="websrt:${i}">${escapeHtml(name)}</div>`;
+        }
+        return html;
+    },
+
     _rebuildShaderDropdowns() {
         for (let i = 0; i < 8; i++) {
             const layer = LayerSystem.layers[i];
@@ -611,6 +652,9 @@ export const LayerMixer = {
             if (type === 'milkdrop') {
                 menu.classList.add('dropdown__menu--scrollable');
                 itemsHtml = this._buildMilkdropMenuItems();
+            } else if (type === 'websrt') {
+                menu.classList.remove('dropdown__menu--scrollable');
+                itemsHtml = this._buildWebSRTMenuItems();
             } else {
                 menu.classList.remove('dropdown__menu--scrollable');
                 itemsHtml = this._buildShaderMenuItems();
@@ -623,6 +667,8 @@ export const LayerMixer = {
                     const val = item.dataset.value;
                     if (val.startsWith('milkdrop:')) {
                         this._onMilkdropPresetSelect(i, parseInt(val.split(':')[1]));
+                    } else if (val.startsWith('websrt:')) {
+                        this._onWebSRTInputSelect(i, parseInt(val.split(':')[1]));
                     } else {
                         this.onShaderSelect(i, val);
                     }
@@ -647,6 +693,19 @@ export const LayerMixer = {
             const idx = MilkdropFeature.currentIndex;
             selectedSpan.textContent = MilkdropFeature.getPresetName(idx) || `Preset ${idx}`;
             this._syncDropdownActive(`mix-shader-menu-${layerIndex}`, `milkdrop:${idx}`);
+            return;
+        }
+
+        if (type === 'websrt') {
+            const inputIndex = layer?.material?.params?.inputIndex;
+            if (Number.isFinite(inputIndex)) {
+                const name = StreamingInputUI.getInputName(inputIndex) || `Input ${inputIndex + 1}`;
+                selectedSpan.textContent = name;
+                this._syncDropdownActive(`mix-shader-menu-${layerIndex}`, `websrt:${inputIndex}`);
+            } else {
+                selectedSpan.textContent = '--';
+                this._syncDropdownActive(`mix-shader-menu-${layerIndex}`, 'none');
+            }
             return;
         }
 
@@ -675,6 +734,27 @@ export const LayerMixer = {
         MilkdropFeature.loadPresetByIndex(presetIndex);
         this.syncAllMilkdropLayers(presetIndex);
         this.refreshAllMilkdropDropdowns();
+        this._syncShaderDropdownDisplay(layerIndex);
+        this.sendUpdate();
+    },
+
+    _onWebSRTInputSelect(layerIndex, inputIndex) {
+        if (inputIndex < 0 || inputIndex >= 8) return;
+        const layer = LayerSystem.layers[layerIndex];
+        if (!layer) return;
+        // Release the previous input if any.
+        const oldInput = layer.material?.params?.inputIndex;
+        if (Number.isFinite(oldInput) && oldInput !== inputIndex) {
+            StreamingInputUI.removeLayerTap(oldInput, layerIndex);
+            StreamingInputUI.release(oldInput);
+        }
+        layer.material.type = 'websrt';
+        layer.material.source = `websrt:${inputIndex}`;
+        layer.material.params = { inputIndex };
+        // Acquire the new input + apply current audio settings.
+        StreamingInputUI.acquire(inputIndex);
+        StreamingInputUI.setLayerVolume(inputIndex, layerIndex, layer.volume ?? 1.0);
+        StreamingInputUI.setLayerMute(inputIndex, layerIndex, !!layer.audioMuted);
         this._syncShaderDropdownDisplay(layerIndex);
         this.sendUpdate();
     },
@@ -1021,6 +1101,15 @@ export const LayerMixer = {
         const oldType = layer.material?.type;
         if (oldType === newType) return;
 
+        // If leaving websrt, release the input refcount + drop audio tap.
+        if (oldType === 'websrt') {
+            const oldInput = layer.material?.params?.inputIndex;
+            if (Number.isFinite(oldInput)) {
+                StreamingInputUI.removeLayerTap(oldInput, layerIndex);
+                StreamingInputUI.release(oldInput);
+            }
+        }
+
         // Set type and clear source
         layer.material.type = newType;
         layer.material.source = '';
@@ -1048,6 +1137,13 @@ export const LayerMixer = {
             };
         } else if (newType === 'scanimate') {
             layer.material.params = {};
+        } else if (newType === 'websrt') {
+            // Default to input 0; user picks via the second dropdown.
+            layer.material.params = { inputIndex: 0 };
+            StreamingInputUI.acquire(0);
+            StreamingInputUI.setLayerVolume(0, layerIndex, layer.volume ?? 1.0);
+            StreamingInputUI.setLayerMute(0, layerIndex, !!layer.audioMuted);
+            layer.material.source = 'websrt:0';
         } else {
             layer.material.params = {};
         }
@@ -1082,12 +1178,52 @@ export const LayerMixer = {
     },
     
     toggleMute(index) {
+        // Back-compat alias for OSC + any external callers — visibility toggle.
+        return this.toggleShow(index);
+    },
+
+    toggleShow(index) {
         const layer = LayerSystem.layers[index];
         if (layer) {
             layer.enabled = !layer.enabled;
             this.updateUI();
             this.sendUpdate();
         }
+    },
+
+    setLayerVolume(index, value) {
+        const layer = LayerSystem.layers[index];
+        if (!layer) return;
+        layer.volume = parseFloat(value);
+        // Apply live to StreamingInputUI if this layer routes to a WebSRT input.
+        const inputIndex = this._layerWebSRTInput(index);
+        if (inputIndex >= 0) {
+            StreamingInputUI.setLayerVolume(inputIndex, index, layer.volume);
+        }
+        this.sendUpdate();
+    },
+
+    toggleAudioMute(index) {
+        const layer = LayerSystem.layers[index];
+        if (!layer) return;
+        layer.audioMuted = !layer.audioMuted;
+        const inputIndex = this._layerWebSRTInput(index);
+        if (inputIndex >= 0) {
+            StreamingInputUI.setLayerMute(inputIndex, index, layer.audioMuted);
+            // Re-apply volume too so unmute restores the correct level.
+            StreamingInputUI.setLayerVolume(inputIndex, index, layer.volume);
+        }
+        const btn = getEl(`mix-audio-mute-${index}`);
+        if (btn) btn.classList.toggle('active', !!layer.audioMuted);
+        this.sendUpdate();
+    },
+
+    /** Returns the WebSRT input index routed to this layer, or -1 if none. */
+    _layerWebSRTInput(index) {
+        const layer = LayerSystem.layers[index];
+        if (!layer || layer.material?.type !== 'websrt') return -1;
+        const idx = layer.material.params?.inputIndex;
+        return Number.isFinite(idx) ? idx : -1;
     },
 
     toggleBrain(index) {
@@ -1202,14 +1338,18 @@ export const LayerMixer = {
             
             // Update bottom panel mix controls
             const mixSoloBtn = getEl(`mix-solo-${i}`);
-            const mixMuteBtn = getEl(`mix-mute-${i}`);
+            const mixShowBtn = getEl(`mix-show-${i}`);
+            const mixAudioMuteBtn = getEl(`mix-audio-mute-${i}`);
             const mixBlendSelected = document.querySelector(`#mix-blend-dropdown-${i} span`);
             const mixTypeSelected = document.querySelector(`#mix-type-dropdown-${i} span`);
             const mixSliderEl = getEl(`mix-opacity-slider-${i}`);
             const mixSliderValue = getEl(`mix-opacity-value-${i}`);
+            const mixVolSliderEl = getEl(`mix-volume-slider-${i}`);
+            const mixVolSliderValue = getEl(`mix-volume-value-${i}`);
             
             if (mixSoloBtn) mixSoloBtn.classList.toggle('active', !!layer.solo);
-            if (mixMuteBtn) mixMuteBtn.classList.toggle('active', !layer.enabled);
+            if (mixShowBtn) mixShowBtn.classList.toggle('active', !layer.enabled);
+            if (mixAudioMuteBtn) mixAudioMuteBtn.classList.toggle('active', !!layer.audioMuted);
             if (mixBlendSelected) {
                 const blend = layer.blendMode || 'normal';
                 mixBlendSelected.textContent = blend.charAt(0).toUpperCase() + blend.slice(1);
@@ -1228,6 +1368,17 @@ export const LayerMixer = {
                     const fill = mixSliderEl.querySelector('.slider__fill');
                     if (fill) fill.style.setProperty('--fill-width', Math.round(layer.opacity * 100) + '%');
                     if (mixSliderValue) mixSliderValue.textContent = Math.round(layer.opacity * 100) + '%';
+                }
+            }
+            if (mixVolSliderEl) {
+                const ctrl = sliderControllers.get(mixVolSliderEl);
+                const v = layer.volume ?? 1.0;
+                if (ctrl) {
+                    ctrl.setValue(v);
+                } else {
+                    const fill = mixVolSliderEl.querySelector('.slider__fill');
+                    if (fill) fill.style.setProperty('--fill-width', Math.round(v * 100) + '%');
+                    if (mixVolSliderValue) mixVolSliderValue.textContent = Math.round(v * 100) + '%';
                 }
             }
 

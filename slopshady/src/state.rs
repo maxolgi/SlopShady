@@ -29,6 +29,8 @@ pub fn default_layers(shader_source: &str) -> Vec<Value> {
             "enabled": i == 0,
             "solo": false,
             "opacity": opacity,
+            "volume": 1.0,
+            "audioMuted": false,
             "blendMode": "normal",
             "material": {
                 "type": "shader",
@@ -53,6 +55,8 @@ pub fn normalize_layer(layer: &mut Value, index: usize) {
         "enabled": index == 0,
         "solo": false,
         "opacity": opacity,
+        "volume": 1.0,
+        "audioMuted": false,
         "blendMode": "normal",
         "material": {"type": "shader", "source": "", "params": {}},
         "modulationMatrix": [],

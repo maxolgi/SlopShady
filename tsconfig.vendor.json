@@ -1,0 +1,17 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "allowJs": false,
+        "noEmit": false,
+        "declaration": true,
+        "rootDir": "vendor/WebSRT/web/src",
+        "outDir": "static/vendor/WebSRT/web/src"
+    },
+    "include": ["vendor/WebSRT/web/src/**/*.ts"],
+    "exclude": [
+        "vendor/WebSRT/web/src/debug/**",
+        "vendor/WebSRT/web/src/main.ts",
+        "vendor/WebSRT/web/src/render.ts",
+        "vendor/WebSRT/web/src/worker.ts"
+    ]
+}

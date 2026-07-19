@@ -29,6 +29,13 @@ export const StreamingUI = {
     _epoch: 0,
     _forceKeyframe: false,
     _handshakeDone: false,
+    // Flow-control credits: worker grants N credits (initial 2, then 1 per
+    // encoded chunk emitted). Main decrements per frame sent and refuses to
+    // send when 0. Bounds the in-flight frame count between main and worker
+    // so complex scenes that slow the encoder can't accumulate an unbounded
+    // backlog in the postMessage queue (which would arrive at the muxer as a
+    // stale-PTS burst and surface as TS CC errors + pixilation on the viewer).
+    _frameCredits: 0,
     datagramQueue: [],
     reconnectTimer: null,
     reconnectAttempts: 0,
@@ -50,6 +57,13 @@ export const StreamingUI = {
     _codec: 'avc1.640028',
     _selectedCodec: null,
     _codecProbe: null,
+
+    // ---- constant bitrate (CBR) ----
+    // ON by default for streaming — produces a steady bitrate instead of
+    // variable, which reduces packet bursts during complex scenes and keeps
+    // SRT's send buffer predictably loaded. Toggle off for VBR (higher
+    // instantaneous quality at the cost of burst risk).
+    _cbrEnabled: true,
 
     // ---- adaptive bitrate (ABR) ----
     // OFF by default — experimental; tune the constants below and re-test before
@@ -139,6 +153,10 @@ export const StreamingUI = {
         const abrBtn = getEl('stream-abr-toggle');
         if (abrBtn) abrBtn.addEventListener('click', () => this._toggleAbr());
         this._syncAbrButton();
+        // CBR toggle.
+        const cbrBtn = getEl('stream-cbr-toggle');
+        if (cbrBtn) cbrBtn.addEventListener('click', () => this._toggleCbr());
+        this._syncCbrButton();
         const codecDd = getEl('stream-codec-dropdown');
         if (codecDd) codecDd.addEventListener('dropdown-select', (e) => {
             this._selectedCodec = e.detail.value;
@@ -171,6 +189,9 @@ export const StreamingUI = {
             setNum('stream-keyframe', 'slopshady.stream.keyframe');
             const abr = localStorage.getItem('slopshady.stream.abr');
             this._abrEnabled = abr === '1';
+            // CBR defaults to ON; only flip off if explicitly stored as '0'.
+            const cbr = localStorage.getItem('slopshady.stream.cbr');
+            this._cbrEnabled = cbr === null ? true : cbr !== '0';
         } catch (e) { /* localStorage unavailable */ }
     },
 
@@ -189,6 +210,7 @@ export const StreamingUI = {
             saveNum('stream-latency', 'slopshady.stream.latency');
             saveNum('stream-keyframe', 'slopshady.stream.keyframe');
             localStorage.setItem('slopshady.stream.abr', this._abrEnabled ? '1' : '0');
+            localStorage.setItem('slopshady.stream.cbr', this._cbrEnabled ? '1' : '0');
         } catch (e) { /* ignore */ }
     },
 
@@ -228,6 +250,9 @@ export const StreamingUI = {
         this.isStreaming = true;
         this._epoch = performance.now();
         this._handshakeDone = false;
+        // Reset flow-control credits from any prior session. The worker
+        // grants fresh credits at init.
+        this._frameCredits = 0;
 
         // 1) Capability gate
         if (typeof WebTransport === 'undefined' || typeof VideoEncoder === 'undefined') {
@@ -309,13 +334,25 @@ export const StreamingUI = {
         this.worker.onmessage = (e) => this.onWorkerMessage(e.data);
         this._encW = state.canvas.width & ~1;
         this._encH = state.canvas.height & ~1;
+        // Look up the probe result for the selected codec to find which HW
+        // mode actually passed probe (HW if it was available and probed clean,
+        // null if HW flaked and SW was used as fallback). Without this the
+        // worker would blindly prefer-HW and could fail at encode time on the
+        // same machines where the probe just flaked.
+        const probeEntry = this._codecProbe && this._codecProbe.video.find(v => v.codec === this._codec);
+        const videoHwMode = probeEntry ? probeEntry.hwMode : null;
         this.worker.postMessage({
             type: 'init',
             latencyMs: this._latencyMs,
             videoCodec: this._codecFamily(this._codec),
             videoCodecString: this._codec,
-            videoBitrate: this._videoBitrate,
+            videoHwMode,
+            // Send _currentBitrate (which equals target when ABR is off; may
+            // differ when ABR is on). Subsequent changes are pushed via
+            // setBitrate messages — see _applyBitrate.
+            videoBitrate: this._currentBitrate,
             videoFps: this._fps,
+            cbrEnabled: this._cbrEnabled,
             encW: this._encW,
             encH: this._encH,
             keyframeMs: this._keyframeMs,
@@ -436,6 +473,11 @@ export const StreamingUI = {
             // Worker dropped a frame due to backpressure — force a keyframe on
             // the next successful capture so the viewer recovers quickly.
             this._forceKeyframe = true;
+        } else if (msg.type === 'frameCredit') {
+            // Worker grants credits after each encode completes (or when it
+            // drops a frame). Bounded in-flight count prevents postMessage
+            // backlog during slow-encode scenes.
+            this._frameCredits += (typeof msg.count === 'number') ? msg.count : 1;
         } else if (msg.type === 'videoEncoderFailed') {
             this._handleVideoEncoderFailed(msg.msg);
         } else if (msg.type === 'close') {
@@ -519,6 +561,10 @@ export const StreamingUI = {
      *  transfers it to the worker; the worker owns the VideoEncoder. */
     captureFrame() {
         if (!this.worker || !this._handshakeDone) return;
+        // Flow control: skip capture if worker hasn't granted a credit. This
+        // is the critical guard against postMessage backlog during complex
+        // scenes where the encoder can't keep up with capture rate.
+        if (this._frameCredits <= 0) return;
         // rAF-driven wakeup for the worker's SRT poll. The oscillator on the
         // main thread keeps rAF (and thus this tick) alive when the tab is
         // backgrounded; the worker's setInterval(10) is a fallback that can
@@ -542,9 +588,13 @@ export const StreamingUI = {
             timestamp: (performance.now() - this._epoch) * 1000,
             visibleRect: { x: 0, y: 0, width: ew, height: eh },
         });
-        // Transfer the frame — worker takes ownership and closes it after encode.
-        this.worker.postMessage({ type: 'frame', frame, isKey: this._forceKeyframe }, [frame]);
+        this.worker.postMessage({
+            type: 'frame',
+            frame,
+            isKey: this._forceKeyframe,
+        }, [frame]);
         this._forceKeyframe = false;
+        this._frameCredits--;
     },
 
     _codecFamily(codec) {
@@ -566,11 +616,12 @@ export const StreamingUI = {
         }
     },
 
-    /** Reconfigure the live VideoEncoder with _currentBitrate. No-op if not
-     *  configured yet (start() will apply via _videoConfig() at configure time). */
+    /** Push the current bitrate to the worker's VideoEncoder. Called on ABR
+     *  shifts and on manual bitrate-slider changes. The worker reconfigures
+     *  its encoder; if no encoder is live yet, the value is captured at init. */
     _applyBitrate() {
-        if (!this.videoEncoder || this.videoEncoder.state !== 'configured') return;
-        try { this.videoEncoder.configure(this._videoConfig()); }
+        if (!this.worker) return;
+        try { this.worker.postMessage({ type: 'setBitrate', bitrate: this._currentBitrate }); }
         catch (e) { console.warn('[ABR] apply failed', e); }
     },
 
@@ -590,6 +641,26 @@ export const StreamingUI = {
     _syncAbrButton() {
         const btn = getEl('stream-abr-toggle');
         if (btn) btn.classList.toggle('active', !!this._abrEnabled);
+    },
+
+    /** Toggle CBR/VBR. Pushes the new mode to the worker, which reconfigures
+     *  its VideoEncoder. CBR is the safer default for streaming — predictable
+     *  bitrate, no burst risk during complex scenes. VBR gives higher
+     *  instantaneous quality at the cost of burst risk. */
+    _toggleCbr() {
+        this._cbrEnabled = !this._cbrEnabled;
+        this._syncCbrButton();
+        try { localStorage.setItem('slopshady.stream.cbr', this._cbrEnabled ? '1' : '0'); } catch (e) { /* ignore */ }
+        if (this.worker) {
+            try { this.worker.postMessage({ type: 'setBitrateMode', cbr: this._cbrEnabled }); }
+            catch (e) { console.warn('[CBR] apply failed', e); }
+        }
+        console.log('[CBR]', this._cbrEnabled ? 'enabled (constant)' : 'disabled (variable)');
+    },
+
+    _syncCbrButton() {
+        const btn = getEl('stream-cbr-toggle');
+        if (btn) btn.classList.toggle('active', !!this._cbrEnabled);
     },
 
     /**
@@ -652,7 +723,12 @@ export const StreamingUI = {
         }
     },
 
-    /** Probe VideoEncoder/AudioEncoder codec support; cache + render in the panel. */
+    /** Probe VideoEncoder/AudioEncoder codec support; cache + render in the panel.
+     *  For H.264/HEVC, probes HW first then falls back to SW — without the SW
+     *  fallback, the supported list goes intermittent because the HW probe
+     *  (NVENC session limit, GPU process mid-init after refresh, OS power-state
+     *  GPU switch) can flake even when SW encode (always bundled with Chrome)
+     *  would work fine. */
     async probeCodecs() {
         const out = { webcodecs: typeof VideoEncoder !== 'undefined', video: [], audio: [] };
         const w = (state.canvas && state.canvas.width) || 1280;
@@ -660,15 +736,34 @@ export const StreamingUI = {
         if (out.webcodecs) {
             for (const c of this._videoCandidates) {
                 let ok = false;
+                let hwMode = null;  // null = SW, 'prefer-hardware' = HW passed
                 try {
-                    const cfg = {
+                    const fam = this._codecFamily(c.codec);
+                    const baseCfg = {
                         codec: c.codec, width: w, height: h,
                         bitrate: this._videoBitrate, framerate: this._fps, latencyMode: 'realtime',
                     };
-                    const r = await VideoEncoder.isConfigSupported(cfg);
-                    ok = !!(r && r.supported);
-                } catch (e) { ok = false; }
-                out.video.push({ ...c, supported: ok });
+                    if (fam === 'h264' || fam === 'hevc') {
+                        // Try HW first; if it fails (intermittent HW availability),
+                        // fall back to SW — Chrome always bundles openh264 for H.264.
+                        const hwR = await VideoEncoder.isConfigSupported({
+                            ...baseCfg, hardwareAcceleration: 'prefer-hardware',
+                        });
+                        if (hwR && hwR.supported) {
+                            ok = true;
+                            hwMode = 'prefer-hardware';
+                        } else {
+                            const swR = await VideoEncoder.isConfigSupported(baseCfg);
+                            ok = !!(swR && swR.supported);
+                            hwMode = null;
+                        }
+                    } else {
+                        const r = await VideoEncoder.isConfigSupported(baseCfg);
+                        ok = !!(r && r.supported);
+                        hwMode = null;
+                    }
+                } catch (e) { ok = false; hwMode = null; }
+                out.video.push({ ...c, supported: ok, hwMode });
             }
             for (const c of this._audioCandidates) {
                 let ok = false;
@@ -734,15 +829,18 @@ export const StreamingUI = {
             el.textContent = 'WebCodecs unavailable — open in Chrome/Edge (--no-browser)';
             return;
         }
-        const mark = (ok) => (ok ? '✓' : '✗');
+        // Only list supported encoders — hides unsupported candidates so the
+        // panel reflects what's actually selectable in the dropdown.
         const lines = [];
         for (const v of probe.video) {
-            let line = `${mark(v.supported)} ${v.label}`;
+            if (!v.supported) continue;
+            let line = `${v.label}`;
             if (v.note) line += ` — ${v.note}`;
             lines.push(line);
         }
         for (const a of probe.audio) {
-            let line = `${mark(a.supported)} ${a.label}`;
+            if (!a.supported) continue;
+            let line = `${a.label}`;
             if (a.note) line += ` — ${a.note}`;
             lines.push(line);
         }

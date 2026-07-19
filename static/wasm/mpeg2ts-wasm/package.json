@@ -1,0 +1,15 @@
+{
+  "name": "mpeg2ts-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "mpeg2ts_wasm_bg.wasm",
+    "mpeg2ts_wasm.js",
+    "mpeg2ts_wasm.d.ts"
+  ],
+  "main": "mpeg2ts_wasm.js",
+  "types": "mpeg2ts_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
