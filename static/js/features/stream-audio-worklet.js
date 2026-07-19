@@ -14,7 +14,7 @@
  * audio device, so panel reflow cannot interrupt it.
  *
  * Output protocol (worklet → port owner, normally the stream worker):
- *   { ts: number (performance.now() in ms, wallclock),
+ *   { ts: number (microseconds since stream start, on the audio clock),
  *     data: Float32Array (FRAME_SIZE * NUM_CHANNELS samples) }
  *
  * Data layout: planar — [channel0 * FRAME_SIZE samples, channel1 * FRAME_SIZE].
@@ -25,24 +25,69 @@
  * 128-sample blocks (the AudioWorklet render quantum) don't divide 960 evenly
  * (960/128 = 7.5), so the processor buffers across calls and emits when the
  * buffer fills.
+ *
+ * Timestamps: AudioWorkletGlobalScope does NOT expose `performance`; only the
+ * `currentTime` global (AudioContext clock, in seconds) and `currentFrame`.
+ * Main passes the stream-epoch base time via processorOptions; the worklet
+ * sends `(currentTime - baseTime) * 1e6` microseconds, which the worker uses
+ * directly as AudioData.timestamp. This puts audio PTS on a clock that starts
+ * at zero when streaming starts, matching how video PTS is computed in
+ * StreamingUI.captureFrame (`(performance.now() - epochMs) * 1000`). The two
+ * clocks (audio hardware vs system) drift slightly over time but stay close
+ * enough for live-stream A/V sync.
+ *
+ * numberOfOutputs is 1 (not 0) and process() zeroes the output buffers, then
+ * the main thread connects `node → ctx.destination`. Web Audio is pull-based
+ * from ctx.destination: a node with no output path to destination is never
+ * pulled, so its process() never runs and no audio is captured. Outputting
+ * silence on a path to destination establishes the pull without doubling the
+ * audible signal (zeros mixed into destination = no audible change).
  */
 
 const FRAME_SIZE = 960;       // 20ms at 48kHz
 const NUM_CHANNELS = 2;
 
 class StreamAudioProcessor extends AudioWorkletProcessor {
-    constructor() {
+    constructor(options) {
         super();
         this._ch0 = new Float32Array(FRAME_SIZE);
         this._ch1 = new Float32Array(FRAME_SIZE);
         this._filled = 0;     // samples filled in current frame, per channel
+        this._processCount = 0;
+        this._frameCount = 0;
+        // processorOptions.baseTime is ctx.currentTime captured on the main
+        // thread at stream start. Subtracting it gives a clock that starts at
+        // 0 when streaming starts.
+        const opts = (options && options.processorOptions) || {};
+        this._baseTime = (typeof opts.baseTime === 'number') ? opts.baseTime : 0;
+        console.log('[StreamAudio worklet] constructor called; baseTime=', this._baseTime, 'ctx.currentTime=', currentTime);
     }
 
     /**
-     * @param {Float32Array[][]} inputs - inputs[channel][sample] = sample value
+     * @param {Float32Array[][]} inputs  - inputs[channel][sample]
+     * @param {Float32Array[][]} outputs - we write silence here (see header)
      * @returns {boolean} true to keep the processor alive
      */
-    process(inputs) {
+    process(inputs, outputs) {
+        this._processCount++;
+        if (this._processCount === 1 || this._processCount === 60) {
+            const input = inputs[0];
+            const inCh0 = input && input[0];
+            console.log(`[StreamAudio worklet] process #${this._processCount}`, {
+                inputChannels: input ? input.length : 0,
+                inputLen: inCh0 ? inCh0.length : 0,
+                inputSample0: inCh0 && inCh0.length ? inCh0[0] : null,
+                currentTime,
+            });
+        }
+
+        // Zero outputs regardless of input — we exist to tap, not to emit.
+        // Without this, connecting node → ctx.destination would double audio.
+        const out = outputs[0];
+        if (out) {
+            for (let c = 0; c < out.length; c++) out[c].fill(0);
+        }
+
         const input = inputs[0];
         if (!input || input.length === 0) return true;
         const inCh0 = input[0];
@@ -61,13 +106,18 @@ class StreamAudioProcessor extends AudioWorkletProcessor {
             inIdx += chunk;
 
             if (this._filled >= FRAME_SIZE) {
+                this._frameCount++;
                 // Planar stereo: [ch0 (960) || ch1 (960)]
-                const out = new Float32Array(FRAME_SIZE * NUM_CHANNELS);
-                out.set(this._ch0, 0);
-                out.set(this._ch1, FRAME_SIZE);
-                // performance.now() in worklets shares the main thread's time
-                // origin, so this is comparable to the epoch sent in init.
-                this.port.postMessage({ ts: performance.now(), data: out }, [out.buffer]);
+                const outFrame = new Float32Array(FRAME_SIZE * NUM_CHANNELS);
+                outFrame.set(this._ch0, 0);
+                outFrame.set(this._ch1, FRAME_SIZE);
+                // AudioWorkletGlobalScope.currentTime (seconds) — NOT
+                // performance.now(), which is unavailable here.
+                const tsUs = Math.round((currentTime - this._baseTime) * 1_000_000);
+                if (this._frameCount === 1 || this._frameCount === 50) {
+                    console.log(`[StreamAudio worklet] emitting frame #${this._frameCount}; ch0[0]=${this._ch0[0]} ch1[0]=${this._ch1[0]} tsUs=${tsUs}`);
+                }
+                this.port.postMessage({ ts: tsUs, data: outFrame }, [outFrame.buffer]);
                 this._filled = 0;
             }
         }
@@ -76,3 +126,4 @@ class StreamAudioProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('stream-audio-processor', StreamAudioProcessor);
+

@@ -143,20 +143,35 @@ self.onmessage = async (e) => {
             // render thread. AudioEncoder is constructed lazily on first frame
             // (so init doesn't fail if the encoder isn't available).
             audioPort = m.port;
+            let audioFrameCount = 0;
+            let audioChunkCount = 0;
             audioPort.onmessage = (e) => {
                 const { ts, data } = e.data;
+                audioFrameCount++;
+                if (audioFrameCount === 1 || audioFrameCount === 50) {
+                    console.log(`[stream-worker] audio frame #${audioFrameCount} received`, {
+                        ts,
+                        dataBytes: data.byteLength,
+                        samples: data.length,
+                        handshakeComplete: rx ? rx.isHandshakeComplete() : 'no-rx',
+                        encoderState: audioEncoder ? audioEncoder.state : 'not-constructed',
+                    });
+                }
                 if (!rx || !rx.isHandshakeComplete() || !muxer) return;
                 if (!audioEncoder) {
                     try {
                         audioEncoder = new AudioEncoder({
                             output: (chunk) => {
                                 if (!rx || !rx.isHandshakeComplete() || !muxer) return;
+                                audioChunkCount++;
+                                if (audioChunkCount === 1 || audioChunkCount === 20) {
+                                    console.log(`[stream-worker] encoded audio chunk #${audioChunkCount}`, {
+                                        bytes: chunk.byteLength,
+                                        timestamp: chunk.timestamp,
+                                    });
+                                }
                                 const buf = new ArrayBuffer(chunk.byteLength);
                                 chunk.copyTo(new Uint8Array(buf));
-                                // chunk.timestamp was set on the input AudioData
-                                // (see below) — WebCodecs propagates it through
-                                // the Opus encoder, so it's already on the
-                                // stream-epoch clock.
                                 muxer.push_audio(new Uint8Array(buf), chunk.timestamp);
                                 flushTsToSrt();
                             },
@@ -168,21 +183,21 @@ self.onmessage = async (e) => {
                             numberOfChannels: 2,
                             bitrate: 128000,
                         });
+                        console.log('[stream-worker] AudioEncoder configured', audioEncoder.state);
                     } catch (err) {
                         postMessage({ type: 'log', msg: 'AudioEncoder init failed: ' + (err && err.message || err) });
                         return;
                     }
                 }
-                // PTS in microseconds, on the same wall-clock-derived epoch as
-                // video. The worklet stamps `ts` with performance.now() at the
-                // instant the 960-sample frame filled.
-                const pts = Math.round((ts - epochMs) * 1000);
+                // The worklet already converted to microseconds-since-stream-
+                // start on the audio clock. Use directly as AudioData.timestamp
+                // so video and audio PTS share the same zero origin.
                 const audioData = new AudioData({
                     format: 'f32-planar',
                     sampleRate: 48000,
                     numberOfFrames: 960,
                     numberOfChannels: 2,
-                    timestamp: pts,
+                    timestamp: ts,
                     data: data,
                 });
                 if (audioEncoder.encodeQueueSize < 10) {

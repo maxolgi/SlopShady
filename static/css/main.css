@@ -1174,9 +1174,8 @@ body.nodes-view #node-inspector { pointer-events: auto; }
        (top:-6px) and any upward-opening dropdown; contain:layout broke
        .dropdown__menu--flip (position:fixed; bottom:0) by making the panel
        the containing block for fixed descendants, so the menu landed
-       inside the panel instead of against the viewport. The main-thread
-       starvation fix is the rAF batching in bottom-panel.js. */
-}
+   inside the panel instead of against the viewport. The main-thread
+   starvation fix is the rAF batching in bottom-panel.js. */
 }
 
 .bottom-panel.rendering {

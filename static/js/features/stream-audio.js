@@ -44,12 +44,24 @@ export const StreamAudio = {
 
         let node;
         try {
+            // numberOfOutputs: 1 — required. Web Audio is pull-based from
+            // ctx.destination; a node with no output path is never pulled and
+            // its process() never runs (which is why audio went missing in the
+            // first cut of Phase 2). The processor writes silence to its
+            // output, and we connect node → ctx.destination below to establish
+            // the pull path. Silence + destination mix = no audible change.
+            //
+            // processorOptions.baseTime: captured now (ctx.currentTime at
+            // stream start) so the worklet can compute PTS as
+            // (currentTime - baseTime) * 1e6 microseconds — same origin as
+            // video PTS (which starts at 0 at stream start on the main side).
             node = new AudioWorkletNode(ctx, 'stream-audio-processor', {
                 numberOfInputs: 1,
-                numberOfOutputs: 0,
+                numberOfOutputs: 1,
                 channelCount: 2,
                 channelCountMode: 'explicit',
                 channelInterpretation: 'speakers',
+                processorOptions: { baseTime: ctx.currentTime },
             });
         } catch (e) {
             console.warn('[StreamAudio] AudioWorkletNode construction failed', e);
@@ -57,8 +69,19 @@ export const StreamAudio = {
         }
 
         analyser.connect(node);
-        // node has no outputs; audio is tapped and discarded (the analyser
-        // continues to feed its existing graph — visualizers etc.).
+        // Establish the pull path. The worklet outputs silence so this does
+        // not double the audible signal.
+        node.connect(ctx.destination);
+
+        console.log('[StreamAudio] init complete', {
+            ctxState: ctx.state,
+            ctxSampleRate: ctx.sampleRate,
+            ctxCurrentTime: ctx.currentTime,
+            analyserChannelCount: analyser.channelCount,
+            nodeNumberOfInputs: node.numberOfInputs,
+            nodeNumberOfOutputs: node.numberOfOutputs,
+            destinationConnected: true,
+        });
 
         // Hand the port to the worker. After this, node.port is neutered on
         // the main side; the worker owns the other end.
