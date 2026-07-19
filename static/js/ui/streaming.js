@@ -1,10 +1,12 @@
 /**
  * StreamingUI — main-thread coordinator for WebSRT publishing.
  *
- * Captures the WebGL canvas (H.264/HEVC/AV1 HW encode via WebCodecs VideoEncoder)
- * and ships encoded chunks to a module worker that runs the TS muxer + SRT
- * receiver WASM + Opus AudioEncoder, exchanging datagrams with the WebSRT
- * gateway over WebTransport.
+ * Captures the WebGL canvas as transferable VideoFrames (one GPU copy + one
+ * postMessage per frame) and ships them to a module worker that runs the
+ * VideoEncoder + TS muxer + SRT receiver WASM + Opus AudioEncoder, exchanging
+ * datagrams with the WebSRT gateway over WebTransport. All CPU-heavy encode
+ * work is off-main (Phase 3 moved VideoEncoder to the worker; AudioEncoder
+ * followed in Phase 2).
  *
  * Audio path: an AudioWorklet (see features/stream-audio.js +
  * features/stream-audio-worklet.js) taps the Webamp analyser and ships 20ms
@@ -23,7 +25,6 @@ export const StreamingUI = {
     // ---- runtime handles ----
     worker: null,
     transport: null,
-    videoEncoder: null,
     isStreaming: false,
     _epoch: 0,
     _forceKeyframe: false,
@@ -306,42 +307,24 @@ export const StreamingUI = {
         //    on the same clock as video.
         this.worker = new Worker('/js/features/stream-worker.js', { type: 'module' });
         this.worker.onmessage = (e) => this.onWorkerMessage(e.data);
+        this._encW = state.canvas.width & ~1;
+        this._encH = state.canvas.height & ~1;
         this.worker.postMessage({
             type: 'init',
             latencyMs: this._latencyMs,
             videoCodec: this._codecFamily(this._codec),
+            videoCodecString: this._codec,
+            videoBitrate: this._videoBitrate,
+            videoFps: this._fps,
+            encW: this._encW,
+            encH: this._encH,
+            keyframeMs: this._keyframeMs,
             epochMs: this._epoch,
         });
 
-        // 5) VideoEncoder (H.264 avcC → worker normalizes to Annex B + prepends
-        //    SPS/PPS; AV1 → raw OBUs pass through unchanged.)
-        this.videoEncoder = new VideoEncoder({
-            output: (chunk, meta) => {
-                if (this._codecFamily(this._codec) === 'h264') {
-                    const desc = meta && meta.decoderConfig ? meta.decoderConfig.description : null;
-                    if (desc && this.worker) {
-                        const spsPps = this._parseAvcCToAnnexB(desc);
-                        if (spsPps) {
-                            const spsBuf = spsPps.buffer;
-                            this.worker.postMessage({ type: 'spspps', data: spsBuf }, [spsBuf]);
-                        }
-                    }
-                }
-                const buf = new ArrayBuffer(chunk.byteLength);
-                chunk.copyTo(new Uint8Array(buf));
-                this.worker.postMessage(
-                    { type: 'video', data: buf, timestamp: chunk.timestamp, isKey: chunk.type === 'key' },
-                    [buf],
-                );
-            },
-            error: (e) => {
-                console.error('VideoEncoder', e);
-                this._setStatus('VideoEncoder error: ' + (e && e.message || e));
-            },
-        });
-        this._encW = state.canvas.width & ~1;
-        this._encH = state.canvas.height & ~1;
-        this.videoEncoder.configure(this._videoConfig());
+        // 5) VideoEncoder now lives in the worker (Phase 3). Main thread
+        //    captures VideoFrames from the canvas and posts them transferable;
+        //    the worker owns the encoder and runs Annex B / SPS-PPS / muxer.
 
         // 6) Audio (Opus) — AudioWorklet taps the Webamp analyser and ships
         //    Float32 frames directly to the worker via a transferred
@@ -386,11 +369,8 @@ export const StreamingUI = {
 
         this._handshakeDone = false;
 
-        if (this.videoEncoder) {
-            try { await this.videoEncoder.flush(); } catch (e) { /* ignore */ }
-            try { this.videoEncoder.close(); } catch (e) { /* ignore */ }
-            this.videoEncoder = null;
-        }
+        // VideoEncoder lives in the worker (Phase 3); it is closed when the
+        // worker receives `stop` (or is terminated below).
         // Audio tap is torn down via StreamAudio (disconnects the AudioWorkletNode).
         // The AudioEncoder lives in the worker and is closed when the worker
         // receives `stop` (or is terminated below).
@@ -452,6 +432,12 @@ export const StreamingUI = {
             console.log('[worker]', msg.msg);
         } else if (msg.type === 'initFailed') {
             this._handleInitFailed(msg.msg);
+        } else if (msg.type === 'requestKeyframe') {
+            // Worker dropped a frame due to backpressure — force a keyframe on
+            // the next successful capture so the viewer recovers quickly.
+            this._forceKeyframe = true;
+        } else if (msg.type === 'videoEncoderFailed') {
+            this._handleVideoEncoderFailed(msg.msg);
         } else if (msg.type === 'close') {
             this._handshakeDone = false;
             this._setStatus('Stream closed');
@@ -514,23 +500,30 @@ export const StreamingUI = {
         // and an immediate retry would just hit the same failure.
     },
 
+    /** Worker's VideoEncoder rejected config or threw at runtime — stop
+     *  without retry (the encoder is gone), surface the reason. */
+    _handleVideoEncoderFailed(reason) {
+        this.isStreaming = false;
+        this._handshakeDone = false;
+        this._abortSession();
+        const startBtn = getEl('startStream');
+        const stopBtn = getEl('stopStream');
+        if (startBtn) startBtn.classList.remove('active');
+        if (stopBtn) stopBtn.classList.add('disabled');
+        this._setStatus('VideoEncoder error: ' + reason);
+        // No reconnect — a runtime encoder failure would just recur.
+    },
+
     /** Called from the render loop (core.js) each frame while streaming.
-     *  Encodes one even-dimensioned VideoFrame (H.264 rejects odd sizes). */
+     *  Captures one even-dimensioned VideoFrame (H.264 rejects odd sizes) and
+     *  transfers it to the worker; the worker owns the VideoEncoder. */
     captureFrame() {
-        if (!this.videoEncoder || !this._handshakeDone) return;
+        if (!this.worker || !this._handshakeDone) return;
         // rAF-driven wakeup for the worker's SRT poll. The oscillator on the
         // main thread keeps rAF (and thus this tick) alive when the tab is
         // backgrounded; the worker's setInterval(10) is a fallback that can
         // be throttled to ~1Hz without this.
-        if (this.worker) this.worker.postMessage({ type: 'tick' });
-        if (this.videoEncoder.state !== 'configured') return;
-        if (this.videoEncoder.encodeQueueSize >= 4) {
-            // Queue full — frame dropped. Force a keyframe on the next
-            // successful encode so the viewer doesn't sit on a broken
-            // reference until the periodic keyframe timer fires.
-            this._forceKeyframe = true;
-            return;
-        }
+        this.worker.postMessage({ type: 'tick' });
         const ew = state.canvas.width & ~1;
         const eh = state.canvas.height & ~1;
         if (ew < 2 || eh < 2) return;
@@ -541,17 +534,17 @@ export const StreamingUI = {
             // previous dims; AV1 HW encoders in particular have level/dim caps.
             // Invalidate so the next start() re-probes at the new resolution.
             this._codecProbe = null;
-            try { this.videoEncoder.configure(this._videoConfig()); }
-            catch (e) { console.warn('reconfigure', e); return; }
+            // Worker owns the VideoEncoder — tell it to reconfigure for new dims.
+            this.worker.postMessage({ type: 'resize', width: ew, height: eh });
             this._forceKeyframe = true;
         }
         const frame = new VideoFrame(state.canvas, {
             timestamp: (performance.now() - this._epoch) * 1000,
             visibleRect: { x: 0, y: 0, width: ew, height: eh },
         });
-        this.videoEncoder.encode(frame, { keyFrame: this._forceKeyframe });
+        // Transfer the frame — worker takes ownership and closes it after encode.
+        this.worker.postMessage({ type: 'frame', frame, isKey: this._forceKeyframe }, [frame]);
         this._forceKeyframe = false;
-        frame.close();
     },
 
     _codecFamily(codec) {
@@ -561,19 +554,6 @@ export const StreamingUI = {
         if (c.startsWith('avc1') || c.startsWith('avc3')) return 'h264';
         if (c.startsWith('vp09')) return 'vp9';
         return 'other';
-    },
-
-    _videoConfig() {
-        const cfg = {
-            codec: this._codec,
-            width: this._encW || (state.canvas.width & ~1),
-            height: this._encH || (state.canvas.height & ~1),
-            bitrate: this._currentBitrate,
-            framerate: this._fps,
-            latencyMode: 'realtime',
-        };
-        if (this._codecFamily(this._codec) === 'h264') cfg.avc = { format: 'avc' };
-        return cfg;
     },
 
     /** Read #stream-bitrate (Mbps) into _videoBitrate (bps), clamped. */
@@ -645,45 +625,6 @@ export const StreamingUI = {
             this._highMarkCount = 0;
             this._lowMarkCount = 0;
         }
-    },
-
-    /**
-     * Parse an avcC decoder-config record (VideoEncoder meta.description) into
-     * Annex B bytes: 00 00 00 01 <SPS> 00 00 00 01 <PPS>. The viewer needs
-     * SPS/PPS in-band; avcC-mode encoders only expose them via description.
-     */
-    _parseAvcCToAnnexB(desc) {
-        const d = desc instanceof ArrayBuffer
-            ? new Uint8Array(desc)
-            : new Uint8Array(desc.buffer, desc.byteOffset || 0, desc.byteLength);
-        const parts = [];
-        let p = 5; // skip version, profile, compat, level, lengthSize
-        if (d.length <= p) return null;
-        const numSPS = d[p] & 0x1f; p++;
-        for (let i = 0; i < numSPS && p + 2 <= d.length; i++) {
-            const len = (d[p] << 8) | d[p + 1]; p += 2;
-            if (len <= 0 || p + len > d.length) break;
-            parts.push([0, 0, 0, 1]);
-            parts.push(d.subarray(p, p + len));
-            p += len;
-        }
-        if (p < d.length) {
-            const numPPS = d[p]; p++;
-            for (let i = 0; i < numPPS && p + 2 <= d.length; i++) {
-                const len = (d[p] << 8) | d[p + 1]; p += 2;
-                if (len <= 0 || p + len > d.length) break;
-                parts.push([0, 0, 0, 1]);
-                parts.push(d.subarray(p, p + len));
-                p += len;
-            }
-        }
-        if (parts.length === 0) return null;
-        let total = 0;
-        for (const x of parts) total += x.length;
-        const out = new Uint8Array(total);
-        let o = 0;
-        for (const x of parts) { out.set(x, o); o += x.length; }
-        return out;
     },
 
     _setStatus(s) {
@@ -852,7 +793,7 @@ export const StreamingUI = {
         if (this._keyframeInterval) { clearInterval(this._keyframeInterval); this._keyframeInterval = null; }
         this._stopAntiThrottle();
         if (this._receiveReader) { try { this._receiveReader.cancel(); } catch (e) { /* ignore */ } this._receiveReader = null; }
-        if (this.videoEncoder) { try { this.videoEncoder.close(); } catch (e) { /* ignore */ } this.videoEncoder = null; }
+        // VideoEncoder lives in the worker (Phase 3); terminating the worker reaps it.
         StreamAudio.stop();
         if (this.transport) { try { this.transport.close(); } catch (e) { /* ignore */ } this.transport = null; }
         if (this.worker) { try { this.worker.terminate(); } catch (e) { /* ignore */ } this.worker = null; }

@@ -4,18 +4,24 @@
  * Loads two WASM modules (srt-wasm + ts-muxer-wasm), runs the SRT receiver that
  * both ingests incoming datagrams and publishes upstream TS, and exchanges
  * datagrams with the main thread (StreamingUI). Owns the Opus AudioEncoder
- * (fed from a transferred AudioWorklet MessagePort).
+ * (fed from a transferred AudioWorklet MessagePort) and, since Phase 3, the
+ * VideoEncoder — the main thread posts transferable VideoFrames captured from
+ * the WebGL canvas; the worker owns encode + Annex B / SPS-PPS / muxer work.
  *
  * Message protocol (main → worker):
- *   { type:'init', latencyMs, videoCodec, epochMs }
- *                                              load wasm, build rx+muxer, start poll/stats loops
- *   { type:'video', data, timestamp, isKey }   one encoded video chunk (H.264/HEVC Annex B, or AV1 raw OBUs)
- *   { type:'audio-port', port }                MessagePort owned by the StreamAudioProcessor
+ *   { type:'init', latencyMs, videoCodec, videoCodecString, videoBitrate,
+ *     videoFps, encW, encH, keyframeMs, epochMs }
+ *                                              load wasm, build rx+muxer, construct
+ *                                              + configure VideoEncoder, start poll/stats loops
+ *   { type:'frame', frame, isKey }            one VideoFrame captured from the canvas
+ *                                              (transferable; worker encodes + closes it)
+ *   { type:'resize', width, height }          canvas resized — worker reconfigures VideoEncoder
+ *   { type:'audio-port', port }               MessagePort owned by the StreamAudioProcessor
  *                                              (Phase 2 — replaces the old 'audio' message;
  *                                              AudioEncoder runs in the worker)
- *   { type:'datagram', data }                  one WebTransport datagram from gateway
- *   { type:'tick' }                            rAF-driven poll wakeup (supplements setInterval)
- *   { type:'stop' }                            stop loops, flush remaining TS
+ *   { type:'datagram', data }                 one WebTransport datagram from gateway
+ *   { type:'tick' }                           rAF-driven poll wakeup (supplements setInterval)
+ *   { type:'stop' }                           stop loops, flush remaining TS
  *
  * Message protocol (worker → main):
  *   { type:'send', data }            datagram to ship via WebTransport
@@ -23,7 +29,10 @@
  *   { type:'stats', stats }          SrtStats snapshot
  *   { type:'log', msg }              informational/log line
  *   { type:'close' }                 SRT connection closed
- *   { type:'initFailed', msg }       worker WASM/muxer init failed (no retry)
+ *   { type:'initFailed', msg }       worker WASM/muxer/VideoEncoder init failed (no retry)
+ *   { type:'requestKeyframe' }       VideoEncoder backpressure — frame dropped; main forces
+ *                                    a keyframe on the next capture (Phase 1 recovery)
+ *   { type:'videoEncoderFailed', msg } VideoEncoder rejected config or threw at runtime
  *   { type:'stopped' }               ack of `stop` — safe to terminate
  */
 import init, { SrtReceiver } from '/wasm/srt-wasm/srt_wasm.js';
@@ -34,13 +43,19 @@ let muxer = null;
 let pollTimer = null;
 let statsTimer = null;
 let wasmReady = false;
-let videoCodec = 'h264';
-let spsPps = null; // Annex B SPS+PPS bytes (from encoder avcC description); prepended on keyframes
+let videoCodec = 'h264';          // family: h264 / hevc / av1 (Annex B vs AV1 routing)
+let videoCodecString = 'avc1.640028'; // exact codec string for VideoEncoder.configure
+let videoBitrate = 8_000_000;     // bps (captured at init; ABR still on main — follow-up)
+let videoFps = 60;
+let encW = 1280;
+let encH = 720;
+let spsPps = null;                // Annex B SPS+PPS bytes (from encoder avcC description); prepended on keyframes
 let lastPoll = 0;
 let driftWarned = false;
 let epochMs = 0;          // stream-epoch in performance.now() ms (audio PTS reference)
 let audioEncoder = null;
 let audioPort = null;
+let videoEncoder = null;
 
 const nowUs = () => performance.now() * 1000;
 
@@ -86,6 +101,12 @@ self.onmessage = async (e) => {
                 muxer = new TsMuxer();
                 videoCodec = m.videoCodec || 'h264';
                 epochMs = m.epochMs || 0;
+                // Phase 3: VideoEncoder config (was on main; moved off-main).
+                videoCodecString = m.videoCodecString || videoCodecString;
+                videoBitrate = m.videoBitrate || videoBitrate;
+                videoFps = m.videoFps || videoFps;
+                encW = m.encW || encW;
+                encH = m.encH || encH;
                 try { muxer.setVideoCodec(videoCodec); } catch (e) { /* older wasm: ignore */ }
                 spsPps = null;
                 if (pollTimer) clearInterval(pollTimer);
@@ -103,39 +124,90 @@ self.onmessage = async (e) => {
                         } });
                     } catch (e) { /* rx gone */ }
                 }, 2000);
+                // Phase 3: construct + configure VideoEncoder in the worker.
+                try {
+                    videoEncoder = new VideoEncoder({
+                        output: (chunk, meta) => {
+                            if (!rx || !rx.isHandshakeComplete() || !muxer) return;
+                            // H.264 keyframes carry SPS/PPS only in the avcC
+                            // description; extract them now (avcC → Annex B) so
+                            // they can be prepended in-band on the keyframe NAL.
+                            if (videoCodec === 'h264' && chunk.type === 'key') {
+                                const desc = meta && meta.decoderConfig ? meta.decoderConfig.description : null;
+                                if (desc) spsPps = parseAvcCToAnnexB(desc);
+                            }
+                            const payload = new Uint8Array(chunk.byteLength);
+                            chunk.copyTo(payload);
+                            let nal;
+                            if (videoCodec === 'av1') {
+                                // AV1: raw low-overhead OBUs, Sequence Header already in keyframes. No Annex B / SPS-PPS.
+                                nal = payload;
+                            } else {
+                                // H.264/HEVC: convert chunk to Annex B FIRST (avcC/hvcC length-prefix →
+                                // start codes), then prepend in-band SPS/PPS on keyframes (avcC encoders
+                                // omit them). Doing the prepend BEFORE ensureAnnexB breaks its start-code
+                                // sniff — the SPS/PPS prefix is already Annex B, so it bails out and leaves
+                                // the IDR slice in length-prefixed form, where parseAnnexB on the viewer
+                                // side cannot find it. Result: decoder gets SPS/PPS but no IDR → no frames.
+                                const annexB = ensureAnnexB(payload);
+                                if (chunk.type === 'key' && spsPps && spsPps.length) {
+                                    nal = new Uint8Array(spsPps.length + annexB.length);
+                                    nal.set(spsPps, 0);
+                                    nal.set(annexB, spsPps.length);
+                                } else {
+                                    nal = annexB;
+                                }
+                            }
+                            muxer.push_video(nal, chunk.timestamp, chunk.timestamp, chunk.type === 'key');
+                            flushTsToSrt();
+                        },
+                        error: (err) => {
+                            console.error('[worker] VideoEncoder', err);
+                            postMessage({ type: 'videoEncoderFailed', msg: (err && err.message) || String(err) });
+                        },
+                    });
+                    videoEncoder.configure(videoConfig());
+                    console.log('[stream-worker] VideoEncoder configured', videoEncoder.state, videoCodecString, encW + 'x' + encH);
+                } catch (err) {
+                    postMessage({ type: 'initFailed', msg: 'VideoEncoder init failed: ' + ((err && err.message) || err) });
+                    return;
+                }
             } catch (initErr) {
                 // Surface init failures distinctly so the UI can stop and show
                 // a message instead of staying on "Connecting…" forever.
                 postMessage({ type: 'initFailed', msg: (initErr && initErr.message) || String(initErr) });
                 return;
             }
-        } else if (m.type === 'spspps') {
-            if (videoCodec === 'av1') return;
-            spsPps = new Uint8Array(m.data);
-        } else if (m.type === 'video') {
-            if (rx && rx.isHandshakeComplete() && muxer) {
-                const payload = new Uint8Array(m.data);
-                if (videoCodec === 'av1') {
-                    // AV1: raw low-overhead OBUs, Sequence Header already in keyframes. No Annex B / SPS-PPS.
-                    muxer.push_video(payload, m.timestamp, m.timestamp, m.isKey);
-                } else {
-                    // H.264/HEVC: convert chunk to Annex B FIRST (avcC/hvcC length-prefix →
-                    // start codes), then prepend in-band SPS/PPS on keyframes (avcC encoders
-                    // omit them). Doing the prepend BEFORE ensureAnnexB breaks its start-code
-                    // sniff — the SPS/PPS prefix is already Annex B, so it bails out and leaves
-                    // the IDR slice in length-prefixed form, where parseAnnexB on the viewer
-                    // side cannot find it. Result: decoder gets SPS/PPS but no IDR → no frames.
-                    const annexB = ensureAnnexB(payload);
-                    let nal = annexB;
-                    if (m.isKey && spsPps && spsPps.length) {
-                        const combined = new Uint8Array(spsPps.length + annexB.length);
-                        combined.set(spsPps, 0);
-                        combined.set(annexB, spsPps.length);
-                        nal = combined;
-                    }
-                    muxer.push_video(nal, m.timestamp, m.timestamp, m.isKey);
-                }
-                flushTsToSrt();
+        } else if (m.type === 'frame') {
+            // Phase 3: one transferable VideoFrame from the main-thread canvas.
+            // Worker owns encode + Annex B / SPS-PPS / muxer; closes the frame
+            // after encode (or on any early-out path — frames must not leak).
+            if (!videoEncoder || videoEncoder.state !== 'configured') {
+                try { m.frame.close(); } catch (e) { /* ignore */ }
+                return;
+            }
+            if (videoEncoder.encodeQueueSize >= 4) {
+                // Backpressure: drop this frame, ask main to force a keyframe
+                // on the next capture so the viewer recovers quickly once the
+                // queue drains (preserves the Phase 1 recovery behavior).
+                try { m.frame.close(); } catch (e) { /* ignore */ }
+                postMessage({ type: 'requestKeyframe' });
+                return;
+            }
+            try {
+                videoEncoder.encode(m.frame, { keyFrame: m.isKey });
+            } catch (e) {
+                console.warn('[worker] encode failed', e);
+            }
+            try { m.frame.close(); } catch (e) { /* ignore */ }
+        } else if (m.type === 'resize') {
+            // Phase 3: main signaled a canvas-size change — reconfigure the
+            // encoder for the new even dims before the next frame arrives.
+            encW = m.width;
+            encH = m.height;
+            if (videoEncoder && videoEncoder.state === 'configured') {
+                try { videoEncoder.configure(videoConfig()); }
+                catch (e) { console.warn('[worker] reconfigure failed', e); }
             }
         } else if (m.type === 'audio-port') {
             // Phase 2: AudioWorklet tap. The transferred MessagePort delivers
@@ -215,6 +287,11 @@ self.onmessage = async (e) => {
         } else if (m.type === 'stop') {
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
             if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
+            if (videoEncoder) {
+                try { videoEncoder.flush(); } catch (e) { /* ignore */ }
+                try { videoEncoder.close(); } catch (e) { /* ignore */ }
+                videoEncoder = null;
+            }
             if (audioPort) { try { audioPort.close(); } catch (e) { /* ignore */ } audioPort = null; }
             if (audioEncoder) {
                 try { audioEncoder.flush(); } catch (e) { /* ignore */ }
@@ -257,6 +334,63 @@ function processActions(actions) {
         }
         // k === 1 (DeliverMessage) and k === 3 (WaitForData) need no main-thread action.
     }
+}
+
+/**
+ * Build the VideoEncoder config for the current codec/dims/bitrate. Uses
+ * videoBitrate directly (no ABR — adaptive bitrate still lives on main and is
+ * a follow-up to wire through to the worker).
+ */
+function videoConfig() {
+    const cfg = {
+        codec: videoCodecString,
+        width: encW,
+        height: encH,
+        bitrate: videoBitrate,
+        framerate: videoFps,
+        latencyMode: 'realtime',
+    };
+    if (videoCodec === 'h264') cfg.avc = { format: 'avc' };
+    return cfg;
+}
+
+/**
+ * Parse an avcC decoder-config record (VideoEncoder meta.description) into
+ * Annex B bytes: 00 00 00 01 <SPS> 00 00 00 01 <PPS>. The viewer needs
+ * SPS/PPS in-band; avcC-mode encoders only expose them via description.
+ */
+function parseAvcCToAnnexB(desc) {
+    const d = desc instanceof ArrayBuffer
+        ? new Uint8Array(desc)
+        : new Uint8Array(desc.buffer, desc.byteOffset || 0, desc.byteLength);
+    const parts = [];
+    let p = 5; // skip version, profile, compat, level, lengthSize
+    if (d.length <= p) return null;
+    const numSPS = d[p] & 0x1f; p++;
+    for (let i = 0; i < numSPS && p + 2 <= d.length; i++) {
+        const len = (d[p] << 8) | d[p + 1]; p += 2;
+        if (len <= 0 || p + len > d.length) break;
+        parts.push([0, 0, 0, 1]);
+        parts.push(d.subarray(p, p + len));
+        p += len;
+    }
+    if (p < d.length) {
+        const numPPS = d[p]; p++;
+        for (let i = 0; i < numPPS && p + 2 <= d.length; i++) {
+            const len = (d[p] << 8) | d[p + 1]; p += 2;
+            if (len <= 0 || p + len > d.length) break;
+            parts.push([0, 0, 0, 1]);
+            parts.push(d.subarray(p, p + len));
+            p += len;
+        }
+    }
+    if (parts.length === 0) return null;
+    let total = 0;
+    for (const x of parts) total += x.length;
+    const out = new Uint8Array(total);
+    let o = 0;
+    for (const x of parts) { out.set(x, o); o += x.length; }
+    return out;
 }
 
 /**
