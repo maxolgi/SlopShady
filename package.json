@@ -1,0 +1,14 @@
+{
+    "name": "slopshady",
+    "version": "0.1.0",
+    "private": true,
+    "description": "SlopShady — multi-layer shader VJ tool. Demonstrates the WebSRT library (multi-stream receive + publish).",
+    "scripts": {
+        "build": "tsc -p tsconfig.emit.json && tsc -p tsconfig.vendor.json",
+        "watch": "tsc -p tsconfig.emit.json --watch",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "devDependencies": {
+        "typescript": "^5.4.0"
+    }
+}

@@ -21,3 +21,10 @@ AGENTS.md
 
 # opencode session state
 .opencode/
+
+# TypeScript toolchain
+node_modules/
+
+# tsc build output (regenerated from src/js/ and vendor/WebSRT/ by build.rs)
+static/js/
+static/vendor/
