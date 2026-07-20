@@ -724,7 +724,7 @@ export const StreamingUI = {
     },
 
     /** Probe VideoEncoder/AudioEncoder codec support; cache + render in the panel.
-     *  For H.264/HEVC, probes HW first then falls back to SW — without the SW
+     *  For H.264/HEVC/AV1, probes HW first then falls back to SW — without the SW
      *  fallback, the supported list goes intermittent because the HW probe
      *  (NVENC session limit, GPU process mid-init after refresh, OS power-state
      *  GPU switch) can flake even when SW encode (always bundled with Chrome)
@@ -743,7 +743,7 @@ export const StreamingUI = {
                         codec: c.codec, width: w, height: h,
                         bitrate: this._videoBitrate, framerate: this._fps, latencyMode: 'realtime',
                     };
-                    if (fam === 'h264' || fam === 'hevc') {
+                    if (fam === 'h264' || fam === 'hevc' || fam === 'av1') {
                         // Try HW first; if it fails (intermittent HW availability),
                         // fall back to SW — Chrome always bundles openh264 for H.264.
                         const hwR = await VideoEncoder.isConfigSupported({

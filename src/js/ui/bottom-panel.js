@@ -121,7 +121,9 @@ function updateGLDebugInfo() {
     const dpr = window.devicePixelRatio || 1;
     const bufW = state.canvas.width;
     const bufH = state.canvas.height;
-    const scaleLabel = state.resolutionScale === 'dpr' ? `DPR (${dpr})` : `${state.resolutionScale}x`;
+    const rs = state.resolutionScale;
+    const scaleLabel = /^(\d+)x(\d+)$/.test(rs) ? rs
+        : (rs === 'dpr' ? `DPR (${dpr})` : `${rs}x`);
     getEl('dbg-fbo-dims').textContent = `${bufW} × ${bufH} (${scaleLabel} of ${cssW} × ${cssH} CSS)`;
     getEl('dbg-dpr').textContent = `${dpr} (${bufW / cssW}× effective)`;
 

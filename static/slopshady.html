@@ -1103,6 +1103,9 @@
                         <div class="dropdown__item" data-value="dpr">Native (DPR)</div>
                         <div class="dropdown__item" data-value="1.5">1.5x</div>
                         <div class="dropdown__item" data-value="2">2x (Retina)</div>
+                        <div class="dropdown__item" data-value="1280x720">720p</div>
+                        <div class="dropdown__item" data-value="1920x1080">1080p</div>
+                        <div class="dropdown__item" data-value="3840x2160">4K</div>
                     </div>
                 </div>
                 <button class="tool-btn tool-btn--expand" id="settings-debug-mode" data-expand-target="debug-section">
@@ -1497,15 +1500,11 @@
                 </div>
                 <input type="text" id="stream-input-url" placeholder="Gateway WT URL (https://host:port/wt)">
                 <input type="text" id="stream-input-name" placeholder="Stream name (?stream=)">
-                <div class="tool-grid tool-grid--2x1">
-                    <label class="stream-input-label">Latency (ms)
-                        <input type="number" id="stream-input-latency" value="300" min="20" max="8000" step="10">
-                    </label>
+                <div class="tool-grid tool-grid--4x1">
+                    <input type="number" id="stream-input-latency" value="300" min="20" max="8000" step="10" placeholder="Latency">
+                    <button class="tool-btn" id="stream-input-toggle">▶ Start</button>
+                    <button class="tool-btn" id="stream-input-toggle-all">▶ Start All</button>
                     <div></div>
-                </div>
-                <div class="tool-grid tool-grid--2x1">
-                    <button class="tool-btn" id="stream-input-start">▶ Start</button>
-                    <button class="tool-btn disabled" id="stream-input-stop">⏹ Stop</button>
                 </div>
                 <div id="stream-input-status"></div>
                 <div id="stream-input-stats" class="stream-input-stats"></div>

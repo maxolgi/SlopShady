@@ -336,7 +336,11 @@ export const LayerSystem = {
         
         // 2. For each renderable layer: render shader → composite
         for (const layer of renderableLayers) {
-            if (!layer.program && layer.material?.type !== 'visualizer' && layer.material?.type !== 'milkdrop' && layer.material?.type !== 'scanimate') continue;
+            // Skip layers that need a per-layer shader program but don't have one.
+            // Material types here use a shared program (imageProgram / dedicated
+            // engine) and don't need layer.program to be set.
+            const programlessTypes = ['visualizer', 'milkdrop', 'scanimate', 'websrt', 'image', 'video', 'webcam', 'screen', 'text'];
+            if (!layer.program && !programlessTypes.includes(layer.material?.type)) continue;
 
             this.renderLayerToTexture(layer, currentTime);
 
@@ -1187,16 +1191,25 @@ export const LayerSystem = {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            entry = { tex, w: 0, h: 0 };
+            entry = { tex, w: 0, h: 0, lastFrame: null };
             this._websrtTextures.set(layer.index, entry);
         }
 
-        // Upload this frame.
-        gl.bindTexture(gl.TEXTURE_2D, entry.tex);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
-        entry.w = frame.codedWidth || frame.displayWidth || entry.w;
-        entry.h = frame.codedHeight || frame.displayHeight || entry.h;
+        // Upload only when a new VideoFrame is available. The PTS-paced
+        // `latestVideoFrame` returns the same reference across multiple RAFs
+        // when source fps < display fps (e.g., 30 fps OBS on a 60 Hz display
+        // returns the same frame for ~2 RAFs); re-uploading the identical
+        // bytes every RAF wastes GPU/host bandwidth and main-thread time.
+        // Identity compare is correct — `displayedFrame` is a stable
+        // reference until `_advanceDisplayedFrame` shifts it.
+        if (entry.lastFrame !== frame) {
+            gl.bindTexture(gl.TEXTURE_2D, entry.tex);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+            entry.w = frame.codedWidth || frame.displayWidth || entry.w;
+            entry.h = frame.codedHeight || frame.displayHeight || entry.h;
+            entry.lastFrame = frame;
+        }
 
         const fitModeInt = {
             'cover': 0, 'contain': 1, 'stretch': 2,

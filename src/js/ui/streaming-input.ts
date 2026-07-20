@@ -21,6 +21,29 @@ import { getEl, state } from '../state.js';
 const NUM_INPUTS = 8;
 const LS_PREFIX = 'slopshady.stream.input.';
 
+// PTS-paced presentation (mirrors vendor/WebSRT/web/src/render.ts):
+// incoming decoded frames are buffered in a small ring and handed to the
+// compositor only when their PTS is due. Without this, a decoder burst
+// (B-frame reorder + WebCodecs pipeline + postMessage batching) arriving
+// between two render polls overwrites the single-slot pending frame and
+// the layer skips — visible as ~half-framerate with irregular pacing on
+// bursty (higher-RTT) paths.
+//
+// Cap of 8 absorbs the worker's worst observed burst (4 frames at once
+// from a single SRT poll + 4 already buffered). At 1080p each VideoFrame
+// is GPU/driver-backed, so the headroom is cheap.
+const FRAME_RING_CAP = 8;
+// Drop a buffered frame if its PTS is more than this many µs behind the
+// presentation clock — it missed its slot. ~3 RAF cycles at 60 Hz.
+const LATE_DROP_US = 50_000;
+// Reset the PTS↔wall clock mapping when a frame's PTS diverges from the
+// expected presentation time by more than this — seek / stream restart /
+// recovery from a backgrounded tab.
+const CLOCK_RESET_US = 1_000_000;
+// Coalesce multiple latestVideoFrame() calls within one RAF cycle (e.g.
+// several layers bound to the same input) into a single advance.
+const ADVANCE_MIN_INTERVAL_MS = 4;
+
 // MediaStreamTrackGenerator is not yet in lib.dom.d.ts (TS 5.9). The runtime
 // API is Chrome ≥94; declare a minimal surface so the rest of the file type-
 // checks without `as any` at every call site.
@@ -40,7 +63,19 @@ interface InputEntry {
     refcount: number;
     manualStart: boolean;
     status: 'idle' | 'connecting' | 'live' | 'closed' | 'error' | string;
-    currentFrame: VideoFrame | null;
+    // Decoded frames awaiting presentation, in decode (PTS) order. Bounded;
+    // pushing past FRAME_RING_CAP closes the oldest.
+    frameRing: VideoFrame[];
+    // Frame most recently handed to the compositor. Held until a newer
+    // frame's PTS becomes due, so the layer doesn't flicker between
+    // advances. Distinct from frameRing[0] — the render loop may poll
+    // faster than source frame rate.
+    displayedFrame: VideoFrame | null;
+    // Wall-clock ↔ PTS mapping for presentation pacing. Established on
+    // first frame; reset on large gap.
+    ptsOriginUs: number | null;
+    wallOriginMs: number;
+    lastAdvanceMs: number;
     handshakeDone: boolean;
     audioTrackGenerator: MediaStreamTrackGeneratorLike | null;
     audioWriter: WritableStreamDefaultWriter<AudioData> | null;
@@ -147,11 +182,11 @@ export const StreamingInputUI = {
                 this._syncAnalyserDropdownDisplay();
             });
         }
-        // Wire Start/Stop buttons.
-        const startBtn = getEl('stream-input-start');
-        const stopBtn = getEl('stream-input-stop');
-        if (startBtn) startBtn.addEventListener('click', () => this._toggleStart());
-        if (stopBtn) stopBtn.addEventListener('click', () => this._toggleStart());
+        // Wire Start/Stop toggle + Start-All/Stop-All toggle.
+        const toggleBtn = getEl('stream-input-toggle');
+        if (toggleBtn) toggleBtn.addEventListener('click', () => this._toggleStart());
+        const toggleAllBtn = getEl('stream-input-toggle-all');
+        if (toggleAllBtn) toggleAllBtn.addEventListener('click', () => this._toggleAll());
         // Wire field changes to persist + refresh analyser labels. Listen on
         // 'input' (every keystroke) rather than 'change' (blur-only) so the
         // value is in localStorage even if the user clicks Start mid-typing.
@@ -201,7 +236,67 @@ export const StreamingInputUI = {
 
     latestVideoFrame(inputIndex: number): VideoFrame | null {
         const entry = this._inputs[inputIndex];
-        return entry ? entry.currentFrame : null;
+        if (!entry) return null;
+        // Throttle advancement so multiple calls within one RAF cycle (e.g.
+        // several layers bound to the same input) return the same frame.
+        const now = performance.now();
+        if (now - entry.lastAdvanceMs >= ADVANCE_MIN_INTERVAL_MS) {
+            entry.lastAdvanceMs = now;
+            this._advanceDisplayedFrame(inputIndex);
+        }
+        return entry.displayedFrame;
+    },
+
+    /**
+     * Push a freshly decoded frame into the PTS-paced ring and refresh the
+     * wall-clock ↔ PTS mapping. Called from the worker's `videoFrame`
+     * handler.
+     */
+    _acceptVideoFrame(inputIndex: number, frame: VideoFrame): void {
+        const entry = this._inputs[inputIndex];
+        if (!entry) { try { frame.close(); } catch (e) { /* ignore */ } return; }
+        if (entry.ptsOriginUs === null) {
+            entry.ptsOriginUs = frame.timestamp;
+            entry.wallOriginMs = performance.now();
+        } else {
+            const nowPtsUs = entry.ptsOriginUs + (performance.now() - entry.wallOriginMs) * 1000;
+            if (Math.abs(frame.timestamp - nowPtsUs) > CLOCK_RESET_US) {
+                entry.ptsOriginUs = frame.timestamp;
+                entry.wallOriginMs = performance.now();
+            }
+        }
+        entry.frameRing.push(frame);
+        // On overflow drop the *newest* (just-pushed) frame, not the oldest.
+        // The oldest has the earliest PTS and is most urgent to display;
+        // dropping it would skip a frame the user should see. Dropping the
+        // newest just trims a buffer the consumer hasn't reached yet.
+        while (entry.frameRing.length > FRAME_RING_CAP) {
+            const old = entry.frameRing.pop();
+            try { old?.close(); } catch (e) { /* ignore */ }
+        }
+    },
+
+    /**
+     * Drop buffered frames that missed their PTS slot, then advance
+     * `displayedFrame` to the next due frame if one is available. Holds
+     * the current `displayedFrame` when no new frame is due yet so the
+     * compositor can keep re-uploading it without flicker.
+     */
+    _advanceDisplayedFrame(inputIndex: number): void {
+        const entry = this._inputs[inputIndex];
+        if (!entry || entry.ptsOriginUs === null) return;
+        const nowPtsUs = entry.ptsOriginUs + (performance.now() - entry.wallOriginMs) * 1000;
+        while (entry.frameRing.length > 1 && entry.frameRing[0].timestamp < nowPtsUs - LATE_DROP_US) {
+            const old = entry.frameRing.shift();
+            try { old?.close(); } catch (e) { /* ignore */ }
+        }
+        if (entry.frameRing.length > 0 && entry.frameRing[0].timestamp <= nowPtsUs) {
+            const next = entry.frameRing.shift()!;
+            if (entry.displayedFrame && entry.displayedFrame !== next) {
+                try { entry.displayedFrame.close(); } catch (e) { /* ignore */ }
+            }
+            entry.displayedFrame = next;
+        }
     },
 
     getInputName(inputIndex: number): string {
@@ -266,17 +361,48 @@ export const StreamingInputUI = {
             entry.manualStart = true;
             this._connect(i);
         }
-        this._syncStartStopButtons();
+        this._syncToggleButton();
+        this._syncToggleAllButton();
     },
 
-    _syncStartStopButtons(): void {
+    _toggleAll(): void {
+        // If any input is currently running, stop all. Else start all.
+        const anyRunning = this._inputs.some(e => e && (e.worker || e.manualStart));
+        for (let i = 0; i < NUM_INPUTS; i++) {
+            const cfg = this._readConfig(i);
+            if (!cfg.url || !cfg.name) continue; // skip unconfigured
+            const entry = this._ensureEntry(i);
+            const isRunning = !!(entry.worker || entry.manualStart);
+            if (anyRunning && isRunning) {
+                entry.manualStart = false;
+                this._disconnect(i);
+            } else if (!anyRunning && !isRunning) {
+                entry.manualStart = true;
+                this._connect(i);
+            }
+        }
+        this._syncToggleButton();
+        this._syncToggleAllButton();
+    },
+
+    _syncToggleButton(): void {
         const i = this._selectedInput;
         const entry = this._inputs[i];
         const live = !!(entry && (entry.worker || entry.manualStart));
-        const startBtn = getEl('stream-input-start');
-        const stopBtn = getEl('stream-input-stop');
-        if (startBtn) startBtn.classList.toggle('active', live);
-        if (stopBtn) stopBtn.classList.toggle('disabled', !live);
+        const btn = getEl('stream-input-toggle');
+        if (btn) {
+            btn.textContent = live ? '⏹ Stop' : '▶ Start';
+            btn.classList.toggle('active', live);
+        }
+    },
+
+    _syncToggleAllButton(): void {
+        const anyRunning = this._inputs.some(e => e && (e.worker || e.manualStart));
+        const btn = getEl('stream-input-toggle-all');
+        if (btn) {
+            btn.textContent = anyRunning ? '⏹ Stop All' : '▶ Start All';
+            btn.classList.toggle('active', anyRunning);
+        }
     },
 
     // ---------- Selector swap ----------
@@ -287,7 +413,7 @@ export const StreamingInputUI = {
         this._selectedInput = i;
         this._renderSelectedConfig();
         this._renderStatsBlock();
-        this._syncStartStopButtons();
+        this._syncToggleButton(); this._syncToggleAllButton();
         this._syncSelectorDisplay();
     },
 
@@ -313,7 +439,9 @@ export const StreamingInputUI = {
             this._inputs[i] = {
                 wt: null, worker: null,
                 refcount: 0, manualStart: false,
-                status: 'idle', currentFrame: null,
+                status: 'idle',
+                frameRing: [], displayedFrame: null,
+                ptsOriginUs: null, wallOriginMs: 0, lastAdvanceMs: 0,
                 handshakeDone: false,
                 audioTrackGenerator: null, audioWriter: null, audioSourceNode: null,
                 layerGains: new Map(), audioMutedForLayer: new Map(),
@@ -336,7 +464,7 @@ export const StreamingInputUI = {
         const cfg = this._readConfig(inputIndex);
         if (!cfg.url || !cfg.name) {
             this._setStatus(inputIndex, 'missing url/name');
-            this._syncStartStopButtons();
+            this._syncToggleButton(); this._syncToggleAllButton();
             return;
         }
         if (typeof WebTransport === 'undefined') {
@@ -349,7 +477,7 @@ export const StreamingInputUI = {
 
         entry.status = 'connecting';
         this._setStatus(inputIndex, 'Connecting…');
-        this._syncStartStopButtons();
+        this._syncToggleButton(); this._syncToggleAllButton();
 
         // Fetch cert hash.
         let hash = null as string | null;
@@ -392,7 +520,10 @@ export const StreamingInputUI = {
         if (entry.reconnectTimer) { clearTimeout(entry.reconnectTimer); entry.reconnectTimer = null; }
         this._stopTickLoop(inputIndex);
         this._stopAntiThrottle(inputIndex);
-        if (entry.currentFrame) { try { entry.currentFrame.close(); } catch (e) { /* ignore */ } entry.currentFrame = null; }
+        for (const f of entry.frameRing) { try { f.close(); } catch (e) { /* ignore */ } }
+        entry.frameRing = [];
+        if (entry.displayedFrame) { try { entry.displayedFrame.close(); } catch (e) { /* ignore */ } entry.displayedFrame = null; }
+        entry.ptsOriginUs = null;
         this._teardownAudio(inputIndex);
         if (entry.worker) {
             const worker = entry.worker;
@@ -415,7 +546,7 @@ export const StreamingInputUI = {
         entry._receiveReader = null;
         this._setStatus(inputIndex, '');
         this._renderStatsBlock();
-        this._syncStartStopButtons();
+        this._syncToggleButton(); this._syncToggleAllButton();
     },
 
     _scheduleReconnect(inputIndex: number): void {
@@ -458,13 +589,12 @@ export const StreamingInputUI = {
             entry.reconnectAttempts = 0;
             entry.status = 'live';
             this._setStatus(inputIndex, 'Live · ' + (this._readConfig(inputIndex).name || ''));
-            if (inputIndex === this._selectedInput) this._syncStartStopButtons();
+            if (inputIndex === this._selectedInput) this._syncToggleButton(); this._syncToggleAllButton();
         } else if (msg.type === 'streamInfo') {
             // Don't overwrite 'live' with codec-info status; just refresh stats block.
             if (inputIndex === this._selectedInput) this._renderStatsBlock();
         } else if (msg.type === 'videoFrame') {
-            if (entry.currentFrame) { try { entry.currentFrame.close(); } catch (e) { /* ignore */ } }
-            entry.currentFrame = msg.frame;
+            this._acceptVideoFrame(inputIndex, msg.frame);
         } else if (msg.type === 'audioData') {
             this._handleAudioData(inputIndex, msg.data);
         } else if (msg.type === 'stats') {
@@ -486,7 +616,7 @@ export const StreamingInputUI = {
         } else if (msg.type === 'initFailed') {
             this._setStatus(inputIndex, 'Init failed: ' + msg.msg);
             entry.status = 'error';
-            this._syncStartStopButtons();
+            this._syncToggleButton(); this._syncToggleAllButton();
         }
     },
 

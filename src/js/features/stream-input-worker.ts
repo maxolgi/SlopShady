@@ -266,7 +266,6 @@ function feedTs(bytes: Uint8Array): void {
 }
 
 function handlePmt(entries: { pid: number; streamType: number; formatId: string | null }[]): void {
-    postLog('PMT entries: ' + JSON.stringify(entries));
     let newVideo = false;
     let newAudio = false;
     for (const e of entries) {

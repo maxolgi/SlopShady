@@ -143,7 +143,7 @@ export const LayerMixer = {
                     ${dropdownHtml(`mix-blend-dropdown-${i}`, `mix-blend-menu-${i}`, BLEND_OPTIONS, 'normal', ti('LAYER_BLEND', {n}))}
                     <div class="tool-grid tool-grid--2x2">
                         <button class="tool-btn" id="mix-solo-${i}" data-tooltip="${escapeAttr(ti('LAYER_SOLO', {n}))}">Solo</button>
-                        <button class="tool-btn" id="mix-show-${i}" data-tooltip="${escapeAttr(ti('LAYER_SHOW', {n}))}">Show</button>
+                        <button class="tool-btn" id="mix-show-${i}" data-tooltip="${escapeAttr(ti('LAYER_SHOW', {n}))}">Hide</button>
                     </div>
                     <button class="tool-btn" id="mix-brain-${i}" data-tooltip="${escapeAttr(ti('MIX_BRAIN_TOGGLE', {n}))}">Brain</button>
                     <div class="slider" id="mix-opacity-slider-${i}" data-tooltip="${escapeAttr(ti('LAYER_OPACITY', {n}))}">
@@ -1348,7 +1348,9 @@ export const LayerMixer = {
             const mixVolSliderValue = getEl(`mix-volume-value-${i}`);
             
             if (mixSoloBtn) mixSoloBtn.classList.toggle('active', !!layer.solo);
-            if (mixShowBtn) mixShowBtn.classList.toggle('active', !layer.enabled);
+            if (mixShowBtn) {
+                mixShowBtn.classList.toggle('active', !layer.enabled);
+            }
             if (mixAudioMuteBtn) mixAudioMuteBtn.classList.toggle('active', !!layer.audioMuted);
             if (mixBlendSelected) {
                 const blend = layer.blendMode || 'normal';

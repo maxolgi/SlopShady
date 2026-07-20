@@ -79,11 +79,17 @@ export const WebGL = {
     },
     
     resize() {
-        const scale = state.resolutionScale === 'dpr'
-            ? (window.devicePixelRatio || 1)
-            : (parseFloat(state.resolutionScale) || 1);
-        state.canvas.width = Math.round(window.innerWidth * scale);
-        state.canvas.height = Math.round(window.innerHeight * scale);
+        const fixed = /^(\d+)x(\d+)$/.exec(state.resolutionScale);
+        if (fixed) {
+            state.canvas.width = parseInt(fixed[1], 10);
+            state.canvas.height = parseInt(fixed[2], 10);
+        } else {
+            const scale = state.resolutionScale === 'dpr'
+                ? (window.devicePixelRatio || 1)
+                : (parseFloat(state.resolutionScale) || 1);
+            state.canvas.width = Math.round(window.innerWidth * scale);
+            state.canvas.height = Math.round(window.innerHeight * scale);
+        }
         state.gl.viewport(0, 0, state.canvas.width, state.canvas.height);
         FramebufferManager.resize(state.canvas.width, state.canvas.height);
     },

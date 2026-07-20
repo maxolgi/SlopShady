@@ -151,7 +151,22 @@ self.onmessage = async (e) => {
                             // they can be prepended in-band on the keyframe NAL.
                             if (videoCodec === 'h264' && chunk.type === 'key') {
                                 const desc = meta && meta.decoderConfig ? meta.decoderConfig.description : null;
-                                if (desc) spsPps = parseAvcCToAnnexB(desc);
+                                if (desc) {
+                                    spsPps = parseAvcCToAnnexB(desc);
+                                    // Diagnostic: log SPS bytes when extracted.
+                                    // Find SPS NAL (after first 4-byte Annex B start code).
+                                    const spsStart = 4;
+                                    let spsEnd = spsStart;
+                                    while (spsEnd + 3 < spsPps.length && !(spsPps[spsEnd] === 0 && spsPps[spsEnd + 1] === 0 && spsPps[spsEnd + 2] === 0 && spsPps[spsEnd + 3] === 1)) spsEnd++;
+                                    const spsBytes = spsPps.subarray(spsStart, spsEnd);
+                                    const descView = desc instanceof ArrayBuffer ? new Uint8Array(desc) : new Uint8Array(desc.buffer, desc.byteOffset || 0, desc.byteLength);
+                                    console.log('[stream-worker] SPS extract', {
+                                        spsLen: spsBytes.length,
+                                        spsFirst16: Array.from(spsBytes.slice(0, 16)),
+                                        descLen: descView.length,
+                                        descFirst24: Array.from(descView.slice(0, 24)),
+                                    });
+                                }
                             }
                             const payload = new Uint8Array(chunk.byteLength);
                             chunk.copyTo(payload);
@@ -226,15 +241,24 @@ self.onmessage = async (e) => {
                 return;
             }
             if (videoEncoder.encodeQueueSize >= 4) {
-                // Backpressure: drop this frame, ask main to force a keyframe
-                // on the next capture so the viewer recovers quickly once the
-                // queue drains (preserves the Phase 1 recovery behavior).
+                // Backpressure: drop this frame silently. Do NOT post
+                // `requestKeyframe` — forcing a keyframe here creates a
+                // feedback loop (keyframe is large → encoder stays slow →
+                // queue stays full → another forced keyframe …) that
+                // progressively destabilizes the stream during complex
+                // scenes like layer crossfades. The periodic keyframe
+                // interval on main (default 2 s) is enough for the viewer
+                // to recover once the queue drains.
+                //
+                // Do NOT return a credit here either. Main spent a credit
+                // on this frame; returning it immediately sends main into
+                // a tight retry loop against a full queue (encode → drop →
+                // credit → encode → drop → …). Holding the credit until
+                // the encoder emits a chunk locks main's capture rate to
+                // the encoder's actual throughput. The 4 already-queued
+                // frames will each return a credit as they emit, unblocking
+                // main naturally.
                 try { m.frame.close(); } catch (e) { /* ignore */ }
-                postMessage({ type: 'requestKeyframe' });
-                // Return the credit too — main is allowed to send again
-                // immediately; if the queue is still full we'll just drop
-                // again on the next frame.
-                postMessage({ type: 'frameCredit', count: 1 });
                 return;
             }
             try {

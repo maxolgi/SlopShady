@@ -19,6 +19,7 @@ canvas#canvas {
     left: 0;
     width: 100vw;
     height: 100vh;
+    object-fit: contain;
 }
 
 canvas#canvas.rendering {
@@ -2877,12 +2878,9 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     margin-top: 8px;
     min-height: 14px;
 }
-#stream-input-start.active {
+#stream-input-toggle.active,
+#stream-input-toggle-all.active {
     background: var(--slop-active);
-}
-#stream-input-stop.disabled {
-    opacity: 0.4;
-    pointer-events: none;
 }
 .stream-input-stats {
     font-size: 10px;
