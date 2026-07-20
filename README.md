@@ -136,8 +136,8 @@ Single binary, no Python or Node dependencies. Frontend assets are embedded into
 
 2. Clone and build:
    ```bash
-   git clone https://github.com/YOUR_USER/SlopShadyRust.git
-   cd SlopShadyRust/slopshady
+   git clone https://github.com/YOUR_USER/SlopShady.git
+   cd SlopShady/slopshady
    cargo run
    ```
 
@@ -967,7 +967,7 @@ The application loads with "Obsidian Flow / Kinetic Bismuth" as the default shad
 
 ## License
 
-SlopShady is free software: you can redistribute it and/or modify it under the terms of the [MIT License](LICENSE).
+SlopShady is free software: you can redistribute it and/or modify it under the terms of the [GNU General Public License v3.0](LICENSE) (GPL-3.0-or-later).
 
 Third-party libraries are subject to their respective licenses (see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)):
 
