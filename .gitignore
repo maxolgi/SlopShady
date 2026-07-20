@@ -16,6 +16,11 @@ shaders.json
 logs/
 tmp/
 
+# Local-only files (machine-specific configs, personal state, scratch notes)
+slopshady.conf
+playlist.json
+plan.md
+
 # Agent guidance (per AGENTS.md: this file is gitignored by design)
 AGENTS.md
 
