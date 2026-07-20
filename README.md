@@ -967,7 +967,7 @@ The application loads with "Obsidian Flow / Kinetic Bismuth" as the default shad
 
 ## License
 
-SlopShady is free software: you can redistribute it and/or modify it under the terms of the [GNU General Public License v3.0](LICENSE) (GPL-3.0-or-later).
+SlopShady is free software: you can redistribute it and/or modify it under the terms of the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-or-later). Section 13 applies: if you run a modified version on a network-accessible server, you must offer users the corresponding source of your modified version.
 
 Third-party libraries are subject to their respective licenses (see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)):
 
