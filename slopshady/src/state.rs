@@ -14,6 +14,7 @@ pub struct AppState {
     /// Native OSC UDP bridge supervisor. Hot-swappable via the WS handler when
     /// oscPort/oscBind change. Initialized empty; spawned from main().
     pub osc: std::sync::Mutex<crate::osc::OscBridge>,
+    pub cert_hash_port: u16,
 }
 
 pub fn default_layers(shader_source: &str) -> Vec<Value> {

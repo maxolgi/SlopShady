@@ -143,7 +143,10 @@ struct CertHashParams {
     url: String,
 }
 
-async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Json<Value> {
+async fn api_stream_cert_hash(
+    State(app_state): State<Arc<AppState>>,
+    Query(params): Query<CertHashParams>,
+) -> axum::Json<Value> {
     let host = url::Url::parse(&params.url)
         .ok()
         .and_then(|u| u.host_str().map(|s| s.to_string()));
@@ -152,7 +155,7 @@ async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Jso
         return axum::Json(serde_json::json!({ "hash": null, "error": "invalid gateway url" }));
     };
 
-    let cert_url = format!("https://{}:5173/cert-hash.js", host);
+    let cert_url = format!("https://{}:{}/cert-hash.js", host, app_state.cert_hash_port);
     let client = match reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(std::time::Duration::from_secs(4))

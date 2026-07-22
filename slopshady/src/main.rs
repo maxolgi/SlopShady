@@ -34,9 +34,12 @@ struct Cli {
 
     #[arg(long, default_value = "0.0.0.0", help = "Bind address for OSC input")]
     osc_bind: String,
+
+    #[arg(long, default_value = "5173", help = "Port for WebSRT gateway cert-hash.js fetch")]
+    cert_hash_port: u16,
 }
 
-fn create_app_state(data_dir: &std::path::Path) -> Arc<state::AppState> {
+fn create_app_state(data_dir: &std::path::Path, cert_hash_port: u16) -> Arc<state::AppState> {
     let persist_path = data_dir.join("shaders.json");
     let shared_state = state::load_state(&persist_path);
     let (broadcast_tx, _) = broadcast::channel(256);
@@ -47,6 +50,7 @@ fn create_app_state(data_dir: &std::path::Path) -> Arc<state::AppState> {
         broadcast_tx,
         tuning: live_tuning::TuningState::new(),
         osc: std::sync::Mutex::new(osc::OscBridge::default()),
+        cert_hash_port,
     })
 }
 
@@ -91,7 +95,7 @@ async fn main() {
     let cert_path = cli.data_dir.join("cert.pem");
     let key_path = cli.data_dir.join("key.pem");
 
-    let app_state = create_app_state(&cli.data_dir);
+    let app_state = create_app_state(&cli.data_dir, cli.cert_hash_port);
     ensure_cert(&cert_path, &key_path);
 
     println!("Starting HTTPS server on https://localhost:{}", cli.port);
@@ -122,7 +126,7 @@ fn main() {
     let cert_path = cli.data_dir.join("cert.pem");
     let key_path = cli.data_dir.join("key.pem");
 
-    let app_state = create_app_state(&cli.data_dir);
+    let app_state = create_app_state(&cli.data_dir, cli.cert_hash_port);
     ensure_cert(&cert_path, &key_path);
 
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
@@ -311,7 +315,7 @@ fn main() {
     let cert_path = cli.data_dir.join("cert.pem");
     let key_path = cli.data_dir.join("key.pem");
 
-    let app_state = create_app_state(&cli.data_dir);
+    let app_state = create_app_state(&cli.data_dir, cli.cert_hash_port);
     ensure_cert(&cert_path, &key_path);
 
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
