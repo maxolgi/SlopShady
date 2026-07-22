@@ -91,6 +91,7 @@ interface InputEntry {
     _flushPending: boolean;
     _receiveReader: ReadableStreamDefaultReader<Uint8Array> | null;
     _datagramWriter: WritableStreamDefaultWriter<Uint8Array> | null;
+    _initialRttMs: number | undefined;
     _antiThrottle: { osc: OscillatorNode } | null;
     _tickRaf: number | null;
     lastStats: WorkerStats | null;
@@ -449,7 +450,7 @@ export const StreamingInputUI = {
                 analyserTap: null, _analyserConnected: false,
                 reconnectTimer: null, reconnectAttempts: 0,
                 datagramQueue: [], _flushPending: false,
-                _receiveReader: null, _datagramWriter: null,
+                _receiveReader: null, _datagramWriter: null, _initialRttMs: undefined,
                 _antiThrottle: null, _tickRaf: null, lastStats: null,
             };
         }
@@ -498,6 +499,11 @@ export const StreamingInputUI = {
             if (hash) opts.serverCertificateHashes = [{ algorithm: 'sha-256', value: this._hexToBytes(hash) }];
             entry.wt = new WebTransport(url, opts);
             await entry.wt.ready;
+            entry._datagramWriter = entry.wt.datagrams.writable.getWriter();
+            try {
+                const wtStats = await (entry.wt as any).getStats();
+                if (wtStats && typeof wtStats.smoothedRtt === 'number' && wtStats.smoothedRtt > 0) entry._initialRttMs = wtStats.smoothedRtt;
+            } catch { /* getStats not supported */ }
         } catch (e) {
             this._setStatus(inputIndex, 'WT connect failed: ' + ((e as Error)?.message || e));
             entry.wt = null;
@@ -507,7 +513,7 @@ export const StreamingInputUI = {
 
         entry.worker = new Worker('/js/features/stream-input-worker.js', { type: 'module' });
         entry.worker.onmessage = (e: MessageEvent) => this._onWorkerMessage(inputIndex, e.data as WorkerMsg);
-        entry.worker.postMessage({ type: 'init', latencyMs: cfg.latency });
+        entry.worker.postMessage({ type: 'init', latencyMs: cfg.latency, initialRttMs: entry._initialRttMs });
 
         this._startReceiveLoop(inputIndex);
         this._startAntiThrottle(inputIndex);

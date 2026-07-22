@@ -27,7 +27,6 @@ export const debugsnapshot_programNum: (a: number) => number;
 export const debugsnapshot_ptsJumps: (a: number) => [number, number];
 export const debugsnapshot_pusiCounts: (a: number) => [number, number];
 export const debugsnapshot_raCounts: (a: number) => [number, number];
-export const debugsnapshot_ringCcErr: (a: number) => [number, number];
 export const debugsnapshot_ringDts: (a: number) => [number, number];
 export const debugsnapshot_ringKind: (a: number) => [number, number];
 export const debugsnapshot_ringNal: (a: number) => [number, number];

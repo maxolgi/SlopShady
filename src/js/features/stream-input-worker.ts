@@ -170,7 +170,9 @@ self.onmessage = async (e: MessageEvent) => {
         if (m.type === 'init') {
             try {
                 await ensureWasm();
-                rx = SrtReceiver.newWithLatency(m.latencyMs || 300);
+                rx = m.initialRttMs !== undefined
+                    ? SrtReceiver.newWithLatencyAndRtt(m.latencyMs || 300, m.initialRttMs)
+                    : SrtReceiver.newWithLatency(m.latencyMs || 300);
                 demuxer = await Demuxer.create({
                     onPmt: handlePmt,
                     onPes: handlePes,
@@ -473,7 +475,7 @@ function emitStats(): void {
 
 // Type-only declarations for the main → worker message discriminated union.
 type WorkerCmd =
-    | { type: 'init'; latencyMs: number }
+    | { type: 'init'; latencyMs: number; initialRttMs?: number }
     | { type: 'datagram'; data: ArrayBuffer }
     | { type: 'tick' }
     | { type: 'stop' };

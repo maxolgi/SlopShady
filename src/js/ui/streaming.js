@@ -320,6 +320,10 @@ export const StreamingUI = {
             this.transport = new WebTransport(url, opts);
             await this.transport.ready;
             this._datagramWriter = this.transport.datagrams.writable.getWriter();
+            try {
+                const wtStats = await this.transport.getStats();
+                if (wtStats && typeof wtStats.smoothedRtt === 'number' && wtStats.smoothedRtt > 0) this._initialRttMs = wtStats.smoothedRtt;
+            } catch { /* getStats not supported */ }
         } catch (e) {
             this._setStatus('WebTransport connect failed: ' + (e && e.message || e));
             this.isStreaming = false;
@@ -344,6 +348,7 @@ export const StreamingUI = {
         this.worker.postMessage({
             type: 'init',
             latencyMs: this._latencyMs,
+            initialRttMs: this._initialRttMs,
             videoCodec: this._codecFamily(this._codec),
             videoCodecString: this._codec,
             videoHwMode,

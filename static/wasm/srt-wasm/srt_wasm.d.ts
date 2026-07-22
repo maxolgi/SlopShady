@@ -51,10 +51,10 @@ export class SrtReceiver {
      */
     static newWithLatency(latency_ms: number): SrtReceiver;
     /**
-     * `seed` reserved for deterministic local_sockid assignment in tests.
-     * (For now we just use ConnInitSettings::default which calls OsRng via rand.)
+     * Construct with TSBPD latency and initial RTT estimate (milliseconds).
+     * The RTT seeds SRT's EWMA for accurate cold-start retransmit timing.
      */
-    static newWithSeed(_seed: number): SrtReceiver;
+    static newWithLatencyAndRtt(latency_ms: number, initial_rtt_ms: number): SrtReceiver;
     /**
      * Periodic tick. JS calls this every ~10ms (setTimeout) to advance the
      * state machine even when no datagrams arrive.
@@ -109,7 +109,7 @@ export interface InitOutput {
     readonly srtreceiver_isHandshakeComplete: (a: number) => number;
     readonly srtreceiver_new: () => number;
     readonly srtreceiver_newWithLatency: (a: number) => number;
-    readonly srtreceiver_newWithSeed: (a: number) => number;
+    readonly srtreceiver_newWithLatencyAndRtt: (a: number, b: number) => number;
     readonly srtreceiver_poll: (a: number, b: number) => [number, number];
     readonly srtreceiver_sendMessage: (a: number, b: number, c: number, d: number) => [number, number];
     readonly srtstats_bandwidthBps: (a: number) => number;

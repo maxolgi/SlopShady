@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SUB="$REPO_ROOT/vendor/WebSRT"
 OUT="$REPO_ROOT/static/wasm"
 
-if [ ! -d "$SUB/.git" ]; then
+if [ ! -e "$SUB/.git" ]; then
     echo "ERROR: vendor/WebSRT submodule not initialized." >&2
     echo "       Run: git submodule update --init --recursive" >&2
     exit 1

@@ -58,6 +58,94 @@ fn has_ts_files(src: &Path) -> bool {
     false
 }
 
+/// Walk all `.js` files under `dir` and append `.js` to extensionless
+/// relative import specifiers (`from './foo'` → `from './foo.js'`).
+/// Needed because the WebSRT submodule's TS uses extensionless specifiers
+/// (standard TS style) which browsers can't resolve in native ES modules.
+fn rewrite_vendor_imports(dir: &Path) {
+    fn visit(dir: &Path) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                visit(&path);
+                continue;
+            }
+            if path.extension().and_then(|s| s.to_str()) != Some("js") {
+                continue;
+            }
+            let Ok(contents) = fs::read_to_string(&path) else { continue };
+            let rewritten = fix_extensionless_specifiers(&contents);
+            if rewritten != contents {
+                let _ = fs::write(&path, rewritten);
+            }
+        }
+    }
+    visit(dir);
+}
+
+/// In a single line of JS, find `from '...'` / `from "..."` specifiers that
+/// are relative paths (start with `./` or `../`) but lack a file extension,
+/// and append `.js`.
+fn fix_extensionless_specifiers(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    for line in src.lines() {
+        let fixed = fix_line(line);
+        out.push_str(&fixed);
+        out.push('\n');
+    }
+    out
+}
+
+fn fix_line(line: &str) -> String {
+    // Quick skip: no `from '` or `from "` on this line.
+    if !line.contains("from '") && !line.contains("from \"") {
+        return line.to_string();
+    }
+    let chars: Vec<char> = line.chars().collect();
+    let mut result = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        // Look for `from '` or `from "`
+        if i + 6 < chars.len()
+            && chars[i] == 'f'
+            && chars[i + 1] == 'r'
+            && chars[i + 2] == 'o'
+            && chars[i + 3] == 'm'
+            && chars[i + 4] == ' '
+            && (chars[i + 5] == '\'' || chars[i + 5] == '"')
+        {
+            let quote = chars[i + 5];
+            result.push_str("from ");
+            result.push(quote);
+            i += 6;
+            // Collect the specifier until the closing quote.
+            let start = i;
+            while i < chars.len() && chars[i] != quote {
+                result.push(chars[i]);
+                i += 1;
+            }
+            let specifier: String = chars[start..i].iter().collect();
+            // Check if it's a relative path without an extension.
+            let needs_js = (specifier.starts_with("./") || specifier.starts_with("../"))
+                && !specifier.ends_with(".js")
+                && !specifier.ends_with(".mjs")
+                && !specifier.ends_with(".json")
+                && !specifier.ends_with("/")
+                && !specifier.contains('?');
+            if needs_js {
+                // Append .js before the closing quote.
+                result.push_str(".js");
+            }
+            // The closing quote (if present) is consumed by the outer loop.
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
+}
+
 fn main() {
     #[cfg(target_os = "windows")]
     {
@@ -187,6 +275,13 @@ fn main() {
             fs::write(&path, rewritten)
                 .unwrap_or_else(|e| panic!("failed to write {}: {}", path.display(), e));
         }
+
+        // Rewrite extensionless relative imports in emitted vendor .js files.
+        // The WebSRT submodule's TS source uses extensionless specifiers
+        // (standard TS with moduleResolution: "Bundler"), but browsers require
+        // explicit .js extensions in native ES module imports. Without this,
+        // `import { looksLikeAv1 } from './shared/av1'` 404s in the browser.
+        rewrite_vendor_imports(&vendor_out);
     }
 
     // Step 3: Compile SlopShady's `.ts` files under src/js via tsc.emit.

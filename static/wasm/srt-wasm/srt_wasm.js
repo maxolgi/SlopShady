@@ -150,13 +150,14 @@ export class SrtReceiver {
         return SrtReceiver.__wrap(ret);
     }
     /**
-     * `seed` reserved for deterministic local_sockid assignment in tests.
-     * (For now we just use ConnInitSettings::default which calls OsRng via rand.)
-     * @param {number} _seed
+     * Construct with TSBPD latency and initial RTT estimate (milliseconds).
+     * The RTT seeds SRT's EWMA for accurate cold-start retransmit timing.
+     * @param {number} latency_ms
+     * @param {number} initial_rtt_ms
      * @returns {SrtReceiver}
      */
-    static newWithSeed(_seed) {
-        const ret = wasm.srtreceiver_newWithSeed(_seed);
+    static newWithLatencyAndRtt(latency_ms, initial_rtt_ms) {
+        const ret = wasm.srtreceiver_newWithLatencyAndRtt(latency_ms, initial_rtt_ms);
         return SrtReceiver.__wrap(ret);
     }
     /**

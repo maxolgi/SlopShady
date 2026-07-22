@@ -42,7 +42,6 @@ export class DebugSnapshot {
     readonly ptsJumps: Float64Array;
     readonly pusiCounts: Float64Array;
     readonly raCounts: Float64Array;
-    readonly ringCcErr: Uint8Array;
     readonly ringDts: Float64Array;
     readonly ringKind: Uint8Array;
     readonly ringNal: Uint8Array;
@@ -138,7 +137,6 @@ export interface InitOutput {
     readonly debugsnapshot_ptsJumps: (a: number) => [number, number];
     readonly debugsnapshot_pusiCounts: (a: number) => [number, number];
     readonly debugsnapshot_raCounts: (a: number) => [number, number];
-    readonly debugsnapshot_ringCcErr: (a: number) => [number, number];
     readonly debugsnapshot_ringDts: (a: number) => [number, number];
     readonly debugsnapshot_ringKind: (a: number) => [number, number];
     readonly debugsnapshot_ringNal: (a: number) => [number, number];

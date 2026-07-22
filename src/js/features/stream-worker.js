@@ -64,6 +64,8 @@ let encH = 720;
 let spsPps = null;                // Annex B SPS+PPS bytes (from encoder avcC description); prepended on keyframes
 let lastPoll = 0;
 let driftWarned = false;
+let lastTxBytes = 0;
+let lastStatsTime = 0;
 let epochMs = 0;          // stream-epoch in performance.now() ms (audio PTS reference)
 let audioEncoder = null;
 let audioPort = null;
@@ -110,7 +112,9 @@ self.onmessage = async (e) => {
         if (m.type === 'init') {
             try {
                 await ensureWasm();
-                rx = SrtReceiver.newWithLatency(m.latencyMs || 120);
+                rx = m.initialRttMs !== undefined
+                    ? SrtReceiver.newWithLatencyAndRtt(m.latencyMs || 120, m.initialRttMs)
+                    : SrtReceiver.newWithLatency(m.latencyMs || 120);
                 muxer = new TsMuxer();
                 videoCodec = m.videoCodec || 'h264';
                 epochMs = m.epochMs || 0;
