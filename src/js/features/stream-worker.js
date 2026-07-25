@@ -39,7 +39,7 @@
  *   { type:'requestKeyframe' }       VideoEncoder backpressure — frame dropped; main forces
  *                                    a keyframe on the next capture (Phase 1 recovery)
  *   { type:'frameCredit', count }    flow-control credit grant — main may send N more frames.
- *                                    Issued: 2 at init, 1 per encoded chunk, 1 per drop.
+ *                                    Issued: 4 at init, 1 per encoded chunk, 1 per drop.
  *                                    Bounds in-flight count to prevent postMessage backlog
  *                                    during slow-encode scenes.
  *   { type:'videoEncoderFailed', msg } VideoEncoder rejected config or threw at runtime
@@ -57,6 +57,8 @@ let videoCodec = 'h264';          // family: h264 / hevc / av1 (Annex B vs AV1 r
 let videoCodecString = 'avc1.640028'; // exact codec string for VideoEncoder.configure
 let videoBitrate = 8_000_000;     // bps (initial value from init; updated via setBitrate)
 let videoFps = 60;
+let frameCount = 0;
+let keyframeInterval = 60;
 let videoHwMode = null;           // 'prefer-hardware' if HW probe passed; null for SW
 let cbrEnabled = true;            // CBR (constant) vs VBR (variable); set via init + setBitrateMode
 let encW = 1280;
@@ -77,7 +79,7 @@ const nowUs = () => performance.now() * 1000;
 /**
  * Drive the SRT receiver state machine once. Called from both the setInterval
  * fallback and from rAF-driven `tick` messages. Includes a drift watchdog:
- * if the gap between polls exceeds 60ms (vs the 10ms target), log once per
+ * if the gap between polls exceeds 60ms (vs the 5ms target), log once per
  * throttling episode so the problem is visible in the console.
  */
 function pollOnce() {
@@ -122,6 +124,8 @@ self.onmessage = async (e) => {
                 videoCodecString = m.videoCodecString || videoCodecString;
                 videoBitrate = m.videoBitrate || videoBitrate;
                 videoFps = m.videoFps || videoFps;
+                frameCount = 0;
+                keyframeInterval = Math.max(1, Math.round(videoFps * 2));
                 // HW mode is what actually passed probe on main — avoids blindly
                 // preferring HW when the probe flaked and SW was the fallback.
                 videoHwMode = (typeof m.videoHwMode === 'string') ? m.videoHwMode : null;
@@ -131,7 +135,7 @@ self.onmessage = async (e) => {
                 try { muxer.setVideoCodec(videoCodec); } catch (e) { /* older wasm: ignore */ }
                 spsPps = null;
                 if (pollTimer) clearInterval(pollTimer);
-                pollTimer = setInterval(pollOnce, 10);
+                pollTimer = setInterval(pollOnce, 5);
                 if (statsTimer) clearInterval(statsTimer);
                 statsTimer = setInterval(() => {
                     try {
@@ -220,9 +224,9 @@ self.onmessage = async (e) => {
                     videoEncoder.configure(videoConfig());
                     console.log('[stream-worker] VideoEncoder configured', videoEncoder.state, videoCodecString, encW + 'x' + encH);
                     // Grant initial credits so main can start shipping frames
-                    // immediately. 2 = small pipeline; main can capture the
+                    // immediately. 4 = small pipeline; main can capture the
                     // next frame while the previous is still encoding.
-                    postMessage({ type: 'frameCredit', count: 2 });
+                    postMessage({ type: 'frameCredit', count: 4 });
                 } catch (err) {
                     postMessage({ type: 'initFailed', msg: 'VideoEncoder init failed: ' + ((err && err.message) || err) });
                     return;
@@ -244,7 +248,7 @@ self.onmessage = async (e) => {
                 postMessage({ type: 'frameCredit', count: 1 });
                 return;
             }
-            if (videoEncoder.encodeQueueSize >= 4) {
+            if (videoEncoder.encodeQueueSize > 8) {
                 // Backpressure: drop this frame silently. Do NOT post
                 // `requestKeyframe` — forcing a keyframe here creates a
                 // feedback loop (keyframe is large → encoder stays slow →
@@ -253,20 +257,14 @@ self.onmessage = async (e) => {
                 // scenes like layer crossfades. The periodic keyframe
                 // interval on main (default 2 s) is enough for the viewer
                 // to recover once the queue drains.
-                //
-                // Do NOT return a credit here either. Main spent a credit
-                // on this frame; returning it immediately sends main into
-                // a tight retry loop against a full queue (encode → drop →
-                // credit → encode → drop → …). Holding the credit until
-                // the encoder emits a chunk locks main's capture rate to
-                // the encoder's actual throughput. The 4 already-queued
-                // frames will each return a credit as they emit, unblocking
-                // main naturally.
                 try { m.frame.close(); } catch (e) { /* ignore */ }
+                postMessage({ type: 'frameCredit', count: 1 });
                 return;
             }
+            const forceKey = m.isKey || frameCount === 0 || frameCount % keyframeInterval === 0;
+            frameCount++;
             try {
-                videoEncoder.encode(m.frame, { keyFrame: m.isKey });
+                videoEncoder.encode(m.frame, { keyFrame: forceKey });
             } catch (e) {
                 console.warn('[worker] encode failed', e);
                 postMessage({ type: 'frameCredit', count: 1 });

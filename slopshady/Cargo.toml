@@ -28,7 +28,7 @@ rosc = "0.10"
 
 [features]
 default = ["webview"]
-webview = ["dep:wry", "dep:tao", "dep:xcap", "dep:image", "dep:gtk"]
+webview = ["dep:wry", "dep:tao", "dep:image", "dep:gtk"]
 
 [dependencies.wry]
 version = "0.55"
@@ -36,10 +36,6 @@ optional = true
 
 [dependencies.tao]
 version = "0.35"
-optional = true
-
-[dependencies.xcap]
-version = "0.9"
 optional = true
 
 [dependencies.image]

@@ -329,6 +329,9 @@ export const LayerSystem = {
         const renderableLayers = this.layers.filter(layer => {
             if (!layer.enabled) return false;
             if (soloActive) return layer.solo;
+            const effOpacity = layer._modulatedOpacity !== undefined
+                ? layer._modulatedOpacity : layer.opacity;
+            if (effOpacity < 0.004) return false;
             return true;
         });
 
@@ -1205,10 +1208,17 @@ export const LayerSystem = {
         if (entry.lastFrame !== frame) {
             gl.bindTexture(gl.TEXTURE_2D, entry.tex);
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
-            entry.w = frame.codedWidth || frame.displayWidth || entry.w;
-            entry.h = frame.codedHeight || frame.displayHeight || entry.h;
+            const fw = frame.codedWidth || frame.displayWidth || entry.w;
+            const fh = frame.codedHeight || frame.displayHeight || entry.h;
+            if (fw !== entry.w || fh !== entry.h || entry.w === 0) {
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+                entry.w = fw;
+                entry.h = fh;
+            } else {
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+            }
             entry.lastFrame = frame;
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
         }
 
         const fitModeInt = {

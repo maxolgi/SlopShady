@@ -146,6 +146,53 @@ fn fix_line(line: &str) -> String {
     result
 }
 
+/// Newest file modification time under `dir` (recursive), skipping `target/`
+/// and `pkg/` build-output directories. Returns `None` if `dir` is missing or
+/// holds no files.
+fn newest_mtime(dir: &Path) -> Option<std::time::SystemTime> {
+    let entries = fs::read_dir(dir).ok()?;
+    let mut newest: Option<std::time::SystemTime> = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name();
+            if name == "target" || name == "pkg" {
+                continue;
+            }
+            if let Some(t) = newest_mtime(&path) {
+                newest = Some(newest.map_or(t, |n| n.max(t)));
+            }
+        } else if let Ok(t) = path.metadata().and_then(|m| m.modified()) {
+            newest = Some(newest.map_or(t, |n| n.max(t)));
+        }
+    }
+    newest
+}
+
+/// True if any of the three WASM artifacts (`static/wasm/<crate>/<crate>_bg.wasm`)
+/// is missing or older than its sources under `vendor/WebSRT/crates/<crate>/`.
+/// Used to gate an automatic rebuild so day-to-day builds that don't touch
+/// WebSRT skip the wasm-pack overhead.
+fn wasm_needs_rebuild(repo_root: &Path) -> bool {
+    let wasm_root = repo_root.join("static").join("wasm");
+    let crates_root = repo_root.join("vendor").join("WebSRT").join("crates");
+    for crate_name in ["srt-wasm", "ts-muxer-wasm", "mpeg2ts-wasm"] {
+        let artifact = wasm_root
+            .join(crate_name)
+            .join(format!("{}_bg.wasm", crate_name.replace('-', "_")));
+        let artifact_mtime = match artifact.metadata().and_then(|m| m.modified()) {
+            Ok(t) => t,
+            Err(_) => return true,
+        };
+        match newest_mtime(&crates_root.join(crate_name)) {
+            None => return true,
+            Some(src) if src > artifact_mtime => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
 fn main() {
     #[cfg(target_os = "windows")]
     {
@@ -168,6 +215,49 @@ fn main() {
     println!("cargo:rerun-if-changed={}/tsconfig.vendor.json", repo_root.display());
     println!("cargo:rerun-if-changed={}/package.json", repo_root.display());
     println!("cargo:rerun-if-changed={}/src/types", repo_root.display());
+    println!(
+        "cargo:rerun-if-changed={}/vendor/WebSRT/crates/srt-wasm",
+        repo_root.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/vendor/WebSRT/crates/ts-muxer-wasm",
+        repo_root.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/vendor/WebSRT/crates/mpeg2ts-wasm",
+        repo_root.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/scripts/build-wasm.sh",
+        repo_root.display()
+    );
+    // Watch the WASM output dir so that deleting it (e.g. `rm -rf static/wasm`
+    // or a fresh clone) re-runs build.rs and triggers a rebuild. After a
+    // rebuild the next run finds artifacts fresh and skips, so this converges.
+    println!(
+        "cargo:rerun-if-changed={}/static/wasm",
+        repo_root.display()
+    );
+
+    // Step 0: Build the three WASM crates from vendor/WebSRT/ when artifacts
+    // are missing or stale. Step 2 (vendor tsc) reads the .d.ts that wasm-pack
+    // emits into static/wasm/mpeg2ts-wasm/, so this must run before it. The
+    // script self-checks for wasm-pack and the wasm32 target; we only invoke
+    // it when something actually changed to keep cold builds fast.
+    if wasm_needs_rebuild(&repo_root) {
+        let script = repo_root.join("scripts").join("build-wasm.sh");
+        let result = std::process::Command::new("bash").arg(&script).status();
+        match result {
+            Ok(s) if s.success() => {}
+            Ok(s) => panic!("scripts/build-wasm.sh failed with status {}", s),
+            Err(e) => panic!(
+                "failed to invoke bash {} (on Windows install Git Bash or WSL; \
+                 ensure bash is on PATH): {}",
+                script.display(),
+                e
+            ),
+        }
+    }
 
     // Step 1: Mirror `.js` and `.mjs` files verbatim from src/js → static/js.
     // rust-embed's #[folder = "../static/"] picks these up unchanged.

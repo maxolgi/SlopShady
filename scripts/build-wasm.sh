@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Build the three WASM crates from the WebSRT submodule and copy their pkg
-# output into static/wasm/. Run this after `git submodule update --init` and
-# after any change to vendored WebSRT sources.
+# output into static/wasm/. Normally invoked automatically by slopshady/build.rs
+# when artifacts are missing or stale; can also be run manually.
 #
-# Output is byte-stable for a given rustc/wasm-pack/wasm-opt version, so the
-# committed artifacts in static/wasm/ are reproducible from this script.
+# Output is byte-stable for a given rustc/wasm-pack/wasm-opt version.
+# static/wasm/ is gitignored and regenerated from this script.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -40,9 +40,6 @@ const LATE_DROP_US = 50_000;
 // expected presentation time by more than this — seek / stream restart /
 // recovery from a backgrounded tab.
 const CLOCK_RESET_US = 1_000_000;
-// Coalesce multiple latestVideoFrame() calls within one RAF cycle (e.g.
-// several layers bound to the same input) into a single advance.
-const ADVANCE_MIN_INTERVAL_MS = 4;
 
 // MediaStreamTrackGenerator is not yet in lib.dom.d.ts (TS 5.9). The runtime
 // API is Chrome ≥94; declare a minimal surface so the rest of the file type-
@@ -58,7 +55,6 @@ type AnyWindow = Window & typeof globalThis & {
 };
 
 interface InputEntry {
-    wt: WebTransport | null;
     worker: Worker | null;
     refcount: number;
     manualStart: boolean;
@@ -75,7 +71,6 @@ interface InputEntry {
     // first frame; reset on large gap.
     ptsOriginUs: number | null;
     wallOriginMs: number;
-    lastAdvanceMs: number;
     handshakeDone: boolean;
     audioTrackGenerator: MediaStreamTrackGeneratorLike | null;
     audioWriter: WritableStreamDefaultWriter<AudioData> | null;
@@ -87,13 +82,8 @@ interface InputEntry {
     _analyserConnected: boolean;
     reconnectTimer: ReturnType<typeof setTimeout> | null;
     reconnectAttempts: number;
-    datagramQueue: ArrayBuffer[];
-    _flushPending: boolean;
-    _receiveReader: ReadableStreamDefaultReader<Uint8Array> | null;
-    _datagramWriter: WritableStreamDefaultWriter<Uint8Array> | null;
-    _initialRttMs: number | undefined;
     _antiThrottle: { osc: OscillatorNode } | null;
-    _tickRaf: number | null;
+    _presentRaf: number | null;
     lastStats: WorkerStats | null;
 }
 
@@ -105,7 +95,6 @@ interface InputConfig {
 
 // Worker → main message discriminated union (matches stream-input-worker.ts).
 type WorkerMsg =
-    | { type: 'send'; data: ArrayBuffer }
     | { type: 'handshakeComplete' }
     | { type: 'streamInfo'; info: { videoPid: number; videoCodec: string | null; audioPid: number; audioCodec: string | null } }
     | { type: 'videoFrame'; frame: VideoFrame }
@@ -113,9 +102,11 @@ type WorkerMsg =
     | { type: 'stats'; stats: WorkerStats }
     | { type: 'log'; msg: string }
     | { type: 'decoderError'; which: 'video' | 'audio' | 'demux'; msg: string }
+    | { type: 'error'; msg: string }
     | { type: 'close' }
     | { type: 'initFailed'; msg: string }
-    | { type: 'stopped' };
+    | { type: 'stopped' }
+    | { type: 'batch'; msgs: WorkerMsg[] };
 
 interface WorkerStats {
     bandwidthBps: number;
@@ -238,13 +229,6 @@ export const StreamingInputUI = {
     latestVideoFrame(inputIndex: number): VideoFrame | null {
         const entry = this._inputs[inputIndex];
         if (!entry) return null;
-        // Throttle advancement so multiple calls within one RAF cycle (e.g.
-        // several layers bound to the same input) return the same frame.
-        const now = performance.now();
-        if (now - entry.lastAdvanceMs >= ADVANCE_MIN_INTERVAL_MS) {
-            entry.lastAdvanceMs = now;
-            this._advanceDisplayedFrame(inputIndex);
-        }
         return entry.displayedFrame;
     },
 
@@ -267,12 +251,13 @@ export const StreamingInputUI = {
             }
         }
         entry.frameRing.push(frame);
-        // On overflow drop the *newest* (just-pushed) frame, not the oldest.
-        // The oldest has the earliest PTS and is most urgent to display;
-        // dropping it would skip a frame the user should see. Dropping the
-        // newest just trims a buffer the consumer hasn't reached yet.
+        // On overflow drop the *oldest* (head) frame, not the newest. A
+        // full ring means the consumer is already behind, so shedding the
+        // head (earliest PTS) trims accumulated latency under backpressure
+        // rather than buffering stale frames the user hasn't seen. Matches
+        // the WebSRT vendor viewer (render.ts).
         while (entry.frameRing.length > FRAME_RING_CAP) {
-            const old = entry.frameRing.pop();
+            const old = entry.frameRing.shift();
             try { old?.close(); } catch (e) { /* ignore */ }
         }
     },
@@ -438,20 +423,18 @@ export const StreamingInputUI = {
     _ensureEntry(i: number): InputEntry {
         if (!this._inputs[i]) {
             this._inputs[i] = {
-                wt: null, worker: null,
+                worker: null,
                 refcount: 0, manualStart: false,
                 status: 'idle',
                 frameRing: [], displayedFrame: null,
-                ptsOriginUs: null, wallOriginMs: 0, lastAdvanceMs: 0,
+                ptsOriginUs: null, wallOriginMs: 0,
                 handshakeDone: false,
                 audioTrackGenerator: null, audioWriter: null, audioSourceNode: null,
                 layerGains: new Map(), audioMutedForLayer: new Map(),
                 layerVolumes: new Map(),
                 analyserTap: null, _analyserConnected: false,
                 reconnectTimer: null, reconnectAttempts: 0,
-                datagramQueue: [], _flushPending: false,
-                _receiveReader: null, _datagramWriter: null, _initialRttMs: undefined,
-                _antiThrottle: null, _tickRaf: null, lastStats: null,
+                _antiThrottle: null, _presentRaf: null, lastStats: null,
             };
         }
         return this._inputs[i]!;
@@ -474,13 +457,13 @@ export const StreamingInputUI = {
         }
         const entry = this._ensureEntry(inputIndex);
         if (entry.reconnectTimer) { clearTimeout(entry.reconnectTimer); entry.reconnectTimer = null; }
-        if (entry.worker || entry.wt) await this._abortConnect(inputIndex);
+        if (entry.worker) await this._abortConnect(inputIndex);
 
         entry.status = 'connecting';
         this._setStatus(inputIndex, 'Connecting…');
         this._syncToggleButton(); this._syncToggleAllButton();
 
-        // Fetch cert hash.
+        // Fetch cert hash. Worker constructs + owns the WebTransport.
         let hash = null as string | null;
         try {
             const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(cfg.url), { cache: 'no-store' });
@@ -493,38 +476,20 @@ export const StreamingInputUI = {
             return;
         }
 
-        try {
-            const url = `${cfg.url}?stream=${encodeURIComponent(cfg.name)}`;
-            const opts: WebTransportOptions = {};
-            if (hash) opts.serverCertificateHashes = [{ algorithm: 'sha-256', value: this._hexToBytes(hash) }];
-            entry.wt = new WebTransport(url, opts);
-            await entry.wt.ready;
-            entry._datagramWriter = entry.wt.datagrams.writable.getWriter();
-            try {
-                const wtStats = await (entry.wt as any).getStats();
-                if (wtStats && typeof wtStats.smoothedRtt === 'number' && wtStats.smoothedRtt > 0) entry._initialRttMs = wtStats.smoothedRtt;
-            } catch { /* getStats not supported */ }
-        } catch (e) {
-            this._setStatus(inputIndex, 'WT connect failed: ' + ((e as Error)?.message || e));
-            entry.wt = null;
-            this._scheduleReconnect(inputIndex);
-            return;
-        }
-
+        const url = `${cfg.url}?stream=${encodeURIComponent(cfg.name)}`;
         entry.worker = new Worker('/js/features/stream-input-worker.js', { type: 'module' });
         entry.worker.onmessage = (e: MessageEvent) => this._onWorkerMessage(inputIndex, e.data as WorkerMsg);
-        entry.worker.postMessage({ type: 'init', latencyMs: cfg.latency, initialRttMs: entry._initialRttMs });
+        entry.worker.postMessage({ type: 'init', url, certHash: hash, latencyMs: cfg.latency });
 
-        this._startReceiveLoop(inputIndex);
         this._startAntiThrottle(inputIndex);
-        this._startTickLoop(inputIndex);
+        this._startPresentLoop(inputIndex);
     },
 
     async _disconnect(inputIndex: number): Promise<void> {
         const entry = this._inputs[inputIndex];
         if (!entry) return;
         if (entry.reconnectTimer) { clearTimeout(entry.reconnectTimer); entry.reconnectTimer = null; }
-        this._stopTickLoop(inputIndex);
+        this._stopPresentLoop(inputIndex);
         this._stopAntiThrottle(inputIndex);
         for (const f of entry.frameRing) { try { f.close(); } catch (e) { /* ignore */ } }
         entry.frameRing = [];
@@ -544,12 +509,9 @@ export const StreamingInputUI = {
             try { worker.terminate(); } catch (e) { /* ignore */ }
             entry.worker = null;
         }
-        if (entry.wt) { try { await entry.wt.close(); } catch (e) { /* ignore */ } entry.wt = null; }
         entry.handshakeDone = false;
         entry.status = 'idle';
         entry.lastStats = null;
-        entry._datagramWriter = null;
-        entry._receiveReader = null;
         this._setStatus(inputIndex, '');
         this._renderStatsBlock();
         this._syncToggleButton(); this._syncToggleAllButton();
@@ -573,9 +535,8 @@ export const StreamingInputUI = {
     async _abortConnect(inputIndex: number): Promise<void> {
         const entry = this._inputs[inputIndex];
         if (!entry) return;
-        this._stopTickLoop(inputIndex);
+        this._stopPresentLoop(inputIndex);
         if (entry.worker) { try { entry.worker.terminate(); } catch (e) { /* ignore */ } entry.worker = null; }
-        if (entry.wt) { try { await entry.wt.close(); } catch (e) { /* ignore */ } entry.wt = null; }
     },
 
     // ---------- Worker message dispatch ----------
@@ -583,14 +544,7 @@ export const StreamingInputUI = {
     _onWorkerMessage(inputIndex: number, msg: WorkerMsg): void {
         const entry = this._inputs[inputIndex];
         if (!entry) return;
-        if (msg.type === 'send') {
-            if (entry.wt) {
-                try {
-                    if (!entry._datagramWriter) entry._datagramWriter = entry.wt.datagrams.writable.getWriter();
-                    entry._datagramWriter.write(new Uint8Array(msg.data));
-                } catch (e) { /* ignore */ }
-            }
-        } else if (msg.type === 'handshakeComplete') {
+        if (msg.type === 'handshakeComplete') {
             entry.handshakeDone = true;
             entry.reconnectAttempts = 0;
             entry.status = 'live';
@@ -601,6 +555,12 @@ export const StreamingInputUI = {
             if (inputIndex === this._selectedInput) this._renderStatsBlock();
         } else if (msg.type === 'videoFrame') {
             this._acceptVideoFrame(inputIndex, msg.frame);
+        } else if (msg.type === 'batch') {
+            for (const m of msg.msgs) {
+                if (m.type === 'videoFrame') {
+                    this._acceptVideoFrame(inputIndex, m.frame);
+                }
+            }
         } else if (msg.type === 'audioData') {
             this._handleAudioData(inputIndex, msg.data);
         } else if (msg.type === 'stats') {
@@ -619,49 +579,15 @@ export const StreamingInputUI = {
             entry.status = 'closed';
             this._setStatus(inputIndex, 'Closed');
             this._scheduleReconnect(inputIndex);
+        } else if (msg.type === 'error') {
+            // Worker-owned WebTransport dropped or failed to connect.
+            this._setStatus(inputIndex, 'Stream error: ' + msg.msg);
+            entry.status = 'error';
+            this._scheduleReconnect(inputIndex);
         } else if (msg.type === 'initFailed') {
             this._setStatus(inputIndex, 'Init failed: ' + msg.msg);
             entry.status = 'error';
             this._syncToggleButton(); this._syncToggleAllButton();
-        }
-    },
-
-    // ---------- Receive loop ----------
-
-    async _startReceiveLoop(inputIndex: number): Promise<void> {
-        const entry = this._inputs[inputIndex];
-        if (!entry || !entry.wt) return;
-        const reader = entry.wt.datagrams.readable.getReader();
-        entry._receiveReader = reader;
-        try {
-            while (entry.worker && entry.wt) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                entry.datagramQueue.push(value!.buffer);
-                if (entry.datagramQueue.length >= 16) {
-                    this._flushIncoming(inputIndex);
-                } else if (entry._flushPending !== true) {
-                    entry._flushPending = true;
-                    setTimeout(() => {
-                        entry._flushPending = false;
-                        this._flushIncoming(inputIndex);
-                    }, 0);
-                }
-            }
-        } catch (e) {
-            console.warn(`[stream-input ${inputIndex}] recv`, e);
-        }
-        this._flushIncoming(inputIndex);
-    },
-
-    _flushIncoming(inputIndex: number): void {
-        const entry = this._inputs[inputIndex];
-        if (!entry || !entry.worker || !entry.datagramQueue || !entry.datagramQueue.length) return;
-        const batch = entry.datagramQueue;
-        entry.datagramQueue = [];
-        for (const buf of batch) {
-            try { entry.worker.postMessage({ type: 'datagram', data: buf }, [buf]); }
-            catch (e) { /* worker gone */ }
         }
     },
 
@@ -783,29 +709,32 @@ export const StreamingInputUI = {
         return this._audioCtx!;
     },
 
-    // ---------- Anti-throttle ----------
-
-    _startTickLoop(inputIndex: number): void {
+    // Self-driven presentation loop (mirrors vendor/WebSRT/web/src/render.ts
+    // startRafLoop). Advances the PTS-paced ring every animation frame
+    // regardless of whether a layer polled latestVideoFrame() this cycle,
+    // so the ring drains at display-refresh rate and latency can't build
+    // up when a bound layer is hidden/offscreen/busy.
+    _startPresentLoop(inputIndex: number): void {
         const entry = this._inputs[inputIndex];
-        if (!entry || entry._tickRaf !== null) return;
+        if (!entry || entry._presentRaf !== null) return;
         const loop = () => {
             const e = this._inputs[inputIndex];
             // Stop the loop when the worker goes away (disconnect/abort).
             if (!e || !e.worker) {
-                if (e) e._tickRaf = null;
+                if (e) e._presentRaf = null;
                 return;
             }
-            try { e.worker.postMessage({ type: 'tick' }); } catch (err) { /* worker gone */ }
-            e._tickRaf = requestAnimationFrame(loop);
+            this._advanceDisplayedFrame(inputIndex);
+            e._presentRaf = requestAnimationFrame(loop);
         };
-        entry._tickRaf = requestAnimationFrame(loop);
+        entry._presentRaf = requestAnimationFrame(loop);
     },
 
-    _stopTickLoop(inputIndex: number): void {
+    _stopPresentLoop(inputIndex: number): void {
         const entry = this._inputs[inputIndex];
-        if (!entry || entry._tickRaf === null) return;
-        cancelAnimationFrame(entry._tickRaf);
-        entry._tickRaf = null;
+        if (!entry || entry._presentRaf === null) return;
+        cancelAnimationFrame(entry._presentRaf);
+        entry._presentRaf = null;
     },
 
     _startAntiThrottle(inputIndex: number): void {
@@ -1001,15 +930,6 @@ export const StreamingInputUI = {
             `Transport: ${transportLine}\n` +
             `Counters: ${chunksLine}` +
             errLine;
-    },
-
-    _hexToBytes(hex: string): Uint8Array {
-        if (hex.length !== 64) throw new Error('cert hash must be 64 hex chars, got ' + hex.length);
-        const bytes = new Uint8Array(32);
-        for (let i = 0; i < 32; i++) {
-            bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
-        }
-        return bytes;
     },
 };
 

@@ -80,7 +80,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/live-tuning/shader-result", post(api_live_tuning_shader_result))
         .route("/api/live-tuning/stop", post(api_live_tuning_stop))
         .route("/api/shaders/download", get(download_shaders))
-        .route("/api/screen-capture", get(crate::screen::screen_capture))
         .route("/api/stream/cert-hash", get(api_stream_cert_hash));
 
     router

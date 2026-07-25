@@ -21,6 +21,18 @@
 import { state, getEl } from '../state.js';
 import { StreamAudio } from '../features/stream-audio.js';
 
+const TIMER_WORKER_SRC = `
+let id = null;
+onmessage = (e) => {
+  if (typeof e.data === 'number') {
+    if (id) clearInterval(id);
+    id = setInterval(() => postMessage('tick'), e.data);
+  } else if (e.data === 'stop') {
+    if (id) { clearInterval(id); id = null; }
+  }
+};
+`;
+
 export const StreamingUI = {
     // ---- runtime handles ----
     worker: null,
@@ -29,7 +41,14 @@ export const StreamingUI = {
     _epoch: 0,
     _forceKeyframe: false,
     _handshakeDone: false,
-    // Flow-control credits: worker grants N credits (initial 2, then 1 per
+    // Backgrounded-tab timer worker. When the tab is hidden, requestAnimationFrame
+    // throttles to ~1Hz which would collapse the capture pump; this worker posts
+    // 'tick' at 1000/_fps to keep captureFrame() running at the target framerate.
+    // Null when the tab is visible (the render loop's rAF drives capture instead).
+    _bgWorker: null,
+    // Bound visibilitychange listener, stored so stop()/_abortSession() can remove it.
+    _visHandler: null,
+    // Flow-control credits: worker grants N credits (initial 4, then 1 per
     // encoded chunk emitted). Main decrements per frame sent and refuses to
     // send when 0. Bounds the in-flight frame count between main and worker
     // so complex scenes that slow the encoder can't accumulate an unbounded
@@ -39,7 +58,6 @@ export const StreamingUI = {
     datagramQueue: [],
     reconnectTimer: null,
     reconnectAttempts: 0,
-    _keyframeInterval: null,
     _receiveReader: null,
     _lastEncDims: null,
     _encW: 0,
@@ -383,15 +401,16 @@ export const StreamingUI = {
         // 7) Receive loop (datagrams from gateway → worker)
         this._receiveLoop();
 
-        // 8) Periodic keyframe (captureFrame handles resize reconfigure)
-        this._keyframeInterval = setInterval(() => {
-            this._forceKeyframe = true;
-        }, this._keyframeMs);
-
-        // 8b) Prevent the browser from throttling this tab's requestAnimationFrame
-        //     when backgrounded/occluded — otherwise the render loop (and thus
-        //     captureFrame) drops to ~1Hz whenever the user looks at the viewer.
-        this._startAntiThrottle();
+        // 8) Keep captureFrame() alive when this tab is backgrounded. rAF
+        //     throttles to ~1Hz in background tabs, so spawn a timer worker
+        //     that ticks at the target fps; terminate it again on return to
+        //     the foreground (where the render loop's rAF drives capture).
+        this._visHandler = () => {
+            if (document.hidden) this._startBgTimer();
+            else this._stopBgTimer();
+        };
+        document.addEventListener('visibilitychange', this._visHandler);
+        if (document.hidden) this._startBgTimer();
 
         // 9) Update buttons + status
         const startBtn = getEl('startStream');
@@ -405,9 +424,9 @@ export const StreamingUI = {
         if (!this.isStreaming && !this.worker) return; // re-entrancy guard
         this.isStreaming = false;
 
-        if (this._keyframeInterval) { clearInterval(this._keyframeInterval); this._keyframeInterval = null; }
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
-        this._stopAntiThrottle();
+        if (this._visHandler) { document.removeEventListener('visibilitychange', this._visHandler); this._visHandler = null; }
+        this._stopBgTimer();
 
         this._handshakeDone = false;
 
@@ -570,10 +589,10 @@ export const StreamingUI = {
         // is the critical guard against postMessage backlog during complex
         // scenes where the encoder can't keep up with capture rate.
         if (this._frameCredits <= 0) return;
-        // rAF-driven wakeup for the worker's SRT poll. The oscillator on the
-        // main thread keeps rAF (and thus this tick) alive when the tab is
-        // backgrounded; the worker's setInterval(10) is a fallback that can
-        // be throttled to ~1Hz without this.
+        // rAF-driven wakeup for the worker's SRT poll. When the tab is
+        // backgrounded a timer worker drives this tick at the target fps (rAF
+        // would otherwise throttle to ~1Hz); the worker's setInterval(10) is a
+        // fallback that can be throttled without it.
         this.worker.postMessage({ type: 'tick' });
         const ew = state.canvas.width & ~1;
         const eh = state.canvas.height & ~1;
@@ -862,30 +881,23 @@ export const StreamingUI = {
     },
 
     /**
-     * Play a near-silent oscillator so the browser treats this tab as producing
-     * audio and does NOT throttle its requestAnimationFrame when backgrounded or
-     * occluded. Without this, the WebGL render loop (and captureFrame) drops to
-     * ~1Hz whenever the user switches to the viewer tab, collapsing the stream.
+     * Spawn the backgrounded-tab timer worker. Posts 'tick' at 1000/_fps; each
+     * tick calls captureFrame(). Kept in sync with the WebSRT demo's schedulePump.
      */
-    _startAntiThrottle() {
-        if (this._antiThrottle) return;
+    _startBgTimer() {
+        if (this._bgWorker) return;
         try {
-            const ctx = new AudioContext();
-            const osc = ctx.createOscillator();
-            const g = ctx.createGain();
-            g.gain.value = 0.0001;
-            osc.connect(g).connect(ctx.destination);
-            osc.start();
-            this._antiThrottle = { ctx, osc };
-            if (ctx.state === 'suspended') ctx.resume().catch(() => { /* ignore */ });
-        } catch (e) { /* Web Audio unavailable; tab will throttle if backgrounded */ }
+            const w = new Worker(URL.createObjectURL(new Blob([TIMER_WORKER_SRC], { type: 'application/javascript' })));
+            w.onmessage = () => this.captureFrame();
+            w.postMessage(1000 / this._fps);
+            this._bgWorker = w;
+        } catch (e) { /* Worker unavailable; rAF continues but throttles when backgrounded */ }
     },
 
-    _stopAntiThrottle() {
-        if (!this._antiThrottle) return;
-        try { this._antiThrottle.osc.stop(); } catch (e) { /* ignore */ }
-        try { this._antiThrottle.ctx.close(); } catch (e) { /* ignore */ }
-        this._antiThrottle = null;
+    _stopBgTimer() {
+        if (!this._bgWorker) return;
+        try { this._bgWorker.terminate(); } catch (e) { /* ignore */ }
+        this._bgWorker = null;
     },
 
     /**
@@ -893,8 +905,8 @@ export const StreamingUI = {
      * the top of start() on a reconnect so we don't leak a second worker/transport.
      */
     _abortSession() {
-        if (this._keyframeInterval) { clearInterval(this._keyframeInterval); this._keyframeInterval = null; }
-        this._stopAntiThrottle();
+        if (this._visHandler) { document.removeEventListener('visibilitychange', this._visHandler); this._visHandler = null; }
+        this._stopBgTimer();
         if (this._receiveReader) { try { this._receiveReader.cancel(); } catch (e) { /* ignore */ } this._receiveReader = null; }
         // VideoEncoder lives in the worker (Phase 3); terminating the worker reaps it.
         StreamAudio.stop();

@@ -8,9 +8,6 @@ mod server;
 mod state;
 mod ws;
 
-#[cfg(feature = "webview")]
-mod screen;
-
 use clap::Parser;
 use std::net::SocketAddr;
 use std::path::PathBuf;
