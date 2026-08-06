@@ -137,7 +137,9 @@ Single binary, no Python or Node dependencies. Frontend assets are embedded into
 2. Clone and build:
    ```bash
    git clone https://github.com/YOUR_USER/SlopShady.git
-   cd SlopShady/slopshady
+   cd SlopShady
+   git submodule update --init --recursive   # populate vendor/WebSRT/ (WASM crate sources)
+   cd slopshady
    cargo run
    ```
 
@@ -154,6 +156,20 @@ cargo build --release             # optimized binary (~8-12 MB)
 ```
 
 > Linux `webview` builds require GTK development libraries (`libgtk-3-dev`). To build a pure HTTPS server with no native window, use `cargo run --no-default-features`.
+
+### Updating WebSRT
+
+WebSRT lives at `vendor/WebSRT/` as a git submodule (github.com/maxolgi/WebSRT). It ships the three WASM crates (`srt-wasm`, `ts-muxer-wasm`, `mpeg2ts-wasm`) that `build.rs` rebuilds into `static/wasm/` (gitignored). Its internal `srt-protocol` and `mpeg2ts` fork deps are managed inside WebSRT itself.
+
+To pull the latest WebSRT changes (whether WebSRT's own source moved, or its `srt-rs`/`mpeg2ts` deps moved upstream):
+
+```bash
+git submodule update --remote vendor/WebSRT   # advance the pin to latest origin/master
+cargo build                                    # build.rs rebuilds stale WASM
+git add vendor/WebSRT && git commit -m "chore(websrt): bump submodule"
+```
+
+That's the whole workflow from SlopShady's side. See `AGENTS.md` ("WebSRT dependency tree") for details on the three-layer pinning.
 
 ### Next Steps
 
