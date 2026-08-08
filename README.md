@@ -136,7 +136,7 @@ Single binary, no Python or Node dependencies. Frontend assets are embedded into
 
 2. Clone and build:
    ```bash
-   git clone https://github.com/YOUR_USER/SlopShady.git
+   git clone https://github.com/maxolgi/SlopShady.git
    cd SlopShady
    git submodule update --init --recursive   # populate vendor/WebSRT/ (WASM crate sources)
    cd slopshady
@@ -432,7 +432,7 @@ A comprehensive color grading panel with professional tools:
 Built-in [Webamp](https://webamp.org/) (Winamp in the browser) for audio playback with Milkdrop music visualization.
 
 - **Webamp**: Full Winamp-like audio player supporting `.mp3`, `.wav`, `.ogg`, and other browser-supported formats
-- **Milkdrop**: Real-time music visualization using [Butterchurn](https://github.com/niclas-niclas/butterchurn) (Milkdrop preset renderer for WebGL)
+- **Milkdrop**: Real-time music visualization using [Butterchurn](https://github.com/jberg/butterchurn) (Milkdrop preset renderer for WebGL)
 - Audio output from Webamp feeds into the modulation system (audio peak, frequency bands)
 - Webamp is contained within the UI panel for seamless integration
 
@@ -926,52 +926,53 @@ The application loads with "Obsidian Flow / Kinetic Bismuth" as the default shad
 
 ```
 ├── slopshady/                 # Rust backend (the only Cargo crate in this repo)
-│   ├── Cargo.toml             # deps + Cargo feature flags
+│   ├── Cargo.toml             # deps + Cargo feature flags + crate metadata
 │   ├── Cargo.lock             # committed (app binary)
-│   ├── build.rs               # Windows icon resource
+│   ├── build.rs               # Build orchestrator: WASM crates, src/js→static/js mirror, tsc
 │   ├── icon.ico               # Windows binary icon
-│   ├── src/
-│   │   ├── main.rs            # Entry point, CLI args, server/gui startup
-│   │   ├── state.rs           # State load/save/normalize
-│   │   ├── server.rs          # axum router, static file serving, stream cert-hash proxy
-│   │   ├── ws.rs              # WebSocket handler, state sync, OSC hot-swap
-│   │   ├── llm.rs             # LLM API proxy (models, chat/completions) + URL validator
-│   │   ├── live_tuning.rs     # Iterative tuning loop
-│   │   ├── osc.rs             # Native OSC UDP bridge
-│   │   ├── gui.rs             # egui control panel (gui feature only)
-│   │   └── cert.rs            # Self-signed cert generation
-├── README.md
-├── CONTRIBUTING.md            # Build steps, conventions, tooltip policy
-├── SECURITY.md                # Vulnerability reporting + security caveats
-├── LICENSE
-├── slopshady.desktop          # Linux desktop entry
-├── shaders.json               # Persisted state (auto-generated, gitignored)
-├── cert.pem                   # Self-signed HTTPS cert (auto-generated, gitignored)
-├── key.pem                    # Self-signed HTTPS key (auto-generated, gitignored)
-├── static/
+│   └── src/
+│       ├── main.rs            # Entry point, CLI args, server/gui startup
+│       ├── state.rs           # State load/save/normalize
+│       ├── server.rs          # axum router, static file serving, stream cert-hash proxy
+│       ├── ws.rs              # WebSocket handler, state sync, OSC hot-swap
+│       ├── llm.rs             # LLM API proxy (models, chat/completions) + URL validator
+│       ├── live_tuning.rs     # Iterative tuning loop
+│       ├── osc.rs             # Native OSC UDP bridge
+│       ├── gui.rs             # egui control panel (gui feature only)
+│       └── cert.rs            # Self-signed cert generation
+├── src/                       # Frontend source-of-truth (TS + legacy JS)
+│   ├── js/                    # Modules compiled/mirrored into static/js/ by build.rs
+│   └── types/                 # TypeScript ambient declarations (vendored globals)
+├── static/                    # Assets embedded into the binary at compile time
 │   ├── slopshady.html         # Main frontend HTML
-│   ├── css/
-│   │   ├── main.css           # Application styles
-│   │   ├── webamp.css         # Webamp overlay styles
-│   │   └── litegraph.css      # Node graph editor styles
-│   ├── js/
-│   │   ├── main.js            # Entry point
-│   │   ├── state.js           # Application state
-│   │   ├── config.js          # Constants, templates, uniform defs
-│   │   ├── utils.js           # Shared utilities
-│   │   ├── webgl/             # WebGL2 rendering engine
-│   │   ├── features/          # Audio, MIDI, OSC, LFO, modulation, playlist, Scanimate, VisualBrain,
-│   │   │                      #   stream-worker (encoder+SRT+WASM), stream-audio(-worklet)
-│   │   ├── ui/                # All DOM/panel UI modules (incl. streaming.js)
-│   │   ├── api/               # LLM chat, live tuning, model listing, shaders
-│   │   └── utils/             # Migration helpers
+│   ├── css/                   # Application styles (main, webamp, litegraph)
+│   ├── js/                    # Build output (gitignored; regenerated from src/js/)
 │   ├── lib/                   # Vendored third-party libraries (butterchurn, litegraph, webamp)
-│   ├── wasm/
-│   │   ├── srt-wasm/          # Browser-side SRT receiver/sender (used by stream-worker)
-│   │   └── ts-muxer-wasm/     # MPEG-TS muxer (used by stream-worker)
+│   ├── wasm/                  # WASM build output (gitignored; regenerated from vendor/WebSRT/)
+│   │   ├── srt-wasm/          # Browser-side SRT receiver/sender
+│   │   ├── ts-muxer-wasm/     # MPEG-TS muxer
+│   │   └── mpeg2ts-wasm/      # MPEG-TS demuxer
 │   └── content/
 │       ├── manifest.json      # Factory shader catalog
 │       └── shaders/factory/   # 80 built-in GLSL shaders
+├── scripts/
+│   └── build-wasm.sh          # Builds the three WebSRT WASM crates (invoked by build.rs)
+├── vendor/
+│   └── WebSRT/                # Git submodule — source for the WASM crates
+├── .gitmodules                # Submodule definition (vendor/WebSRT)
+├── package.json               # tsc dev dependency + build/watch scripts
+├── tsconfig.json              # TypeScript config (allowJs, Bundler resolution)
+├── tsconfig.emit.json         # TS emit config (src/js → static/js)
+├── tsconfig.vendor.json       # Vendored TS build config
+├── README.md
+├── CONTRIBUTING.md            # Build steps, conventions, tooltip policy
+├── SECURITY.md                # Vulnerability reporting + security caveats
+├── THIRD_PARTY_LICENSES.md    # Vendored library licenses
+├── LICENSE                    # AGPL-3.0-or-later
+├── slopshady.desktop          # Linux desktop entry
+├── shaders.json               # Persisted state (auto-generated, gitignored)
+├── cert.pem                   # Self-signed HTTPS cert (auto-generated, gitignored)
+└── key.pem                    # Self-signed HTTPS key (auto-generated, gitignored)
 ```
 
 ---
@@ -985,7 +986,7 @@ Third-party libraries are subject to their respective licenses (see [THIRD_PARTY
 | Library | License | Component |
 |---------|---------|-----------|
 | [Webamp](https://webamp.org/) | MIT | Browser Winamp clone (`static/lib/`) |
-| [Butterchurn](https://github.com/niclas-niclas/butterchurn) | MIT | Milkdrop visualizer for WebGL (`static/lib/`) |
+| [Butterchurn](https://github.com/jberg/butterchurn) | MIT | Milkdrop visualizer for WebGL (`static/lib/`) |
 | [LiteGraph.js](https://github.com/jagenjo/litegraph.js) | MIT | Node graph editor (`static/lib/`) |
 | [srt-wasm](https://github.com/maxolgi/WebSRT/tree/master/crates/srt-wasm) | MPL-2.0 | SRT receiver/sender WASM (`static/wasm/srt-wasm/`), built from `vendor/WebSRT/` submodule |
 | [ts-muxer-wasm](https://github.com/maxolgi/WebSRT/tree/master/crates/ts-muxer-wasm) | MPL-2.0 | MPEG-TS muxer WASM (`static/wasm/ts-muxer-wasm/`), built from `vendor/WebSRT/` submodule |

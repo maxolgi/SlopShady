@@ -2,7 +2,17 @@
     "name": "slopshady",
     "version": "0.1.0",
     "private": true,
-    "description": "SlopShady — multi-layer shader VJ tool. Demonstrates the WebSRT library (multi-stream receive + publish).",
+    "description": "Real-time WebGL2 GLSL shader editor with AI integration, multi-layer compositing, audio/MIDI modulation, and live streaming",
+    "license": "AGPL-3.0-or-later",
+    "author": "SlopShady contributors",
+    "homepage": "https://github.com/maxolgi/SlopShady",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/maxolgi/SlopShady.git"
+    },
+    "bugs": {
+        "url": "https://github.com/maxolgi/SlopShady/issues"
+    },
     "scripts": {
         "build": "tsc -p tsconfig.emit.json && tsc -p tsconfig.vendor.json",
         "watch": "tsc -p tsconfig.emit.json --watch",

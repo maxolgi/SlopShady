@@ -4,7 +4,18 @@ Thanks for your interest in improving SlopShady! This guide covers building the 
 
 ## Building
 
-SlopShady is a Rust application with a vanilla-JS frontend embedded at compile time. There is no Node/Python dependency.
+SlopShady is a Rust application with a vanilla-JS frontend embedded at compile time. Frontend source lives in `src/js/` (TypeScript + legacy JS); `build.rs` mirrors it to `static/js/` and embeds it into the binary. There is no Node/Python runtime dependency, but building from source needs a few one-time tools.
+
+### Prerequisites (one-time setup)
+
+```bash
+git submodule update --init --recursive   # populate vendor/WebSRT/ (WASM crate sources)
+npm install                                # installs typescript (for tsc)
+cargo install wasm-pack                    # builds the three WASM crates
+rustup target add wasm32-unknown-unknown   # required by wasm-pack
+```
+
+### Build
 
 ```bash
 cd slopshady
@@ -18,11 +29,11 @@ Two build configurations, switched by Cargo features:
 - **Default (`gui`)**: small egui control panel (via `eframe`) — Start/Stop the HTTPS server, then **Open Browser** to open the web app in the system browser. Linux needs an OpenGL stack (eframe `glow` backend); no `libgtk-3-dev`/`libwebkit2gtk` required.
 - **`--no-default-features`**: pure HTTPS server, no GUI compiled in. MIDI still works (it runs in the browser via the Web MIDI API).
 
-### Critical build quirks
+### Build quirks
 
-- **The release binary is the run target.** Verify changes with `cargo build --release` (not debug), running `target/release/slopshady.exe`.
-- **Static assets are embedded at compile time** via `rust-embed` (`#[folder = "../static/"]` in `slopshady/src/server.rs`). Editing files under `static/` does nothing until the binary is rebuilt — there is no live-reload.
-- **Static-only changes don't trigger a re-embed by themselves.** A plain `cargo build --release` after editing only files under `static/` finishes in <1s without recompiling. Force a re-embed with `cargo clean -p slopshady && cargo build --release`. Editing any `.rs` file also forces a re-embed.
+- **The release binary is the run target.** Verify changes with `cargo build --release` (not debug), running `target/release/slopshady`.
+- **Static assets are embedded at compile time** via `rust-embed` (`#[folder = "../static/"]` in `slopshady/src/server.rs`). There is no live-reload — frontend changes need a `cargo build` + restart.
+- **Frontend edits re-embed automatically.** `build.rs` emits `cargo:rerun-if-changed` for `src/js/`, so editing frontend source triggers a re-embed on the next `cargo build`. No `cargo clean` needed. (For live-edit iteration, run `npm run watch` in a second terminal — `tsc --watch` recompiles changed `.ts` files in <500ms; you still need `cargo build` to re-embed.)
 
 ## Architecture
 
@@ -76,7 +87,7 @@ If you're about to write a new CSS class or add a wrapper div, stop and find the
 
 There is **no test suite, linter, or CI**. Verify changes by:
 
-1. `cargo build --release` from `slopshady/` (force re-embed for static-only changes with `cargo clean -p slopshady` first).
+1. `cargo build --release` from `slopshady/`.
 2. Run the release binary and exercise the affected feature in the UI.
 
 ## Key constraints
@@ -90,5 +101,4 @@ There is **no test suite, linter, or CI**. Verify changes by:
 ## Submitting changes
 
 1. Open a pull request against `main`.
-2. Use the PR template to describe what changed and how it was verified.
-3. Ensure `cargo check` passes from `slopshady/`.
+2. Ensure `cargo check` passes from `slopshady/`.

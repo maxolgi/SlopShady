@@ -7,7 +7,8 @@ SlopShady is licensed under the [GNU Affero General Public License v3.0](LICENSE
 | Library | License | Source |
 |---------|---------|--------|
 | [Webamp](https://webamp.org/) | MIT | Browser-based Winamp clone |
-| [Butterchurn](https://github.com/niclas-niclas/butterchurn) | MIT | Milkdrop visualizer renderer for WebGL |
+| [Butterchurn](https://github.com/jberg/butterchurn) | MIT | Milkdrop visualizer renderer for WebGL |
+| [Butterchurn Presets](https://github.com/jberg/butterchurn-presets) | MIT | Milkdrop preset collections (base + extra) |
 | [LiteGraph.js](https://github.com/jagenjo/litegraph.js) | MIT | Node graph editor |
 
 These are vendored as minified bundles in `static/lib/`. Do not hand-edit them.

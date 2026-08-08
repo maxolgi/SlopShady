@@ -72,7 +72,6 @@ let epochMs = 0;          // stream-epoch in performance.now() ms (audio PTS ref
 let audioEncoder = null;
 let audioPort = null;
 let videoEncoder = null;
-let videoChunkCount = 0;  // for diagnostic logging
 
 const nowUs = () => performance.now() * 1000;
 
@@ -129,7 +128,6 @@ self.onmessage = async (e) => {
                 // HW mode is what actually passed probe on main — avoids blindly
                 // preferring HW when the probe flaked and SW was the fallback.
                 videoHwMode = (typeof m.videoHwMode === 'string') ? m.videoHwMode : null;
-                console.log('[stream-worker] init hwMode =', videoHwMode || 'no-preference');
                 if (typeof m.cbrEnabled === 'boolean') cbrEnabled = m.cbrEnabled;
                 encW = m.encW || encW;
                 encH = m.encH || encH;
@@ -162,19 +160,6 @@ self.onmessage = async (e) => {
                                 const desc = meta && meta.decoderConfig ? meta.decoderConfig.description : null;
                                 if (desc) {
                                     spsPps = parseAvcCToAnnexB(desc);
-                                    // Diagnostic: log SPS bytes when extracted.
-                                    // Find SPS NAL (after first 4-byte Annex B start code).
-                                    const spsStart = 4;
-                                    let spsEnd = spsStart;
-                                    while (spsEnd + 3 < spsPps.length && !(spsPps[spsEnd] === 0 && spsPps[spsEnd + 1] === 0 && spsPps[spsEnd + 2] === 0 && spsPps[spsEnd + 3] === 1)) spsEnd++;
-                                    const spsBytes = spsPps.subarray(spsStart, spsEnd);
-                                    const descView = desc instanceof ArrayBuffer ? new Uint8Array(desc) : new Uint8Array(desc.buffer, desc.byteOffset || 0, desc.byteLength);
-                                    console.log('[stream-worker] SPS extract', {
-                                        spsLen: spsBytes.length,
-                                        spsFirst16: Array.from(spsBytes.slice(0, 16)),
-                                        descLen: descView.length,
-                                        descFirst24: Array.from(descView.slice(0, 24)),
-                                    });
                                 }
                             }
                             const payload = new Uint8Array(chunk.byteLength);
@@ -206,15 +191,6 @@ self.onmessage = async (e) => {
                             // this, main's _frameCredits drains to 0 during
                             // slow encodes and capture pauses — which is the
                             // point (prevents postMessage backlog).
-                            videoChunkCount++;
-                            if (videoChunkCount === 1 || videoChunkCount === 30) {
-                                console.log(`[stream-worker] encoded video chunk #${videoChunkCount}`, {
-                                    bytes: chunk.byteLength,
-                                    timestamp: chunk.timestamp,
-                                    type: chunk.type,
-                                    isHw: videoConfig().hardwareAcceleration === 'prefer-hardware' ? 'likely' : 'unknown',
-                                });
-                            }
                             postMessage({ type: 'frameCredit', count: 1 });
                         },
                         error: (err) => {
@@ -224,7 +200,6 @@ self.onmessage = async (e) => {
                     });
                     const vcfg = videoConfig();
                     videoEncoder.configure(vcfg);
-                    console.log('[stream-worker] VideoEncoder configured', videoEncoder.state, videoCodecString, encW + 'x' + encH, 'hw=' + (vcfg.hardwareAcceleration || 'no-preference'));
                     // Grant initial credits so main can start shipping frames
                     // immediately. 4 = small pipeline; main can capture the
                     // next frame while the previous is still encoding.
@@ -294,7 +269,6 @@ self.onmessage = async (e) => {
                 try { videoEncoder.configure(videoConfig()); }
                 catch (e) { console.warn('[worker] bitrate reconfigure failed', e); }
             }
-            console.log('[stream-worker] bitrate set to', videoBitrate);
         } else if (m.type === 'setBitrateMode') {
             // CBR ↔ VBR toggle from main.
             cbrEnabled = !!m.cbr;
@@ -302,40 +276,20 @@ self.onmessage = async (e) => {
                 try { videoEncoder.configure(videoConfig()); }
                 catch (e) { console.warn('[worker] bitrate-mode reconfigure failed', e); }
             }
-            console.log('[stream-worker] bitrate mode set to', cbrEnabled ? 'constant' : 'variable');
         } else if (m.type === 'audio-port') {
             // Phase 2: AudioWorklet tap. The transferred MessagePort delivers
             // { ts, data: Float32Array(1920) } messages directly from the audio
             // render thread. AudioEncoder is constructed lazily on first frame
             // (so init doesn't fail if the encoder isn't available).
             audioPort = m.port;
-            let audioFrameCount = 0;
-            let audioChunkCount = 0;
             audioPort.onmessage = (e) => {
                 const { ts, data } = e.data;
-                audioFrameCount++;
-                if (audioFrameCount === 1 || audioFrameCount === 50) {
-                    console.log(`[stream-worker] audio frame #${audioFrameCount} received`, {
-                        ts,
-                        dataBytes: data.byteLength,
-                        samples: data.length,
-                        handshakeComplete: rx ? rx.isHandshakeComplete() : 'no-rx',
-                        encoderState: audioEncoder ? audioEncoder.state : 'not-constructed',
-                    });
-                }
                 if (!rx || !rx.isHandshakeComplete() || !muxer) return;
                 if (!audioEncoder) {
                     try {
                         audioEncoder = new AudioEncoder({
                             output: (chunk) => {
                                 if (!rx || !rx.isHandshakeComplete() || !muxer) return;
-                                audioChunkCount++;
-                                if (audioChunkCount === 1 || audioChunkCount === 20) {
-                                    console.log(`[stream-worker] encoded audio chunk #${audioChunkCount}`, {
-                                        bytes: chunk.byteLength,
-                                        timestamp: chunk.timestamp,
-                                    });
-                                }
                                 const buf = new ArrayBuffer(chunk.byteLength);
                                 chunk.copyTo(new Uint8Array(buf));
                                 muxer.push_audio(new Uint8Array(buf), chunk.timestamp);
@@ -349,7 +303,6 @@ self.onmessage = async (e) => {
                             numberOfChannels: 2,
                             bitrate: 128000,
                         });
-                        console.log('[stream-worker] AudioEncoder configured', audioEncoder.state);
                     } catch (err) {
                         postMessage({ type: 'log', msg: 'AudioEncoder init failed: ' + (err && err.message || err) });
                         return;
