@@ -329,8 +329,10 @@ export const LayerSystem = {
         const renderableLayers = this.layers.filter(layer => {
             if (!layer.enabled) return false;
             if (soloActive) return layer.solo;
-            const effOpacity = layer._modulatedOpacity !== undefined
-                ? layer._modulatedOpacity : layer.opacity;
+            // _modulatedOpacity is only refreshed while the layer renders, so
+            // gate on the max of base + last modulated: otherwise a layer that
+            // hits 0 in one of them can never come back (stale 0 locks it out).
+            const effOpacity = Math.max(layer.opacity, layer._modulatedOpacity ?? 0);
             if (effOpacity < 0.004) return false;
             return true;
         });
