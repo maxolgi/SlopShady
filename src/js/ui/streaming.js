@@ -743,7 +743,9 @@ export const StreamingUI = {
             const bitrateStr = (this._abrEnabled && this._currentBitrate !== this._videoBitrate)
                 ? `${cur}Mbps→${tgt}Mbps (adapted)`
                 : `${tgt}Mbps`;
-            cfgEl.textContent = `${this._codec} · ${w}x${h} · ${bitrateStr} · ${this._fps}fps · keyframe ${this._keyframeMs}ms · latency ${this._latencyMs}ms`;
+            const entry = this._codecProbe && this._codecProbe.video.find(v => v.codec === this._codec);
+            const hwTag = entry && entry.hwMode === 'prefer-hardware' ? 'HW' : 'SW';
+            cfgEl.textContent = `${this._codec} · ${hwTag} · ${w}x${h} · ${bitrateStr} · ${this._fps}fps · keyframe ${this._keyframeMs}ms · latency ${this._latencyMs}ms`;
         }
     },
 
@@ -755,18 +757,26 @@ export const StreamingUI = {
      *  would work fine. */
     async probeCodecs() {
         const out = { webcodecs: typeof VideoEncoder !== 'undefined', video: [], audio: [] };
-        const w = (state.canvas && state.canvas.width) || 1280;
-        const h = (state.canvas && state.canvas.height) || 720;
+        // Even-clamp to match the worker's encW/encH (canvas.width & ~1) so the
+        // probe tests the exact dims the encoder will be configured with.
+        const w = ((state.canvas && state.canvas.width) || 1280) & ~1;
+        const h = ((state.canvas && state.canvas.height) || 720) & ~1;
         if (out.webcodecs) {
             for (const c of this._videoCandidates) {
                 let ok = false;
                 let hwMode = null;  // null = SW, 'prefer-hardware' = HW passed
                 try {
                     const fam = this._codecFamily(c.codec);
+                    // Align with the worker's videoConfig(): include bitrateMode
+                    // and avc.format so isConfigSupported reflects the config the
+                    // encoder will actually receive (avoids the probe claiming HW
+                    // supported for a config the worker never sends).
                     const baseCfg = {
                         codec: c.codec, width: w, height: h,
                         bitrate: this._videoBitrate, framerate: this._fps, latencyMode: 'realtime',
+                        bitrateMode: this._cbrEnabled ? 'constant' : 'variable',
                     };
+                    if (fam === 'h264') baseCfg.avc = { format: 'avc' };
                     if (fam === 'h264' || fam === 'hevc' || fam === 'av1') {
                         // Try HW first; if it fails (intermittent HW availability),
                         // fall back to SW — Chrome always bundles openh264 for H.264.
@@ -858,7 +868,8 @@ export const StreamingUI = {
         const lines = [];
         for (const v of probe.video) {
             if (!v.supported) continue;
-            let line = `${v.label}`;
+            const hw = v.hwMode === 'prefer-hardware' ? 'HW' : 'SW';
+            let line = `${v.label} · ${hw}`;
             if (v.note) line += ` — ${v.note}`;
             lines.push(line);
         }

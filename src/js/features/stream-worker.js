@@ -129,6 +129,7 @@ self.onmessage = async (e) => {
                 // HW mode is what actually passed probe on main — avoids blindly
                 // preferring HW when the probe flaked and SW was the fallback.
                 videoHwMode = (typeof m.videoHwMode === 'string') ? m.videoHwMode : null;
+                console.log('[stream-worker] init hwMode =', videoHwMode || 'no-preference');
                 if (typeof m.cbrEnabled === 'boolean') cbrEnabled = m.cbrEnabled;
                 encW = m.encW || encW;
                 encH = m.encH || encH;
@@ -221,8 +222,9 @@ self.onmessage = async (e) => {
                             postMessage({ type: 'videoEncoderFailed', msg: (err && err.message) || String(err) });
                         },
                     });
-                    videoEncoder.configure(videoConfig());
-                    console.log('[stream-worker] VideoEncoder configured', videoEncoder.state, videoCodecString, encW + 'x' + encH);
+                    const vcfg = videoConfig();
+                    videoEncoder.configure(vcfg);
+                    console.log('[stream-worker] VideoEncoder configured', videoEncoder.state, videoCodecString, encW + 'x' + encH, 'hw=' + (vcfg.hardwareAcceleration || 'no-preference'));
                     // Grant initial credits so main can start shipping frames
                     // immediately. 4 = small pipeline; main can capture the
                     // next frame while the previous is still encoding.
