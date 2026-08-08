@@ -194,15 +194,6 @@ fn wasm_needs_rebuild(repo_root: &Path) -> bool {
 }
 
 fn main() {
-    #[cfg(target_os = "windows")]
-    {
-        let mut res = winres::WindowsResource::new();
-        res.set_icon("icon.ico");
-        if let Err(e) = res.compile() {
-            println!("cargo:warning = failed to compile windows resource: {e}");
-        }
-    }
-
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let src_js = repo_root.join("src").join("js");
     let out_js = repo_root.join("static").join("js");
@@ -289,10 +280,17 @@ fn main() {
     // would 404 at runtime.
     let vendor_out = repo_root.join("static").join("vendor").join("WebSRT").join("web").join("src");
 
-    // Stage mpeg2ts-wasm .d.ts files where tsc expects them.
-    let stage_dir = repo_root.join("vendor").join("WebSRT").join("web").join("wasm").join("mpeg2ts-wasm");
-    let wasm_src_dir = repo_root.join("static").join("wasm").join("mpeg2ts-wasm");
-    if wasm_src_dir.exists() {
+    // Stage mpeg2ts-wasm and srt-wasm .d.ts files where tsc expects them.
+    // demux.ts imports `../wasm/mpeg2ts-wasm/mpeg2ts_wasm.js` and worker.ts
+    // imports `../wasm/srt-wasm/srt_wasm.js` — both relative specifiers that
+    // tsc paths mappings don't resolve, so the same staging pattern applies
+    // to both crates.
+    for crate_name in ["mpeg2ts-wasm", "srt-wasm"] {
+        let stage_dir = repo_root.join("vendor").join("WebSRT").join("web").join("wasm").join(crate_name);
+        let wasm_src_dir = repo_root.join("static").join("wasm").join(crate_name);
+        if !wasm_src_dir.exists() {
+            continue;
+        }
         if let Err(e) = fs::create_dir_all(&stage_dir) {
             panic!("failed to create {}: {}", stage_dir.display(), e);
         }
@@ -360,6 +358,38 @@ fn main() {
                     needle,
                     path.display()
                 );
+            }
+            let rewritten = contents.replace(needle, replacement);
+            fs::write(&path, rewritten)
+                .unwrap_or_else(|e| panic!("failed to write {}: {}", path.display(), e));
+        }
+
+        // Rewrite the WASM import path in emitted worker.js (and worker.d.ts
+        // if it surfaces the specifier). worker.ts imports
+        // `'../wasm/srt-wasm/srt_wasm.js'` — the same upstream-relative shape
+        // as demux's mpeg2ts import, which resolves wrong at runtime since
+        // SlopShady serves wasm at /wasm/ (not vendor/WebSRT/web/wasm/).
+        // Panic if the needle is missing in worker.js so a future submodule
+        // bump surfaces loudly; worker.d.ts may elide the specifier, so
+        // rewrite there only if present.
+        for (fname, strict) in [("worker.js", true), ("worker.d.ts", false)] {
+            let path = vendor_out.join(fname);
+            if !path.exists() {
+                continue;
+            }
+            let contents = fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
+            let needle = "'../wasm/srt-wasm/srt_wasm.js'";
+            let replacement = "'/wasm/srt-wasm/srt_wasm.js'";
+            if !contents.contains(needle) {
+                if strict {
+                    panic!(
+                        "expected to find `{}` in {}; upstream specifier may have changed",
+                        needle,
+                        path.display()
+                    );
+                }
+                continue;
             }
             let rewritten = contents.replace(needle, replacement);
             fs::write(&path, rewritten)

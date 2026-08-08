@@ -143,19 +143,19 @@ Single binary, no Python or Node dependencies. Frontend assets are embedded into
    cargo run
    ```
 
-3. The server starts on **https://localhost:8100**. The default build (`webview` feature) opens a native desktop window; the `--no-default-features` build opens your system browser instead (pass `--no-browser` to skip auto-opening).
+3. The server starts on **https://localhost:8100**. The default build (`gui` feature) opens a small egui control panel — click **Start** to launch the HTTPS server and **Open Browser** to open the web app in your system browser (pass `--no-gui` to skip opening the panel). The `--no-default-features` build has no GUI compiled in and launches the HTTPS server directly.
 
 Options:
 ```bash
 cargo run -- --port 8200          # custom port
 cargo run -- --data-dir /path     # custom data directory (shaders.json, certs)
-cargo run -- --no-browser         # server-only build: don't auto-open
+cargo run -- --no-gui             # don't open the control panel
 cargo run -- --osc-port 9000      # custom OSC UDP port (default 8101)
 cargo run -- --osc-bind 127.0.0.1 # OSC bind address (default 0.0.0.0)
 cargo build --release             # optimized binary (~8-12 MB)
 ```
 
-> Linux `webview` builds require GTK development libraries (`libgtk-3-dev`). To build a pure HTTPS server with no native window, use `cargo run --no-default-features`.
+> Linux `gui` builds need an OpenGL stack (eframe uses the `glow` backend); no `libwebkit2gtk` or `libgtk-3-dev` is required. To build a pure HTTPS server with no GUI, use `cargo run --no-default-features`.
 
 ### Updating WebSRT
 
@@ -224,7 +224,6 @@ SlopShady consists of two components:
 | `POST /api/live-tuning/shader-result` | POST | Receives shader compilation results during tuning |
 | `POST /api/live-tuning/stop` | POST | Aborts active tuning session |
 | `GET /api/shaders/download` | GET | Downloads the `shaders.json` file |
-| `GET /api/screen-capture` | GET | Returns a base64 PNG of the primary monitor (webview build only) |
 | `GET /api/stream/cert-hash?url=<gateway>` | GET | Proxies the WebSRT gateway's `cert-hash.js` so the browser can pin it for WebTransport (same-origin; avoids CORS + self-signed trust prompts) |
 
 ---
@@ -927,22 +926,20 @@ The application loads with "Obsidian Flow / Kinetic Bismuth" as the default shad
 
 ```
 ├── slopshady/                 # Rust backend (the only Cargo crate in this repo)
-│   ├── Cargo.toml             # deps + [patch.crates-io] wry override
+│   ├── Cargo.toml             # deps + Cargo feature flags
 │   ├── Cargo.lock             # committed (app binary)
 │   ├── build.rs               # Windows icon resource
 │   ├── icon.ico               # Windows binary icon
 │   ├── src/
-│   │   ├── main.rs            # Entry point, CLI args, server/webview startup
+│   │   ├── main.rs            # Entry point, CLI args, server/gui startup
 │   │   ├── state.rs           # State load/save/normalize
 │   │   ├── server.rs          # axum router, static file serving, stream cert-hash proxy
 │   │   ├── ws.rs              # WebSocket handler, state sync, OSC hot-swap
 │   │   ├── llm.rs             # LLM API proxy (models, chat/completions) + URL validator
 │   │   ├── live_tuning.rs     # Iterative tuning loop
 │   │   ├── osc.rs             # Native OSC UDP bridge
-│   │   ├── screen.rs          # Native screen capture (webview feature only)
+│   │   ├── gui.rs             # egui control panel (gui feature only)
 │   │   └── cert.rs            # Self-signed cert generation
-│   └── patches/
-│       └── wry/               # Locally-patched wry fork (see note below)
 ├── README.md
 ├── CONTRIBUTING.md            # Build steps, conventions, tooltip policy
 ├── SECURITY.md                # Vulnerability reporting + security caveats
@@ -977,8 +974,6 @@ The application loads with "Obsidian Flow / Kinetic Bismuth" as the default shad
 │       └── shaders/factory/   # 80 built-in GLSL shaders
 ```
 
-> **Note on `slopshady/patches/wry/`**: this is a full vendored copy of the [`wry`](https://github.com/tauri-apps/wry) crate with local modifications (TLS-ignore + the Windows WebView2 shutdown path). It is wired in via `[patch.crates-io]` in `slopshady/Cargo.toml` and **must not be upgraded or removed** — the default `webview` build depends on these patches. Build from inside `slopshady/` so the relative patch path resolves.
-
 ---
 
 ## License
@@ -992,7 +987,6 @@ Third-party libraries are subject to their respective licenses (see [THIRD_PARTY
 | [Webamp](https://webamp.org/) | MIT | Browser Winamp clone (`static/lib/`) |
 | [Butterchurn](https://github.com/niclas-niclas/butterchurn) | MIT | Milkdrop visualizer for WebGL (`static/lib/`) |
 | [LiteGraph.js](https://github.com/jagenjo/litegraph.js) | MIT | Node graph editor (`static/lib/`) |
-| [wry](https://github.com/tauri-apps/wry) (patched fork) | Apache-2.0/MIT | WebView wrapper (`slopshady/patches/wry/`) |
 | [srt-wasm](https://github.com/maxolgi/WebSRT/tree/master/crates/srt-wasm) | MPL-2.0 | SRT receiver/sender WASM (`static/wasm/srt-wasm/`), built from `vendor/WebSRT/` submodule |
 | [ts-muxer-wasm](https://github.com/maxolgi/WebSRT/tree/master/crates/ts-muxer-wasm) | MPL-2.0 | MPEG-TS muxer WASM (`static/wasm/ts-muxer-wasm/`), built from `vendor/WebSRT/` submodule |
 | [mpeg2ts-wasm](https://github.com/maxolgi/WebSRT/tree/master/crates/mpeg2ts-wasm) | MPL-2.0 | MPEG-TS demuxer WASM (`static/wasm/mpeg2ts-wasm/`), built from `vendor/WebSRT/` submodule |

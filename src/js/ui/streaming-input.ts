@@ -17,6 +17,8 @@
  */
 
 import { getEl, state } from '../state.js';
+import { mountPlayer } from '/static/vendor/WebSRT/web/src/player/index.js';
+import type { PlayerHandle } from '/static/vendor/WebSRT/web/src/player/index.js';
 
 const NUM_INPUTS = 8;
 const LS_PREFIX = 'slopshady.stream.input.';
@@ -55,7 +57,7 @@ type AnyWindow = Window & typeof globalThis & {
 };
 
 interface InputEntry {
-    worker: Worker | null;
+    handle: PlayerHandle | null;
     refcount: number;
     manualStart: boolean;
     status: 'idle' | 'connecting' | 'live' | 'closed' | 'error' | string;
@@ -80,61 +82,15 @@ interface InputEntry {
     layerVolumes: Map<number, number>;
     analyserTap: GainNode | null;
     _analyserConnected: boolean;
-    reconnectTimer: ReturnType<typeof setTimeout> | null;
-    reconnectAttempts: number;
     _antiThrottle: { osc: OscillatorNode } | null;
     _presentRaf: number | null;
-    lastStats: WorkerStats | null;
+    lastStats: any;
 }
 
 interface InputConfig {
     url: string;
     name: string;
     latency: number;
-}
-
-// Worker → main message discriminated union (matches stream-input-worker.ts).
-type WorkerMsg =
-    | { type: 'handshakeComplete' }
-    | { type: 'streamInfo'; info: { videoPid: number; videoCodec: string | null; audioPid: number; audioCodec: string | null } }
-    | { type: 'videoFrame'; frame: VideoFrame }
-    | { type: 'audioData'; data: AudioData }
-    | { type: 'stats'; stats: WorkerStats }
-    | { type: 'log'; msg: string }
-    | { type: 'decoderError'; which: 'video' | 'audio' | 'demux'; msg: string }
-    | { type: 'error'; msg: string }
-    | { type: 'close' }
-    | { type: 'initFailed'; msg: string }
-    | { type: 'stopped' }
-    | { type: 'batch'; msgs: WorkerMsg[] };
-
-interface WorkerStats {
-    bandwidthBps: number;
-    rttMs: number;
-    elapsedMs: number;
-    rxLoss: number;
-    rxNak: number;
-    rxAck: number;
-    rxData: number;
-    rxBuffered: number;
-    pesVideo: number;
-    pesAudio: number;
-    spsSeen: boolean;
-    ppsSeen: boolean;
-    vpsSeen: boolean;
-    av1SeqSeen: boolean;
-    chunksFed: number;
-    framesOutput: number;
-    audioChunksFed: number;
-    audioFramesOutput: number;
-    decoderState: string;
-    audioDecoderState: string;
-    lastDecoderError: string;
-    lastAudioDecoderError: string;
-    videoCodec: string;
-    audioCodec: string;
-    videoWidth: number;
-    videoHeight: number;
 }
 
 export const StreamingInputUI = {
@@ -234,7 +190,7 @@ export const StreamingInputUI = {
 
     /**
      * Push a freshly decoded frame into the PTS-paced ring and refresh the
-     * wall-clock ↔ PTS mapping. Called from the worker's `videoFrame`
+     * wall-clock ↔ PTS mapping. Called from the SDK `decodedframe` event
      * handler.
      */
     _acceptVideoFrame(inputIndex: number, frame: VideoFrame): void {
@@ -337,7 +293,7 @@ export const StreamingInputUI = {
     _toggleStart(): void {
         const i = this._selectedInput;
         const entry = this._ensureEntry(i);
-        if (entry.worker || entry.manualStart) {
+        if (entry.handle || entry.manualStart) {
             // Stopping. Always disconnect even if layers still hold refs — the
             // next acquire() (layer source toggle) will reconnect if needed.
             entry.manualStart = false;
@@ -353,12 +309,12 @@ export const StreamingInputUI = {
 
     _toggleAll(): void {
         // If any input is currently running, stop all. Else start all.
-        const anyRunning = this._inputs.some(e => e && (e.worker || e.manualStart));
+        const anyRunning = this._inputs.some(e => e && (e.handle || e.manualStart));
         for (let i = 0; i < NUM_INPUTS; i++) {
             const cfg = this._readConfig(i);
             if (!cfg.url || !cfg.name) continue; // skip unconfigured
             const entry = this._ensureEntry(i);
-            const isRunning = !!(entry.worker || entry.manualStart);
+            const isRunning = !!(entry.handle || entry.manualStart);
             if (anyRunning && isRunning) {
                 entry.manualStart = false;
                 this._disconnect(i);
@@ -374,7 +330,7 @@ export const StreamingInputUI = {
     _syncToggleButton(): void {
         const i = this._selectedInput;
         const entry = this._inputs[i];
-        const live = !!(entry && (entry.worker || entry.manualStart));
+        const live = !!(entry && (entry.handle || entry.manualStart));
         const btn = getEl('stream-input-toggle');
         if (btn) {
             btn.textContent = live ? '⏹ Stop' : '▶ Start';
@@ -383,7 +339,7 @@ export const StreamingInputUI = {
     },
 
     _syncToggleAllButton(): void {
-        const anyRunning = this._inputs.some(e => e && (e.worker || e.manualStart));
+        const anyRunning = this._inputs.some(e => e && (e.handle || e.manualStart));
         const btn = getEl('stream-input-toggle-all');
         if (btn) {
             btn.textContent = anyRunning ? '⏹ Stop All' : '▶ Start All';
@@ -423,7 +379,7 @@ export const StreamingInputUI = {
     _ensureEntry(i: number): InputEntry {
         if (!this._inputs[i]) {
             this._inputs[i] = {
-                worker: null,
+                handle: null,
                 refcount: 0, manualStart: false,
                 status: 'idle',
                 frameRing: [], displayedFrame: null,
@@ -433,7 +389,6 @@ export const StreamingInputUI = {
                 layerGains: new Map(), audioMutedForLayer: new Map(),
                 layerVolumes: new Map(),
                 analyserTap: null, _analyserConnected: false,
-                reconnectTimer: null, reconnectAttempts: 0,
                 _antiThrottle: null, _presentRaf: null, lastStats: null,
             };
         }
@@ -456,30 +411,43 @@ export const StreamingInputUI = {
             return;
         }
         const entry = this._ensureEntry(inputIndex);
-        if (entry.reconnectTimer) { clearTimeout(entry.reconnectTimer); entry.reconnectTimer = null; }
-        if (entry.worker) await this._abortConnect(inputIndex);
 
         entry.status = 'connecting';
         this._setStatus(inputIndex, 'Connecting…');
         this._syncToggleButton(); this._syncToggleAllButton();
 
-        // Fetch cert hash. Worker constructs + owns the WebTransport.
+        // Fetch cert hash: try direct browser fetch first (works for real-cert
+        // gateways), fall back to backend proxy (for self-signed certs / CORS).
         let hash = null as string | null;
         try {
-            const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(cfg.url), { cache: 'no-store' });
-            if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
-            const j = await resp.json();
-            hash = j.hash ?? null;
-        } catch (e) {
-            this._setStatus(inputIndex, 'Cert hash fetch failed');
-            this._scheduleReconnect(inputIndex);
-            return;
+            const directResp = await fetch(cfg.url.replace(/\/$/, '') + '/cert-hash.js', { cache: 'no-store' });
+            if (directResp.ok) {
+                const text = await directResp.text();
+                const m = text.match(/CERT_HASH\s*=\s*"([0-9a-fA-F]+)"/);
+                if (m) hash = m[1];
+            }
+        } catch { /* self-signed cert or CORS — fall back to proxy */ }
+        if (!hash) {
+            try {
+                const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(cfg.url), { cache: 'no-store' });
+                if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
+                hash = (await resp.json()).hash ?? null;
+            } catch (e) {
+                this._setStatus(inputIndex, 'Cert hash fetch failed');
+                return;
+            }
         }
 
-        const url = `${cfg.url}?stream=${encodeURIComponent(cfg.name)}`;
-        entry.worker = new Worker('/js/features/stream-input-worker.js', { type: 'module' });
-        entry.worker.onmessage = (e: MessageEvent) => this._onWorkerMessage(inputIndex, e.data as WorkerMsg);
-        entry.worker.postMessage({ type: 'init', url, certHash: hash, latencyMs: cfg.latency });
+        entry.handle = mountPlayer(null, {
+            decodeInWorker: true,
+            workerUrl: '/static/vendor/WebSRT/web/src/worker.js',
+            url: cfg.url,
+            stream: cfg.name,
+            certHash: hash,
+            latencyMs: cfg.latency,
+        });
+        this._wireHandleEvents(inputIndex, entry.handle);
+        entry.handle.connect();
 
         this._startAntiThrottle(inputIndex);
         this._startPresentLoop(inputIndex);
@@ -488,7 +456,6 @@ export const StreamingInputUI = {
     async _disconnect(inputIndex: number): Promise<void> {
         const entry = this._inputs[inputIndex];
         if (!entry) return;
-        if (entry.reconnectTimer) { clearTimeout(entry.reconnectTimer); entry.reconnectTimer = null; }
         this._stopPresentLoop(inputIndex);
         this._stopAntiThrottle(inputIndex);
         for (const f of entry.frameRing) { try { f.close(); } catch (e) { /* ignore */ } }
@@ -496,18 +463,10 @@ export const StreamingInputUI = {
         if (entry.displayedFrame) { try { entry.displayedFrame.close(); } catch (e) { /* ignore */ } entry.displayedFrame = null; }
         entry.ptsOriginUs = null;
         this._teardownAudio(inputIndex);
-        if (entry.worker) {
-            const worker = entry.worker;
-            try { worker.postMessage({ type: 'stop' }); } catch (e) { /* ignore */ }
-            await new Promise<void>((resolve) => {
-                let done = false;
-                const finish = () => { if (done) return; done = true; worker.removeEventListener('message', onMsg); clearTimeout(timer); resolve(); };
-                const onMsg = (e: MessageEvent) => { if (e.data && e.data.type === 'stopped') finish(); };
-                const timer = setTimeout(finish, 200);
-                worker.addEventListener('message', onMsg);
-            });
-            try { worker.terminate(); } catch (e) { /* ignore */ }
-            entry.worker = null;
+        if (entry.handle) {
+            try { entry.handle.disconnect(); } catch (e) { /* ignore */ }
+            try { entry.handle.destroy(); } catch (e) { /* ignore */ }
+            entry.handle = null;
         }
         entry.handshakeDone = false;
         entry.status = 'idle';
@@ -517,77 +476,53 @@ export const StreamingInputUI = {
         this._syncToggleButton(); this._syncToggleAllButton();
     },
 
-    _scheduleReconnect(inputIndex: number): void {
-        const entry = this._inputs[inputIndex];
-        if (!entry) return;
-        // Only reconnect if we still want to be up.
-        if (entry.refcount === 0 && !entry.manualStart) return;
-        if (entry.reconnectTimer) return;
-        const delay = Math.min(2000 * (2 ** entry.reconnectAttempts), 30000);
-        entry.reconnectAttempts++;
-        this._setStatus(inputIndex, `Reconnect in ${Math.round(delay / 1000)}s…`);
-        entry.reconnectTimer = setTimeout(() => {
-            entry.reconnectTimer = null;
-            this._abortConnect(inputIndex).then(() => this._connect(inputIndex));
-        }, delay);
-    },
+    // ---------- SDK event dispatch ----------
 
-    async _abortConnect(inputIndex: number): Promise<void> {
-        const entry = this._inputs[inputIndex];
-        if (!entry) return;
-        this._stopPresentLoop(inputIndex);
-        if (entry.worker) { try { entry.worker.terminate(); } catch (e) { /* ignore */ } entry.worker = null; }
-    },
-
-    // ---------- Worker message dispatch ----------
-
-    _onWorkerMessage(inputIndex: number, msg: WorkerMsg): void {
-        const entry = this._inputs[inputIndex];
-        if (!entry) return;
-        if (msg.type === 'handshakeComplete') {
+    _wireHandleEvents(i: number, handle: PlayerHandle): void {
+        handle.addEventListener('decodedframe', (e: Event) => {
+            const frame = (e as CustomEvent<VideoFrame>).detail;
+            this._acceptVideoFrame(i, frame);
+        });
+        handle.addEventListener('decodedaudio', (e: Event) => {
+            const data = (e as CustomEvent<AudioData>).detail;
+            this._handleAudioData(i, data);
+        });
+        handle.addEventListener('stats', (e: Event) => {
+            const detail = (e as CustomEvent<{ stats: any; demux: any }>).detail;
+            this._onStats(i, detail);
+        });
+        handle.addEventListener('open', () => {
+            const entry = this._inputs[i];
+            if (!entry) return;
             entry.handshakeDone = true;
-            entry.reconnectAttempts = 0;
             entry.status = 'live';
-            this._setStatus(inputIndex, 'Live · ' + (this._readConfig(inputIndex).name || ''));
-            if (inputIndex === this._selectedInput) this._syncToggleButton(); this._syncToggleAllButton();
-        } else if (msg.type === 'streamInfo') {
-            // Don't overwrite 'live' with codec-info status; just refresh stats block.
-            if (inputIndex === this._selectedInput) this._renderStatsBlock();
-        } else if (msg.type === 'videoFrame') {
-            this._acceptVideoFrame(inputIndex, msg.frame);
-        } else if (msg.type === 'batch') {
-            for (const m of msg.msgs) {
-                if (m.type === 'videoFrame') {
-                    this._acceptVideoFrame(inputIndex, m.frame);
-                }
-            }
-        } else if (msg.type === 'audioData') {
-            this._handleAudioData(inputIndex, msg.data);
-        } else if (msg.type === 'stats') {
-            entry.lastStats = msg.stats;
-            if (inputIndex === this._selectedInput) {
-                this._setStatus(inputIndex, this._formatStatusLine(entry, msg.stats));
-                this._renderStatsBlock();
-            }
-        } else if (msg.type === 'decoderError') {
-            console.warn(`[stream-input ${inputIndex}] ${msg.which} decoder:`, msg.msg);
-            if (inputIndex === this._selectedInput) this._renderStatsBlock();
-        } else if (msg.type === 'log') {
-            console.log(`[stream-input ${inputIndex}]`, msg.msg);
-        } else if (msg.type === 'close') {
-            entry.handshakeDone = false;
-            entry.status = 'closed';
-            this._setStatus(inputIndex, 'Closed');
-            this._scheduleReconnect(inputIndex);
-        } else if (msg.type === 'error') {
-            // Worker-owned WebTransport dropped or failed to connect.
-            this._setStatus(inputIndex, 'Stream error: ' + msg.msg);
-            entry.status = 'error';
-            this._scheduleReconnect(inputIndex);
-        } else if (msg.type === 'initFailed') {
-            this._setStatus(inputIndex, 'Init failed: ' + msg.msg);
-            entry.status = 'error';
-            this._syncToggleButton(); this._syncToggleAllButton();
+            this._setStatus(i, 'Connected · awaiting video…');
+            if (i === this._selectedInput) { this._syncToggleButton(); this._syncToggleAllButton(); }
+        });
+        handle.addEventListener('canplay', () => {
+            const entry = this._inputs[i];
+            if (!entry) return;
+            entry.status = 'live';
+            this._setStatus(i, 'Live · ' + (this._readConfig(i).name || ''));
+            if (i === this._selectedInput) { this._syncToggleButton(); this._syncToggleAllButton(); }
+        });
+        handle.addEventListener('waiting', () => {
+            this._setStatus(i, 'Reconnecting…');
+        });
+        handle.addEventListener('error', (e: Event) => {
+            const detail = (e as CustomEvent<{ message: string }>).detail;
+            console.warn(`[stream-input ${i}]`, detail?.message);
+            if (i === this._selectedInput) this._renderStatsBlock();
+        });
+    },
+
+    _onStats(i: number, detail: { stats: any; demux: any }): void {
+        const entry = this._inputs[i];
+        if (!entry) return;
+        entry.lastStats = detail.stats;
+        if (i === this._selectedInput) {
+            this._setStatus(i, this._formatStatusLine(entry, detail.stats));
+            this._renderStatsBlock();
         }
     },
 
@@ -719,8 +654,8 @@ export const StreamingInputUI = {
         if (!entry || entry._presentRaf !== null) return;
         const loop = () => {
             const e = this._inputs[inputIndex];
-            // Stop the loop when the worker goes away (disconnect/abort).
-            if (!e || !e.worker) {
+            // Stop the loop when the handle goes away (disconnect).
+            if (!e || !e.handle) {
                 if (e) e._presentRaf = null;
                 return;
             }
@@ -886,7 +821,7 @@ export const StreamingInputUI = {
         if (el) el.textContent = s;
     },
 
-    _formatStatusLine(entry: InputEntry, stats: WorkerStats): string {
+    _formatStatusLine(entry: InputEntry, stats: any): string {
         const cfg = this._readConfig(this._selectedInput);
         const name = cfg.name || '';
         if (entry.status === 'live' && stats) {
@@ -905,7 +840,7 @@ export const StreamingInputUI = {
         const i = this._selectedInput;
         const entry = this._inputs[i];
         const stats = entry?.lastStats;
-        if (!entry || !entry.worker) {
+        if (!entry || !entry.handle) {
             el.textContent = '';
             return;
         }
@@ -913,23 +848,19 @@ export const StreamingInputUI = {
             el.textContent = 'Waiting for stream info…';
             return;
         }
-        const videoLine = stats.videoCodec
-            ? `${stats.videoCodec}${stats.videoWidth ? ' · ' + stats.videoWidth + '×' + stats.videoHeight : ''}`
+        const vs = stats.videoStats;
+        const as = stats.audioStats;
+        const videoLine = vs?.codecString
+            ? `${vs.codecString}${vs.codedWidth ? ' · ' + vs.codedWidth + '×' + vs.codedHeight : ''}`
             : '—';
-        const audioLine = stats.audioCodec || '—';
-        const framesLine = `${stats.framesOutput || 0} frames · queue ${stats.decoderState === 'configured' ? 'live' : stats.decoderState}`;
+        const audioLine = as?.codec || '—';
+        const framesLine = `${vs?.decodedCount || 0} frames · dropped ${vs?.droppedFrames || 0} · ${vs?.decodeFps ? vs.decodeFps.toFixed(0) + 'fps · ' : ''}${vs?.decoderState || '—'}`;
         const transportLine = `rxBytes ${((stats.rxData || 0) / 1e6).toFixed(1)}MB · rxAck ${Math.round(stats.rxAck || 0)} · rxNak ${Math.round(stats.rxNak || 0)} · rxBuffered ${Math.round(stats.rxBuffered || 0)}`;
-        const chunksLine = `pes v:${stats.pesVideo || 0} a:${stats.pesAudio || 0} · fed v:${stats.chunksFed || 0} a:${stats.audioChunksFed || 0} · out a:${stats.audioFramesOutput || 0}`;
-        let errLine = '';
-        if (stats.lastDecoderError) errLine = `\nVideo err: ${stats.lastDecoderError}`;
-        if (stats.lastAudioDecoderError) errLine += `\nAudio err: ${stats.lastAudioDecoderError}`;
         el.textContent =
             `Video: ${videoLine}\n` +
             `Audio: ${audioLine}\n` +
             `Decode: ${framesLine}\n` +
-            `Transport: ${transportLine}\n` +
-            `Counters: ${chunksLine}` +
-            errLine;
+            `Transport: ${transportLine}`;
     },
 };
 

@@ -2,7 +2,7 @@
 
 SlopShady is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-or-later). The following third-party libraries are included in or referenced by this repository:
 
-## Bundled with the webview frontend (`static/lib/`)
+## Bundled with the frontend (`static/lib/`)
 
 | Library | License | Source |
 |---------|---------|--------|
@@ -11,14 +11,6 @@ SlopShady is licensed under the [GNU Affero General Public License v3.0](LICENSE
 | [LiteGraph.js](https://github.com/jagenjo/litegraph.js) | MIT | Node graph editor |
 
 These are vendored as minified bundles in `static/lib/`. Do not hand-edit them.
-
-## Vendored fork (`slopshady/patches/wry/`)
-
-| Library | License | Source |
-|---------|---------|--------|
-| [wry](https://github.com/tauri-apps/wry) | Apache-2.0 OR MIT | WebView wrapper (locally patched: TLS-ignore + Windows WebView2 shutdown) |
-
-This is a full source copy with local modifications, wired via `[patch.crates-io]` in `slopshady/Cargo.toml`. Must not be upgraded or removed.
 
 ## Git submodule
 

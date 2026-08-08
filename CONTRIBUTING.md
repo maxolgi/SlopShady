@@ -8,22 +8,21 @@ SlopShady is a Rust application with a vanilla-JS frontend embedded at compile t
 
 ```bash
 cd slopshady
-cargo run                 # HTTPS :8100, auto-opens a window (default webview build)
-cargo run -- --no-browser # server-only, don't auto-open
+cargo run                 # HTTPS :8100, opens the egui control panel (default gui build)
+cargo run -- --no-gui     # server-only, don't open the control panel
 cargo build --release     # optimized binary (~8-12 MB)
 ```
 
 Two build configurations, switched by Cargo features:
 
-- **Default (`webview`)**: native desktop window via `wry` + `tao`, also enables `xcap` + `image` (screen capture). Linux needs GTK dev libraries (`libgtk-3-dev`).
-- **`--no-default-features`**: pure HTTPS server + system browser. Screen-capture is compiled out; MIDI still works (it runs in the browser via the Web MIDI API).
+- **Default (`gui`)**: small egui control panel (via `eframe`) — Start/Stop the HTTPS server, then **Open Browser** to open the web app in the system browser. Linux needs an OpenGL stack (eframe `glow` backend); no `libgtk-3-dev`/`libwebkit2gtk` required.
+- **`--no-default-features`**: pure HTTPS server, no GUI compiled in. MIDI still works (it runs in the browser via the Web MIDI API).
 
 ### Critical build quirks
 
 - **The release binary is the run target.** Verify changes with `cargo build --release` (not debug), running `target/release/slopshady.exe`.
 - **Static assets are embedded at compile time** via `rust-embed` (`#[folder = "../static/"]` in `slopshady/src/server.rs`). Editing files under `static/` does nothing until the binary is rebuilt — there is no live-reload.
 - **Static-only changes don't trigger a re-embed by themselves.** A plain `cargo build --release` after editing only files under `static/` finishes in <1s without recompiling. Force a re-embed with `cargo clean -p slopshady && cargo build --release`. Editing any `.rs` file also forces a re-embed.
-- **`wry` is a locally-patched fork** at `slopshady/patches/wry`, wired in via `[patch.crates-io]` in `Cargo.toml`. Do not upgrade `wry` or remove the patch entry — it carries local modifications (TLS-ignore + the Windows WebView2 shutdown path). Always build from inside `slopshady/` so the relative patch path resolves.
 
 ## Architecture
 

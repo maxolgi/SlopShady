@@ -312,42 +312,60 @@ export const StreamingUI = {
             }
         }
 
-        // 2) Fetch server cert hash via same-origin backend proxy (honors the
-        //    gateway host from this.gatewayUrl; backend ignores the self-signed
-        //    Vite cert and dodges browser CORS/cert-trust issues).
-        let hash = null;
+        // 2) Try direct WebTransport (CA validation) first — works for real certs.
+        //    Falls back to hash pinning via backend proxy for self-signed certs.
+        const wtUrl = `${this.gatewayUrl}?publish=${encodeURIComponent(this.streamName)}`;
+        let connected = false;
+
         try {
-            const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(this.gatewayUrl), { cache: 'no-store' });
-            if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
-            const j = await resp.json();
-            hash = j.hash ?? null;
-        } catch (e) {
-            this._setStatus('Cert hash fetch failed: ' + (e && e.message || e));
+            this.transport = new WebTransport(wtUrl);
+            await this.transport.ready;
+            connected = true;
+        } catch (directErr) {
+            // Likely self-signed cert — fetch hash via backend proxy and retry with pinning
+            let hash = null;
+            try {
+                const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(this.gatewayUrl), { cache: 'no-store' });
+                if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
+                hash = (await resp.json()).hash ?? null;
+            } catch (e) {
+                this._setStatus('WebTransport failed and cert hash fetch failed: ' + (e && e.message || e));
+                this.isStreaming = false;
+                this._scheduleReconnect();
+                return;
+            }
+            if (!hash) {
+                this._setStatus('WebTransport failed and no cert hash available from gateway');
+                this.isStreaming = false;
+                this._scheduleReconnect();
+                return;
+            }
+            try {
+                this.transport = new WebTransport(wtUrl, {
+                    serverCertificateHashes: [{ algorithm: 'sha-256', value: this._hexToBytes(hash) }],
+                });
+                await this.transport.ready;
+                connected = true;
+            } catch (e) {
+                this._setStatus('WebTransport connect failed: ' + (e && e.message || e));
+                this.isStreaming = false;
+                this._scheduleReconnect();
+                return;
+            }
+        }
+
+        if (!connected) {
             this.isStreaming = false;
             this._scheduleReconnect();
             return;
         }
 
-        // 3) Connect WebTransport
+        // 3) Set up datagram writer
+        this._datagramWriter = this.transport.datagrams.writable.getWriter();
         try {
-            const url = `${this.gatewayUrl}?publish=${encodeURIComponent(this.streamName)}`;
-            const opts = {};
-            if (hash) {
-                opts.serverCertificateHashes = [{ algorithm: 'sha-256', value: this._hexToBytes(hash) }];
-            }
-            this.transport = new WebTransport(url, opts);
-            await this.transport.ready;
-            this._datagramWriter = this.transport.datagrams.writable.getWriter();
-            try {
-                const wtStats = await this.transport.getStats();
-                if (wtStats && typeof wtStats.smoothedRtt === 'number' && wtStats.smoothedRtt > 0) this._initialRttMs = wtStats.smoothedRtt;
-            } catch { /* getStats not supported */ }
-        } catch (e) {
-            this._setStatus('WebTransport connect failed: ' + (e && e.message || e));
-            this.isStreaming = false;
-            this._scheduleReconnect();
-            return;
-        }
+            const wtStats = await this.transport.getStats();
+            if (wtStats && typeof wtStats.smoothedRtt === 'number' && wtStats.smoothedRtt > 0) this._initialRttMs = wtStats.smoothedRtt;
+        } catch { /* getStats not supported */ }
 
         // 4) Spawn worker (module worker; loads both WASM modules).
         //    Pass the stream-epoch (ms) so the worker can stamp audio PTS

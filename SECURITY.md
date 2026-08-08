@@ -19,7 +19,7 @@ Please read these before running SlopShady, especially if you intend to expose i
 
 ### Self-signed HTTPS certificate (local-only by design)
 
-SlopShady generates a self-signed `cert.pem` / `key.pem` into the `--data-dir` on first run so that `https://localhost:8100` works (the Web MIDI API and several other browser features require a secure context). **This certificate is not signed by any trusted authority** and is intended for local use only. Browsers will warn about it; the native webview builds ignore TLS errors via the patched `wry` so the warning is bypassed automatically in the desktop window.
+SlopShady generates a self-signed `cert.pem` / `key.pem` into the `--data-dir` on first run so that `https://localhost:8100` works (the Web MIDI API and several other browser features require a secure context). **This certificate is not signed by any trusted authority** and is intended for local use only. Browsers will warn about it; the GUI launches the web app in the system browser, which shows the usual self-signed cert warning (no TLS bypass — accept it once).
 
 Do **not** expose the server to untrusted networks without replacing the self-signed certificate with one from a real CA, and do **not** treat the TLS channel as authenticated.
 

@@ -10,8 +10,9 @@
     "include": ["vendor/WebSRT/web/src/**/*.ts"],
     "exclude": [
         "vendor/WebSRT/web/src/debug/**",
+        "vendor/WebSRT/web/src/pages/**",
         "vendor/WebSRT/web/src/main.ts",
-        "vendor/WebSRT/web/src/render.ts",
-        "vendor/WebSRT/web/src/worker.ts"
+        "vendor/WebSRT/web/src/stream.tsx",
+        "vendor/WebSRT/web/src/stream-worker.ts"
     ]
 }

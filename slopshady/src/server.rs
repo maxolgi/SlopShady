@@ -56,20 +56,6 @@ async fn download_shaders(State(state): State<Arc<AppState>>) -> Response {
 }
 
 pub fn build_router(state: Arc<AppState>) -> Router {
-    #[cfg(not(feature = "webview"))]
-    let router = Router::new()
-        .route("/", get(serve_index))
-        .route("/ws", get(crate::ws::ws_handler))
-        .route("/api/models", post(api_models))
-        .route("/api/chat/completions", post(api_chat_completions))
-        .route("/api/live-tuning/start", post(api_live_tuning_start))
-        .route("/api/live-tuning/screenshot", post(api_live_tuning_screenshot))
-        .route("/api/live-tuning/shader-result", post(api_live_tuning_shader_result))
-        .route("/api/live-tuning/stop", post(api_live_tuning_stop))
-        .route("/api/shaders/download", get(download_shaders))
-        .route("/api/stream/cert-hash", get(api_stream_cert_hash));
-
-    #[cfg(feature = "webview")]
     let router = Router::new()
         .route("/", get(serve_index))
         .route("/ws", get(crate::ws::ws_handler))
@@ -129,9 +115,9 @@ async fn api_live_tuning_stop(
 }
 
 /// Proxy the WebSRT gateway's cert hash so the browser fetches same-origin
-/// (avoids cross-origin/CORS + self-signed-cert trust issues on LAN). The host
-/// is taken from the gateway URL the user entered; cert-hash.js is served by
-/// the WebSRT Vite dev server on :5173 of that host.
+/// (avoids cross-origin/CORS + self-signed-cert trust issues on LAN). The
+/// origin (scheme://host:port) is taken from the gateway URL the user entered;
+/// cert-hash.js is served from that same origin.
 ///
 /// `danger_accept_invalid_certs(true)` is acceptable here because the real
 /// trust anchor is the WebTransport `serverCertificateHashes` pinning done
@@ -143,18 +129,16 @@ struct CertHashParams {
 }
 
 async fn api_stream_cert_hash(
-    State(app_state): State<Arc<AppState>>,
     Query(params): Query<CertHashParams>,
 ) -> axum::Json<Value> {
-    let host = url::Url::parse(&params.url)
-        .ok()
-        .and_then(|u| u.host_str().map(|s| s.to_string()));
-
-    let Some(host) = host else {
-        return axum::Json(serde_json::json!({ "hash": null, "error": "invalid gateway url" }));
+    let cert_url = match url::Url::parse(&params.url) {
+        Ok(parsed) => format!("{}/cert-hash.js", parsed.origin().ascii_serialization()),
+        Err(_) => {
+            return axum::Json(
+                serde_json::json!({ "hash": null, "error": "invalid gateway url" }),
+            )
+        }
     };
-
-    let cert_url = format!("https://{}:{}/cert-hash.js", host, app_state.cert_hash_port);
     let client = match reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(std::time::Duration::from_secs(4))
