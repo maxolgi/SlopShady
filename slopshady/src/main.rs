@@ -33,6 +33,9 @@ pub(crate) struct Cli {
 
     #[arg(long, default_value = "0.0.0.0", help = "Bind address for OSC input")]
     pub(crate) osc_bind: String,
+
+    #[arg(long, default_value = "0.0.0.0", help = "Bind address for HTTPS server")]
+    pub(crate) bind: String,
 }
 
 pub(crate) fn create_app_state(data_dir: &std::path::Path) -> Arc<state::AppState> {
@@ -66,13 +69,17 @@ pub(crate) fn ensure_cert(cert_path: &std::path::Path, key_path: &std::path::Pat
 
 pub(crate) async fn run_https_server(
     app_state: Arc<state::AppState>,
+    bind: String,
     port: u16,
     cert_path: PathBuf,
     key_path: PathBuf,
     handle: axum_server::Handle,
 ) {
     let app = server::build_router(app_state);
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let bind_addr: std::net::IpAddr = bind
+        .parse()
+        .unwrap_or_else(|_| std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+    let addr = SocketAddr::new(bind_addr, port);
 
     let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert_path, &key_path)
         .await
@@ -114,5 +121,5 @@ async fn run_headless(cli: Cli) {
         .unwrap()
         .spawn(app_state.clone(), cli.osc_bind.clone(), cli.osc_port);
 
-    run_https_server(app_state, cli.port, cert_path, key_path, axum_server::Handle::new()).await;
+    run_https_server(app_state, cli.bind, cli.port, cert_path, key_path, axum_server::Handle::new()).await;
 }

@@ -2,6 +2,12 @@
 name = "slopshady"
 version = "0.1.0"
 edition = "2021"
+description = "Real-time WebGL2 GLSL shader editor with AI integration, multi-layer compositing, audio/MIDI modulation, and live streaming"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/maxolgi/SlopShady"
+readme = "../README.md"
+keywords = ["webgl2", "glsl", "shader", "vj", "visuals"]
+categories = ["graphics", "multimedia::video", "rendering"]
 
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
@@ -26,6 +32,7 @@ base64 = "0.22"
 bytes = "1"
 url = "2"
 rosc = "0.10"
+local-ip-address = "0.6"
 
 [features]
 default = ["gui"]

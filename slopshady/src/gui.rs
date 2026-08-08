@@ -5,6 +5,10 @@ use eframe::egui;
 
 use crate::Cli;
 
+fn lan_ip() -> Option<String> {
+    local_ip_address::local_ip().ok().map(|ip| ip.to_string())
+}
+
 pub fn run(cli: Cli) {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -28,6 +32,7 @@ pub fn run(cli: Cli) {
 
 struct ControlPanel {
     rt: Option<tokio::runtime::Runtime>,
+    bind: String,
     port: String,
     data_dir: String,
     osc_port: String,
@@ -43,6 +48,7 @@ impl ControlPanel {
     fn new(cli: Cli, _cc: &eframe::CreationContext<'_>) -> Self {
         Self {
             rt: Some(tokio::runtime::Runtime::new().expect("Failed to create tokio runtime")),
+            bind: cli.bind,
             port: cli.port.to_string(),
             data_dir: cli.data_dir.to_string_lossy().into_owned(),
             osc_port: cli.osc_port.to_string(),
@@ -89,15 +95,21 @@ impl ControlPanel {
         let server_state = app_state.clone();
         let server_cert = cert_path.clone();
         let server_key = key_path.clone();
+        let server_bind = self.bind.clone();
         self.rt
             .as_ref()
             .expect("runtime")
             .spawn(async move {
-                crate::run_https_server(server_state, port, server_cert, server_key, server_handle)
+                crate::run_https_server(server_state, server_bind, port, server_cert, server_key, server_handle)
                     .await;
             });
 
-        self.url = format!("https://localhost:{port}");
+        let display_ip = if self.bind == "0.0.0.0" || self.bind.is_empty() {
+            lan_ip().unwrap_or_else(|| "localhost".to_string())
+        } else {
+            self.bind.clone()
+        };
+        self.url = format!("https://{display_ip}:{port}");
         self.app_state = Some(app_state);
         self.handle = Some(handle);
         self.running = true;
@@ -153,6 +165,10 @@ impl eframe::App for ControlPanel {
                     .num_columns(2)
                     .spacing([10.0, 8.0])
                     .show(ui, |ui| {
+                        ui.label("Bind");
+                        ui.text_edit_singleline(&mut self.bind);
+                        ui.end_row();
+
                         ui.label("Port");
                         ui.text_edit_singleline(&mut self.port);
                         ui.end_row();
