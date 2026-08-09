@@ -40,3 +40,14 @@ gui = ["dep:eframe"]
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
+
+[package.metadata.deb]
+maintainer = "maxolgi <https://github.com/maxolgi/SlopShady>"
+copyright = "2026"
+license-file = ["../LICENSE", "0"]
+section = "graphics"
+priority = "optional"
+depends = "$auto"
+assets = [
+    ["target/release/slopshady", "usr/bin/", "755"],
+]

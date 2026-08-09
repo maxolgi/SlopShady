@@ -7,7 +7,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Cancel superseded runs on the same ref (PRs); let branch/tag runs finish.
+# Cancel superseded runs on the same ref.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -19,8 +19,15 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Fast checks on every push / PR.
+  #    SlopShady's build.rs builds WASM + runs tsc on any cargo build, so this
+  #    job needs wasm-pack + npm ci (unlike a plain workspace). The build.rs
+  #    env-sanitization prevents clippy's `-D warnings` from leaking into the
+  #    wasm-pack subprocess.
+  # ---------------------------------------------------------------------------
   check:
-    name: fmt + clippy + test + typecheck
+    name: Lint + test + typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -32,10 +39,6 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
 
-      # build.rs invokes wasm-pack directly; it must be on PATH before any
-      # cargo command that links the slopshady crate (clippy/test/build).
-      # Installed via the official curl installer — do NOT use a
-      # rustwasm/wasm-pack-action, that repo does not exist and fails the run.
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
@@ -44,48 +47,67 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      # build.rs resolves tsc via node_modules/.bin/tsc at the repo root.
       - run: npm ci
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: slopshady
 
-      # No rustfmt.toml exists and formatting is not enforced in-repo; this
-      # is informational, not a gate.
-      - name: cargo fmt
+      - name: Install Linux build deps (eframe/egui needs EGL/X11/Wayland headers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl-dev libgl1-mesa-dev \
+            libxcb1-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxxf86vm-dev \
+            libwayland-dev libxkbcommon-dev
+
+      # fmt + clippy are advisory (no rustfmt.toml / clippy config in-repo).
+      - name: cargo fmt --check
         working-directory: slopshady
         continue-on-error: true
         run: cargo fmt --all -- --check
 
-      # clippy runs build.rs first (generates static/{js,vendor,wasm}), then
-      # lints. -D warnings is aspirational; no clippy config exists yet so this
-      # is informational, not a gate.
       - name: cargo clippy
         working-directory: slopshady
         continue-on-error: true
         run: cargo clippy --all-targets -- -D warnings
 
-      # No test suite exists in-repo; this verifies the crate compiles under
-      # the test cfg and runs any tests that appear later. The crate also has
-      # no [workspace] table and no Rust dep into vendor/WebSRT (WebSRT is
-      # consumed only as compiled WASM), so the QUIC/SRT UDP-loopback tests in
-      # the vendored websrt/websrt-gateway crates are never reached here.
-      # The timeout is a guard: if a future test does a real network handshake
-      # that hangs on CI runners, this fails fast instead of hitting the job cap.
       - name: cargo test
         working-directory: slopshady
-        timeout-minutes: 10
         run: cargo test --all-targets
 
-      # Must run AFTER a cargo step so build.rs has generated static/wasm and
-      # static/vendor (tsc resolves /wasm/* and vendor src imports against them).
+      # Runs after the cargo steps so build.rs has generated static/{wasm,vendor}.
       - name: tsc typecheck
         run: npm run typecheck
 
+  # ---------------------------------------------------------------------------
+  # 2. Full build — Linux, Windows, macOS (ARM).
+  #    build.rs embeds static/ via rust-embed at compile time; it also builds
+  #    the WASM crates and runs tsc, so wasm-pack + npm ci must precede it.
+  # ---------------------------------------------------------------------------
   build:
-    name: release binary (linux)
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-latest
+            binary: slopshady
+            artifact: slopshady-linux-x64
+            staged: slopshady-linux-x64
+          - name: Windows x64
+            os: windows-latest
+            binary: slopshady.exe
+            artifact: slopshady-windows-x64
+            staged: slopshady-windows-x64.exe
+          - name: macOS ARM
+            os: macos-latest
+            binary: slopshady
+            artifact: slopshady-macos-arm64
+            staged: slopshady-macos-arm64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -95,8 +117,17 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install wasm-pack
+      - name: Install wasm-pack (Unix)
+        if: runner.os != 'Windows'
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Install wasm-pack (Windows)
+        if: runner.os == 'Windows'
+        run: cargo install wasm-pack --locked
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: slopshady
 
       - uses: actions/setup-node@v7
         with:
@@ -105,58 +136,78 @@ jobs:
 
       - run: npm ci
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: slopshady
-
-      # Default features enable `gui` (eframe 0.29 glow backend). Compiling
-      # eframe/glow/winit on headless Linux needs EGL + X11 + Wayland dev
-      # headers. AGENTS.md confirms no gtk/webkit deps are required.
-      - name: Install GUI build deps (OpenGL / X11 / Wayland headers)
+      - name: Install Linux build deps (eframe/egui needs EGL/X11/Wayland headers)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libegl-dev libgl1-mesa-dev \
-            libx11-dev libxcb1-dev libxrandr-dev libxinerama-dev \
+            libxcb1-dev libxrandr-dev libxinerama-dev \
             libxcursor-dev libxi-dev libxxf86vm-dev \
             libwayland-dev libxkbcommon-dev
 
-      # build.rs orchestrates the whole pipeline: WASM crates → JS mirror →
-      # vendor tsc → emit tsc → rust-embed embeds static/. Single command.
-      - name: cargo build --release
+      - name: Build slopshady binary
         working-directory: slopshady
         run: cargo build --release
 
-      # The frontend is embedded into the binary via rust-embed; there is no
-      # separate web/dist to ship. The binary is the whole artifact.
       - name: Stage binary
+        shell: bash
         run: |
           mkdir -p artifact
-          cp slopshady/target/release/slopshady artifact/slopshady-linux-x86_64
-          strip artifact/slopshady-linux-x86_64 || true
+          cp "slopshady/target/release/${{ matrix.binary }}" "artifact/${{ matrix.staged }}"
+          strip "artifact/${{ matrix.staged }}" || true
 
       - uses: actions/upload-artifact@v7
         with:
-          name: slopshady-linux-x86_64
-          path: artifact/slopshady-linux-x86_64
+          name: ${{ matrix.artifact }}
+          path: artifact/${{ matrix.staged }}
           if-no-files-found: error
 
+      # .deb package — Linux only (binary already built, --no-build skips rebuild)
+      - name: Install cargo-deb
+        if: runner.os == 'Linux'
+        run: cargo install cargo-deb --locked
+
+      - name: Build .deb package
+        if: runner.os == 'Linux'
+        working-directory: slopshady
+        run: cargo deb --no-build
+
+      - name: Upload .deb
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: slopshady-deb
+          path: slopshady/target/debian/*.deb
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 3. Attach artifacts to a GitHub Release, only on v* tag push.
+  #    Create a tag locally and push it to trigger:  git tag v0.1.0 && git push origin v0.1.0
+  # ---------------------------------------------------------------------------
   release:
-    name: release (on tag)
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: Publish release
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: slopshady-linux-x86_64
+          path: artifacts
 
-      - name: Make executable
-        run: chmod +x slopshady-linux-x86_64
+      - name: Stage release assets
+        shell: bash
+        run: |
+          mkdir -p release
+          cp artifacts/slopshady-linux-x64/* release/
+          cp artifacts/slopshady-windows-x64/* release/
+          cp artifacts/slopshady-macos-arm64/* release/
+          cp artifacts/slopshady-deb/*.deb release/
 
       - uses: softprops/action-gh-release@v3
         with:
+          files: release/*
           generate_release_notes: true
-          files: slopshady-linux-x86_64
+          fail_on_unmatched_files: true
