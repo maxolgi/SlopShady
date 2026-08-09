@@ -1346,10 +1346,6 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     min-width: 134px;
 }
 
-[data-panel="stream"] > .panel-section {
-    width: 280px;
-    flex-shrink: 0;
-}
 
 [data-panel="codedials"] > .panel-section {
     width: 134px;
