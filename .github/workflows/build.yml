@@ -23,7 +23,7 @@ jobs:
     name: fmt + clippy + test + typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -34,12 +34,14 @@ jobs:
 
       # build.rs invokes wasm-pack directly; it must be on PATH before any
       # cargo command that links the slopshady crate (clippy/test/build).
+      # Installed via the official curl installer — do NOT use a
+      # rustwasm/wasm-pack-action, that repo does not exist and fails the run.
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       # build.rs resolves tsc via node_modules/.bin/tsc at the repo root.
@@ -85,7 +87,7 @@ jobs:
     name: release binary (linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -96,9 +98,9 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - run: npm ci
@@ -133,7 +135,7 @@ jobs:
           cp slopshady/target/release/slopshady artifact/slopshady-linux-x86_64
           strip artifact/slopshady-linux-x86_64 || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: slopshady-linux-x86_64
           path: artifact/slopshady-linux-x86_64
@@ -147,14 +149,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: slopshady-linux-x86_64
 
       - name: Make executable
         run: chmod +x slopshady-linux-x86_64
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: slopshady-linux-x86_64
