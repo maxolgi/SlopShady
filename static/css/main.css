@@ -2796,6 +2796,9 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     display: flex;
     gap: 4px;
 }
+#stream-panel .stream-btn-row > .stream-input-label {
+    flex: 1;
+}
 #stream-panel input[type="text"] {
     padding: 6px 8px;
     font-size: 0.85em;
