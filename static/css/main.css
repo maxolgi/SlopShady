@@ -1200,6 +1200,15 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     border-right: 1px solid #1A1A1A;
 }
 
+.layer-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background: linear-gradient(180deg, #353535 0%, #2a2a2a 100%);
+    border-left: 1px solid #1A1A1A;
+}
+
 .module-btn__led {
     width: 6px;
     height: 6px;

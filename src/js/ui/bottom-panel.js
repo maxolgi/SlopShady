@@ -299,6 +299,19 @@ export const BottomPanel = {
             LayerMixer.selectLayer(Math.min(7, state.selectedLayer + 1));
         });
 
+        document.querySelectorAll('.layer-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                LayerMixer.selectLayer(parseInt(btn.dataset.layer, 10));
+            });
+        });
+        const syncLayerBtns = () => {
+            document.querySelectorAll('.layer-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.layer, 10) === state.selectedLayer);
+            });
+        };
+        document.addEventListener('layer-select', syncLayerBtns);
+        syncLayerBtns();
+
         // ============================================
         // DROPDOWN HANDLERS (event delegation)
         // ============================================

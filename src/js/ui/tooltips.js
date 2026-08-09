@@ -16,6 +16,8 @@ const T = {
     TAB_LLM: 'AI chat for shader generation and live tuning',
     TAB_SETTINGS: 'Settings, rendering options, color correction',
 
+    LAYER_BTN: 'Select layer {n} · Ctrl+{n}',
+
     MIX_SWITCH: 'Crossfade all layer opacity to selected layer · Insert',
     MIX_CAMERA: 'Toggle webcam texture input (iVideo uniform)',
     MIX_SCREEN: 'Toggle screen/desktop capture texture (iScreen uniform)',
@@ -764,6 +766,13 @@ function applyStaticColorTooltips() {
     if (lutBtns[1]) lutBtns[1].dataset.tooltip = T.COLOR_LUT_SAVE;
 }
 
+function applyStaticLayerBtnTooltips() {
+    document.querySelectorAll('.layer-btn').forEach(btn => {
+        const n = parseInt(btn.dataset.layer, 10) + 1;
+        btn.dataset.tooltip = ti('LAYER_BTN', { n });
+    });
+}
+
 function applyTooltips() {
     initTooltipEngine();
 
@@ -775,6 +784,7 @@ function applyTooltips() {
     applyStaticLfoTooltips();
     applyStaticMidiChannelTooltips();
     applyStaticColorTooltips();
+    applyStaticLayerBtnTooltips();
 }
 
 export { T, ti, escapeAttr, applyTooltips };
