@@ -85,7 +85,7 @@ struct ControlPanel {
 impl ControlPanel {
     fn new(cli: Cli, _cc: &eframe::CreationContext<'_>) -> Self {
         let cfg = GuiConfig::load();
-        Self {
+        let mut panel = Self {
             rt: Some(tokio::runtime::Runtime::new().expect("Failed to create tokio runtime")),
             bind: cfg.as_ref().map(|c| c.bind.clone()).unwrap_or(cli.bind),
             port: cfg.as_ref().map(|c| c.port.clone()).unwrap_or(cli.port.to_string()),
@@ -97,7 +97,9 @@ impl ControlPanel {
             handle: None,
             url: String::new(),
             error: None,
-        }
+        };
+        panel.start_server();
+        panel
     }
 
     fn start_server(&mut self) {
