@@ -9,6 +9,38 @@ fn lan_ip() -> Option<String> {
     local_ip_address::local_ip().ok().map(|ip| ip.to_string())
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct GuiConfig {
+    bind: String,
+    port: String,
+    data_dir: String,
+    osc_port: String,
+    osc_bind: String,
+}
+
+fn config_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    Some(std::path::PathBuf::from(home).join(".config/slopshady/gui-config.json"))
+}
+
+impl GuiConfig {
+    fn load() -> Option<Self> {
+        let path = config_path()?;
+        let data = std::fs::read_to_string(&path).ok()?;
+        serde_json::from_str(&data).ok()
+    }
+
+    fn save(&self) {
+        let Some(path) = config_path() else { return };
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(self) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+}
+
 pub fn run(cli: Cli) {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -46,13 +78,14 @@ struct ControlPanel {
 
 impl ControlPanel {
     fn new(cli: Cli, _cc: &eframe::CreationContext<'_>) -> Self {
+        let cfg = GuiConfig::load();
         Self {
             rt: Some(tokio::runtime::Runtime::new().expect("Failed to create tokio runtime")),
-            bind: cli.bind,
-            port: cli.port.to_string(),
-            data_dir: cli.data_dir.to_string_lossy().into_owned(),
-            osc_port: cli.osc_port.to_string(),
-            osc_bind: cli.osc_bind,
+            bind: cfg.as_ref().map(|c| c.bind.clone()).unwrap_or(cli.bind),
+            port: cfg.as_ref().map(|c| c.port.clone()).unwrap_or(cli.port.to_string()),
+            data_dir: cfg.as_ref().map(|c| c.data_dir.clone()).unwrap_or(cli.data_dir.to_string_lossy().into_owned()),
+            osc_port: cfg.as_ref().map(|c| c.osc_port.clone()).unwrap_or(cli.osc_port.to_string()),
+            osc_bind: cfg.as_ref().map(|c| c.osc_bind.clone()).unwrap_or(cli.osc_bind),
             running: false,
             app_state: None,
             handle: None,
@@ -62,6 +95,15 @@ impl ControlPanel {
     }
 
     fn start_server(&mut self) {
+        GuiConfig {
+            bind: self.bind.clone(),
+            port: self.port.clone(),
+            data_dir: self.data_dir.clone(),
+            osc_port: self.osc_port.clone(),
+            osc_bind: self.osc_bind.clone(),
+        }
+        .save();
+
         let port: u16 = match self.port.parse() {
             Ok(p) => p,
             Err(_) => {
@@ -76,6 +118,20 @@ impl ControlPanel {
                 return;
             }
         };
+
+        let bind_addr = if self.bind.is_empty() {
+            "0.0.0.0".to_string()
+        } else {
+            self.bind.clone()
+        };
+
+        if let Err(e) = std::net::TcpListener::bind((bind_addr.as_str(), port)) {
+            self.error = Some(format!(
+                "Port {} is in use ({}). Is another SlopShady running?",
+                port, e
+            ));
+            return;
+        }
 
         let data_dir = std::path::PathBuf::from(&self.data_dir);
         let cert_path = data_dir.join("cert.pem");
@@ -134,6 +190,14 @@ impl ControlPanel {
 
 impl Drop for ControlPanel {
     fn drop(&mut self) {
+        GuiConfig {
+            bind: self.bind.clone(),
+            port: self.port.clone(),
+            data_dir: self.data_dir.clone(),
+            osc_port: self.osc_port.clone(),
+            osc_bind: self.osc_bind.clone(),
+        }
+        .save();
         self.stop_server();
         if let Some(rt) = self.rt.take() {
             rt.shutdown_timeout(Duration::from_secs(1));
