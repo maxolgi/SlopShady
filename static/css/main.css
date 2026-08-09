@@ -1444,6 +1444,10 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     grid-template-columns: repeat(3, 1fr);
 }
 
+.tool-grid--3x1 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
 .tool-grid--4x1 {
     grid-template-columns: repeat(4, 1fr);
 }
