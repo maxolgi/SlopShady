@@ -2795,13 +2795,6 @@ body.nodes-view #node-inspector { pointer-events: auto; }
 
 /* Live Stream panel */
 .panel-divider { height: 1px; background: #333; margin: 12px 0; border: none; }
-#stream-panel .tool-grid > .tool-btn,
-#stream-panel .tool-grid > .dropdown {
-    width: 100%;
-}
-#stream-panel .tool-grid > .dropdown > .dropdown__selected {
-    width: 100%;
-}
 #stream-panel input[type="text"] {
     padding: 6px 8px;
     font-size: 0.85em;
