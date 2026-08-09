@@ -1399,12 +1399,14 @@
         <div class="content-panel content-panel--scrollable" data-panel="stream">
             <div class="panel-section" id="stream-panel">
                 <div class="content-title">Live Stream (WebSRT)</div>
-                <div class="tool-grid tool-grid--2x1">
+                <div class="tool-grid tool-grid--4x1">
                     <button class="tool-btn" id="startStream">▶ Stream</button>
                     <button class="tool-btn" id="streamRecord">⏺ Rec</button>
+                    <button class="tool-btn" id="stream-abr-toggle">Adaptive Bitrate</button>
+                    <button class="tool-btn" id="stream-cbr-toggle">Constant Bitrate</button>
                 </div>
                 <input type="text" id="stream-gateway-url" value="https://127.0.0.1:4433/wt" placeholder="Gateway WT URL">
-                <label class="stream-input-label">Port
+                <label class="stream-input-label stream-input-label--inline">Port
                     <input type="number" id="stream-gateway-web-port" value="5173" min="1" max="65535" step="1" placeholder="Gateway web port">
                 </label>
                 <input type="text" id="stream-name" value="slopshady" placeholder="Stream name">
@@ -1425,10 +1427,6 @@
                     <label class="stream-input-label">Keyframe (ms)
                         <input type="number" id="stream-keyframe" value="2000" min="100" max="60000" step="100">
                     </label>
-                </div>
-                <div class="tool-grid tool-grid--2x1">
-                    <button class="tool-btn" id="stream-abr-toggle">Adaptive Bitrate</button>
-                    <button class="tool-btn" id="stream-cbr-toggle">Constant Bitrate</button>
                 </div>
             </div>
             <div class="panel-section" id="stream-stats-panel">
