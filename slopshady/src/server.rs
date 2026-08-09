@@ -115,9 +115,11 @@ async fn api_live_tuning_stop(
 }
 
 /// Proxy the WebSRT gateway's cert hash so the browser fetches same-origin
-/// (avoids cross-origin/CORS + self-signed-cert trust issues on LAN). The
-/// origin (scheme://host:port) is taken from the gateway URL the user entered;
-/// cert-hash.js is served from that same origin.
+/// (avoids cross-origin/CORS + self-signed-cert trust issues on LAN). The user
+/// enters the WebTransport URL, but `cert-hash.js` is served by the gateway's
+/// built-in HTTPS web server on a SEPARATE port (default 5173, not the WT
+/// port 4433) — see vendor/WebSRT/docs/embedding.md. We derive the host from
+/// the entered URL; the browser sends the gateway's web port (default 5173).
 ///
 /// `danger_accept_invalid_certs(true)` is acceptable here because the real
 /// trust anchor is the WebTransport `serverCertificateHashes` pinning done
@@ -126,19 +128,27 @@ async fn api_live_tuning_stop(
 #[derive(serde::Deserialize)]
 struct CertHashParams {
     url: String,
+    #[serde(default)]
+    web_port: Option<u16>,
 }
 
 async fn api_stream_cert_hash(
     Query(params): Query<CertHashParams>,
 ) -> axum::Json<Value> {
-    let cert_url = match url::Url::parse(&params.url) {
-        Ok(parsed) => format!("{}/cert-hash.js", parsed.origin().ascii_serialization()),
+    let parsed = match url::Url::parse(&params.url) {
+        Ok(u) => u,
         Err(_) => {
             return axum::Json(
                 serde_json::json!({ "hash": null, "error": "invalid gateway url" }),
             )
         }
     };
+    // cert-hash.js lives on the gateway's web port (configurable; default
+    // 5173), not the WT port the user typed. The browser sends the web port;
+    // the host is derived from the entered WT URL.
+    let host = parsed.host_str().unwrap_or("127.0.0.1");
+    let web_port = params.web_port.unwrap_or(5173);
+    let cert_url = format!("https://{}:{}/cert-hash.js", host, web_port);
     let client = match reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(std::time::Duration::from_secs(4))
@@ -158,10 +168,10 @@ async fn api_stream_cert_hash(
             axum::Json(serde_json::json!({ "hash": extract_cert_hash(&text) }))
         }
         Ok(r) => axum::Json(
-            serde_json::json!({ "hash": null, "error": format!("upstream status {}", r.status()) }),
+            serde_json::json!({ "hash": null, "error": format!("upstream status {} for {}", r.status(), cert_url) }),
         ),
         Err(e) => axum::Json(
-            serde_json::json!({ "hash": null, "error": format!("fetch failed: {e}") }),
+            serde_json::json!({ "hash": null, "error": format!("fetch failed for {cert_url}: {e}") }),
         ),
     }
 }

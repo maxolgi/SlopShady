@@ -21,6 +21,8 @@
 import { state, getEl } from '../state.js';
 import { StreamAudio } from '../features/stream-audio.js';
 
+const RECONNECT_RETRY_MS = 100;
+
 const TIMER_WORKER_SRC = `
 let id = null;
 onmessage = (e) => {
@@ -58,6 +60,8 @@ export const StreamingUI = {
     datagramQueue: [],
     reconnectTimer: null,
     reconnectAttempts: 0,
+    _closing: false,
+    _wantStream: false,
     _receiveReader: null,
     _lastEncDims: null,
     _encW: 0,
@@ -66,6 +70,7 @@ export const StreamingUI = {
 
     // ---- config ----
     gatewayUrl: 'https://127.0.0.1:4433/wt',
+    gatewayWebPort: 5173,
     streamName: 'slopshady',
     _videoBitrate: 8_000_000,       // user-set target bitrate (bps)
     _currentBitrate: 8_000_000,     // live bitrate (adapted when ABR is on; equals target otherwise)
@@ -150,8 +155,10 @@ export const StreamingUI = {
         this._loadPersisted();
         const urlEl = getEl('stream-gateway-url');
         const nameEl = getEl('stream-name');
+        const webPortEl = getEl('stream-gateway-web-port');
         if (urlEl) urlEl.addEventListener('change', () => this._savePersisted());
         if (nameEl) nameEl.addEventListener('change', () => this._savePersisted());
+        if (webPortEl) webPortEl.addEventListener('change', () => this._savePersisted());
         for (const id of ['stream-fps', 'stream-latency', 'stream-keyframe']) {
             const el = getEl(id);
             if (el) el.addEventListener('change', () => this._savePersisted());
@@ -190,8 +197,11 @@ export const StreamingUI = {
             const name = localStorage.getItem('slopshady.stream.name');
             const urlEl = getEl('stream-gateway-url');
             const nameEl = getEl('stream-name');
+            const webPortEl = getEl('stream-gateway-web-port');
             if (url) { if (urlEl) urlEl.value = url; this.gatewayUrl = url; }
             if (name) { if (nameEl) nameEl.value = name; this.streamName = name; }
+            const webPort = localStorage.getItem('slopshady.stream.gatewayWebPort');
+            if (webPort) { if (webPortEl) webPortEl.value = webPort; this.gatewayWebPort = Number(webPort) || 5173; }
             const codec = localStorage.getItem('slopshady.stream.codec');
             if (codec) this._selectedCodec = codec;
             // Encoder tuning inputs (clamped at read time in start()).
@@ -217,8 +227,10 @@ export const StreamingUI = {
         try {
             const urlEl = getEl('stream-gateway-url');
             const nameEl = getEl('stream-name');
+            const webPortEl = getEl('stream-gateway-web-port');
             if (urlEl && urlEl.value.trim()) { this.gatewayUrl = urlEl.value.trim(); localStorage.setItem('slopshady.stream.gatewayUrl', this.gatewayUrl); }
             if (nameEl && nameEl.value.trim()) { this.streamName = nameEl.value.trim(); localStorage.setItem('slopshady.stream.name', this.streamName); }
+            if (webPortEl && webPortEl.value.trim()) { this.gatewayWebPort = Number(webPortEl.value) || 5173; localStorage.setItem('slopshady.stream.gatewayWebPort', String(this.gatewayWebPort)); }
             const saveNum = (id, key) => {
                 const el = getEl(id);
                 if (el && el.value !== '') localStorage.setItem(key, el.value);
@@ -236,8 +248,10 @@ export const StreamingUI = {
         // Read UI inputs (with defaults fallback) on every start (also covers reconnects).
         const urlEl = getEl('stream-gateway-url');
         const nameEl = getEl('stream-name');
+        const webPortEl = getEl('stream-gateway-web-port');
         if (urlEl && urlEl.value.trim()) this.gatewayUrl = urlEl.value.trim();
         if (nameEl && nameEl.value.trim()) this.streamName = nameEl.value.trim();
+        if (webPortEl && webPortEl.value.trim()) this.gatewayWebPort = Number(webPortEl.value) || 5173;
         // Encoder tuning inputs (clamped defensively; NaN/empty → keep current).
         this._readBitrateInput();
         // Reset adaptation state at stream start — begin at the user-set target.
@@ -312,6 +326,8 @@ export const StreamingUI = {
             }
         }
 
+        this._wantStream = true;
+
         // 2) Try direct WebTransport (CA validation) first — works for real certs.
         //    Falls back to hash pinning via backend proxy for self-signed certs.
         const wtUrl = `${this.gatewayUrl}?publish=${encodeURIComponent(this.streamName)}`;
@@ -325,7 +341,7 @@ export const StreamingUI = {
             // Likely self-signed cert — fetch hash via backend proxy and retry with pinning
             let hash = null;
             try {
-                const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(this.gatewayUrl), { cache: 'no-store' });
+                const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(this.gatewayUrl) + '&webPort=' + this.gatewayWebPort, { cache: 'no-store' });
                 if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
                 hash = (await resp.json()).hash ?? null;
             } catch (e) {
@@ -359,6 +375,12 @@ export const StreamingUI = {
             this._scheduleReconnect();
             return;
         }
+
+        this._closing = false;
+        this.transport.closed.then(
+            () => this._handleTransportDrop(),
+            () => this._handleTransportDrop(),
+        );
 
         // 3) Set up datagram writer
         this._datagramWriter = this.transport.datagrams.writable.getWriter();
@@ -441,6 +463,7 @@ export const StreamingUI = {
     async stop() {
         if (!this.isStreaming && !this.worker) return; // re-entrancy guard
         this.isStreaming = false;
+        this._wantStream = false;
 
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
         if (this._visHandler) { document.removeEventListener('visibilitychange', this._visHandler); this._visHandler = null; }
@@ -548,6 +571,7 @@ export const StreamingUI = {
             console.warn('recv', e);
         }
         this._flushIncoming();
+        if (this.isStreaming) this._handleTransportDrop();
     },
 
     _flushIncoming() {
@@ -559,15 +583,23 @@ export const StreamingUI = {
         }
     },
 
+    _handleTransportDrop() {
+        if (!this.isStreaming || this._closing || this.reconnectTimer) return;
+        this._abortSession();
+        this._handshakeDone = false;
+        this._setStatus('Stream closed');
+        this._scheduleReconnect();
+    },
+
     _scheduleReconnect() {
-        if (this.reconnectTimer || !this.isStreaming) return;
-        const delay = Math.min(2000 * (2 ** this.reconnectAttempts), 30000);
+        if (this.reconnectTimer || !this._wantStream) return;
+        const immediate = this.reconnectAttempts === 0;
         this.reconnectAttempts++;
-        this._setStatus(`Reconnecting in ${Math.round(delay / 1000)}s…`);
+        this._setStatus('Reconnecting…');
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             this.start();
-        }, delay);
+        }, immediate ? 0 : RECONNECT_RETRY_MS);
     },
 
     /** Worker init (WASM/muxer) failed — stop without retry, surface the reason. */
@@ -934,6 +966,7 @@ export const StreamingUI = {
      * the top of start() on a reconnect so we don't leak a second worker/transport.
      */
     _abortSession() {
+        this._closing = true;
         if (this._visHandler) { document.removeEventListener('visibilitychange', this._visHandler); this._visHandler = null; }
         this._stopBgTimer();
         if (this._receiveReader) { try { this._receiveReader.cancel(); } catch (e) { /* ignore */ } this._receiveReader = null; }
