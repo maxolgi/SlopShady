@@ -1408,13 +1408,9 @@
                     <input type="number" id="stream-gateway-web-port" value="5173" min="1" max="65535" step="1" placeholder="Gateway web port">
                 </label>
                 <input type="text" id="stream-name" value="slopshady" placeholder="Stream name">
-                <div class="tool-grid tool-grid--3x1">
-                    <div class="dropdown" id="stream-codec-dropdown">
-                        <button class="dropdown__selected tool-btn"><span>AV1</span></button>
-                        <div class="dropdown__menu" id="stream-codec-menu"></div>
-                    </div>
-                    <button class="tool-btn" id="stream-abr-toggle">Adaptive Bitrate</button>
-                    <button class="tool-btn" id="stream-cbr-toggle">Constant Bitrate</button>
+                <div class="dropdown" id="stream-codec-dropdown">
+                    <button class="dropdown__selected tool-btn"><span>AV1</span></button>
+                    <div class="dropdown__menu" id="stream-codec-menu"></div>
                 </div>
                 <div class="tool-grid tool-grid--4x1">
                     <label class="stream-input-label">Bitrate (Mbps)
@@ -1429,6 +1425,10 @@
                     <label class="stream-input-label">Keyframe (ms)
                         <input type="number" id="stream-keyframe" value="2000" min="100" max="60000" step="100">
                     </label>
+                </div>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="stream-abr-toggle">Adaptive Bitrate</button>
+                    <button class="tool-btn" id="stream-cbr-toggle">Constant Bitrate</button>
                 </div>
             </div>
             <div class="panel-section" id="stream-stats-panel">
