@@ -1,0 +1,160 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref (PRs); let branch/tag runs finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: fmt + clippy + test + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      # build.rs invokes wasm-pack directly; it must be on PATH before any
+      # cargo command that links the slopshady crate (clippy/test/build).
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # build.rs resolves tsc via node_modules/.bin/tsc at the repo root.
+      - run: npm ci
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: slopshady
+
+      # No rustfmt.toml exists and formatting is not enforced in-repo; this
+      # is informational, not a gate.
+      - name: cargo fmt
+        working-directory: slopshady
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+      # clippy runs build.rs first (generates static/{js,vendor,wasm}), then
+      # lints. -D warnings is aspirational; no clippy config exists yet so this
+      # is informational, not a gate.
+      - name: cargo clippy
+        working-directory: slopshady
+        continue-on-error: true
+        run: cargo clippy --all-targets -- -D warnings
+
+      # No test suite exists in-repo; this verifies the crate compiles under
+      # the test cfg and runs any tests that appear later. The crate also has
+      # no [workspace] table and no Rust dep into vendor/WebSRT (WebSRT is
+      # consumed only as compiled WASM), so the QUIC/SRT UDP-loopback tests in
+      # the vendored websrt/websrt-gateway crates are never reached here.
+      # The timeout is a guard: if a future test does a real network handshake
+      # that hangs on CI runners, this fails fast instead of hitting the job cap.
+      - name: cargo test
+        working-directory: slopshady
+        timeout-minutes: 10
+        run: cargo test --all-targets
+
+      # Must run AFTER a cargo step so build.rs has generated static/wasm and
+      # static/vendor (tsc resolves /wasm/* and vendor src imports against them).
+      - name: tsc typecheck
+        run: npm run typecheck
+
+  build:
+    name: release binary (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: slopshady
+
+      # Default features enable `gui` (eframe 0.29 glow backend). Compiling
+      # eframe/glow/winit on headless Linux needs EGL + X11 + Wayland dev
+      # headers. AGENTS.md confirms no gtk/webkit deps are required.
+      - name: Install GUI build deps (OpenGL / X11 / Wayland headers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl-dev libgl1-mesa-dev \
+            libx11-dev libxcb1-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxxf86vm-dev \
+            libwayland-dev libxkbcommon-dev
+
+      # build.rs orchestrates the whole pipeline: WASM crates → JS mirror →
+      # vendor tsc → emit tsc → rust-embed embeds static/. Single command.
+      - name: cargo build --release
+        working-directory: slopshady
+        run: cargo build --release
+
+      # The frontend is embedded into the binary via rust-embed; there is no
+      # separate web/dist to ship. The binary is the whole artifact.
+      - name: Stage binary
+        run: |
+          mkdir -p artifact
+          cp slopshady/target/release/slopshady artifact/slopshady-linux-x86_64
+          strip artifact/slopshady-linux-x86_64 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slopshady-linux-x86_64
+          path: artifact/slopshady-linux-x86_64
+          if-no-files-found: error
+
+  release:
+    name: release (on tag)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: slopshady-linux-x86_64
+
+      - name: Make executable
+        run: chmod +x slopshady-linux-x86_64
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: slopshady-linux-x86_64
