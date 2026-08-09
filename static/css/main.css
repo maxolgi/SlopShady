@@ -2795,6 +2795,10 @@ body.nodes-view #node-inspector { pointer-events: auto; }
 #stream-panel .stream-btn-row > .stream-input-label {
     flex: 1;
 }
+#stream-stats-panel,
+#stream-input-panel {
+    width: 280px;
+}
 #stream-panel input[type="text"] {
     padding: 6px 8px;
     font-size: 0.85em;
