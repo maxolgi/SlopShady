@@ -83,13 +83,21 @@ pub(crate) async fn run_https_server(
 
     let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert_path, &key_path)
         .await
-        .expect("Failed to load TLS config");
+        .unwrap_or_else(|e| {
+            eprintln!("Error: failed to load TLS certificate: {e}");
+            std::process::exit(1);
+        });
 
     axum_server::bind_rustls(addr, tls_config)
         .handle(handle)
         .serve(app.into_make_service())
         .await
-        .expect("Server error");
+        .unwrap_or_else(|e| {
+            eprintln!("Error: could not bind to {addr}: {e}");
+            eprintln!("       Another SlopShady instance may already be running.");
+            eprintln!("       Use --port <port> to use a different port.");
+            std::process::exit(1);
+        });
 }
 
 fn main() {
