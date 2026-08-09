@@ -214,9 +214,22 @@ fn build_wasm_crates(repo_root: &Path) {
     for crate_name in ["srt-wasm", "ts-muxer-wasm", "mpeg2ts-wasm"] {
         let crate_dir = crates_root.join(crate_name);
         println!("cargo:warning=building WASM crate {crate_name}...");
+        // build.rs inherits cargo's compiler-wrapper and RUSTFLAGS env vars
+        // (e.g. RUSTC_WORKSPACE_WRAPPER=clippy-driver + `-D warnings` when the
+        // parent build is `cargo clippy -- -D warnings`). wasm-pack's inner
+        // `cargo build` would pick those up and run clippy with -D warnings on
+        // the vendored WASM crates, failing on lints we can't edit (the
+        // vendor/WebSRT boundary). Strip them so the WASM build is always done
+        // with plain rustc and default warning levels, matching local builds.
         let status = std::process::Command::new("wasm-pack")
             .args(["build", "--target", "web", "--release"])
             .current_dir(&crate_dir)
+            .env_remove("RUSTC_WRAPPER")
+            .env_remove("RUSTC_WORKSPACE_WRAPPER")
+            .env_remove("CARGO_BUILD_RUSTC_WRAPPER")
+            .env_remove("RUSTFLAGS")
+            .env_remove("CARGO_ENCODED_RUSTFLAGS")
+            .env_remove("CARGO_BUILD_RUSTFLAGS")
             .status();
         match status {
             Ok(s) if s.success() => {}
