@@ -2820,6 +2820,7 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     flex: 1;
     width: 0;
     margin-top: 0;
+    margin-bottom: 0;
 }
 #stream-panel input[type="number"] {
     padding: 6px 8px;
