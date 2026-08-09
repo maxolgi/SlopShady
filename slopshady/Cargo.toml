@@ -37,3 +37,6 @@ local-ip-address = "0.6"
 [features]
 default = ["gui"]
 gui = ["dep:eframe"]
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"

@@ -41,13 +41,19 @@ impl GuiConfig {
     }
 }
 
+fn window_icon() -> egui::IconData {
+    eframe::icon_data::from_png_bytes(include_bytes!("../../icon_256.png"))
+        .expect("embedded icon_256.png must be a valid PNG")
+}
+
 pub fn run(cli: Cli) {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([450.0, 400.0])
             .with_min_inner_size([400.0, 350.0])
             .with_resizable(false)
-            .with_title("SlopShady"),
+            .with_title("SlopShady")
+            .with_icon(window_icon()),
         ..Default::default()
     };
 

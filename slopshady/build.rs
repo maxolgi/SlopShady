@@ -277,6 +277,22 @@ fn tsc_bin(repo_root: &Path) -> std::path::PathBuf {
     repo_root.join("node_modules").join(".bin").join(name)
 }
 
+/// Embed `icon.ico` into the Windows executable so Explorer / the taskbar show
+/// the app icon. No-op on other platforms. Best-effort: a missing or failing
+/// resource compiler only drops the exe icon rather than failing the build.
+#[cfg(windows)]
+fn embed_windows_icon() {
+    println!("cargo:rerun-if-changed=icon.ico");
+    let mut res = winres::WindowsResource::new();
+    res.set_icon("icon.ico");
+    if let Err(e) = res.compile() {
+        println!("cargo:warning=winres could not embed exe icon (continuing without it): {e}");
+    }
+}
+
+#[cfg(not(windows))]
+fn embed_windows_icon() {}
+
 fn main() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let src_js = repo_root.join("src").join("js");
@@ -500,4 +516,6 @@ fn main() {
             ),
         }
     }
+
+    embed_windows_icon();
 }
