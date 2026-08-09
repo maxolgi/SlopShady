@@ -11,7 +11,6 @@ import { Shaders } from '../api/shaders.js';
 import { Sync } from '../features/sync.js';
 import { saveState, saveShadersOnly, loadShadersOnly, loadState } from './persistence.js';
 import { escapeHtml, toggleFullscreen } from '../utils.js';
-import { RecorderUI } from './recorder.js';
 import { StreamingUI } from './streaming.js';
 import { FeedbackUI } from './feedback.js';
 import { WebGL } from '../webgl/core.js';
@@ -75,10 +74,10 @@ export const Keyboard = {
             e.preventDefault();
         }
         
-        // Ctrl+Shift+R: Start/Stop recording
+        // Ctrl+Shift+R: Start/Stop recording (WebSRT encoder → .ts)
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
             e.preventDefault();
-            RecorderUI.isRecording ? RecorderUI.stopRecording() : RecorderUI.startRecording();
+            StreamingUI.isRecording ? StreamingUI.stopRecord() : StreamingUI.startRecord();
             return;
         }
         

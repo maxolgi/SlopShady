@@ -28,6 +28,8 @@
  *   { type:'datagram', data }                 one WebTransport datagram from gateway
  *   { type:'tick' }                           rAF-driven poll wakeup (supplements setInterval)
  *   { type:'stop' }                           stop loops, flush remaining TS
+ *   { type:'startRecord' }                    engage the record sink: muxed TS is buffered for file download
+ *   { type:'stopRecord' }                     flush encoders, drain muxer, emit one 'recordData' message
  *
  * Message protocol (worker → main):
  *   { type:'send', data }            datagram to ship via WebTransport
@@ -44,6 +46,7 @@
  *                                    during slow-encode scenes.
  *   { type:'videoEncoderFailed', msg } VideoEncoder rejected config or threw at runtime
  *   { type:'stopped' }               ack of `stop` — safe to terminate
+ *   { type:'recordData', data }      one transferred ArrayBuffer of the recorded .ts (response to stopRecord)
  */
 import init, { SrtReceiver } from '/wasm/srt-wasm/srt_wasm.js';
 import initMux, { TsMuxer } from '/wasm/ts-muxer-wasm/ts_muxer_wasm.js';
@@ -72,6 +75,8 @@ let epochMs = 0;          // stream-epoch in performance.now() ms (audio PTS ref
 let audioEncoder = null;
 let audioPort = null;
 let videoEncoder = null;
+let recording = false;        // record-to-file sink active: muxed TS is buffered for download
+let recordChunks = [];        // Uint8Array[] accumulated while recording; drained on stopRecord
 
 const nowUs = () => performance.now() * 1000;
 
@@ -152,7 +157,7 @@ self.onmessage = async (e) => {
                 try {
                     videoEncoder = new VideoEncoder({
                         output: (chunk, meta) => {
-                            if (!rx || !rx.isHandshakeComplete() || !muxer) return;
+                            if (!canMux()) return;
                             // H.264 keyframes carry SPS/PPS only in the avcC
                             // description; extract them now (avcC → Annex B) so
                             // they can be prepended in-band on the keyframe NAL.
@@ -289,7 +294,7 @@ self.onmessage = async (e) => {
                     try {
                         audioEncoder = new AudioEncoder({
                             output: (chunk) => {
-                                if (!rx || !rx.isHandshakeComplete() || !muxer) return;
+                                if (!canMux()) return;
                                 const buf = new ArrayBuffer(chunk.byteLength);
                                 chunk.copyTo(new Uint8Array(buf));
                                 muxer.push_audio(new Uint8Array(buf), chunk.timestamp);
@@ -331,7 +336,15 @@ self.onmessage = async (e) => {
             // anti-throttle oscillator). Supplements setInterval, which
             // Chrome can throttle to ~1Hz when the tab is fully backgrounded.
             pollOnce();
+        } else if (m.type === 'startRecord') {
+            recordChunks = [];
+            recording = true;
+        } else if (m.type === 'stopRecord') {
+            await finalizeRecording();
         } else if (m.type === 'stop') {
+            // If recording, deliver the .ts so a stream teardown (or transport
+            // drop) doesn't lose the in-flight capture.
+            if (recording) await finalizeRecording();
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
             if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
             if (videoEncoder) {
@@ -353,11 +366,41 @@ self.onmessage = async (e) => {
     }
 };
 
-/** Drain muxed TS packets and hand them to the SRT receiver for upstream send. */
+/** True when there is a consumer for muxed TS: an active record sink OR a
+ *  handshaked SRT sender. Lets the encoder→muxer path run for record-only
+ *  sessions that have no network connection (and thus never handshake). */
+function canMux() {
+    return !!muxer && (recording || (rx && rx.isHandshakeComplete()));
+}
+
+/** Drain muxed TS packets. Feeds the record sink (if active) and the SRT
+ *  receiver (when connected + handshaked) for upstream send. muxer.poll()
+ *  returns a freshly-allocated Uint8Array each call, so it is safe to retain
+ *  in recordChunks and pass to sendMessage in the same call. */
 function flushTsToSrt() {
-    if (!rx || !muxer) return;
+    if (!muxer) return;
     const ts = muxer.poll();
-    if (ts && ts.length > 0) processActions(rx.sendMessage(ts, nowUs()));
+    if (!ts || ts.length === 0) return;
+    if (recording) recordChunks.push(ts);
+    if (rx && rx.isHandshakeComplete()) processActions(rx.sendMessage(ts, nowUs()));
+}
+
+/** Flush encoders, drain the muxer, and emit the recorded .ts as one
+ *  transferred ArrayBuffer. Resets the record sink. `recording` stays true
+ *  through the drain so the encoder output callbacks keep buffering; it is
+ *  flipped off only once the muxer has nothing left. */
+async function finalizeRecording() {
+    if (videoEncoder) { try { await videoEncoder.flush(); } catch (e) { /* ignore */ } }
+    if (audioEncoder) { try { await audioEncoder.flush(); } catch (e) { /* ignore */ } }
+    if (muxer) flushTsToSrt();
+    recording = false;
+    let total = 0;
+    for (const c of recordChunks) total += c.length;
+    const out = new Uint8Array(total);
+    let o = 0;
+    for (const c of recordChunks) { out.set(c, o); o += c.length; }
+    recordChunks = [];
+    postMessage({ type: 'recordData', data: out.buffer }, [out.buffer]);
 }
 
 /**

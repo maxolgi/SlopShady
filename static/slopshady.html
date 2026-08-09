@@ -32,9 +32,9 @@
             <span class="module-btn__led"></span>
             Player
         </button>
-        <button class="tool-btn tool-btn--module" data-module="recorder">
+        <button class="tool-btn tool-btn--module" data-module="stream">
             <span class="module-btn__led"></span>
-            Recorder
+            Stream
         </button>
         <button class="tool-btn tool-btn--module" data-module="scanimate">
             <span class="module-btn__led"></span>
@@ -1232,7 +1232,7 @@
                         <li><span class="bp-help-key">Space</span> — Pause/Play shader animation</li>
                         <li><span class="bp-help-key">Ctrl+Shift+Space</span> — Start/Stop playlist</li>
                         <li><span class="bp-help-key">Ctrl+Shift+Backspace</span> — Master reset (clear all settings)</li>
-                        <li><span class="bp-help-key">Ctrl+Shift+R</span> — Start/Stop recording</li>
+                        <li><span class="bp-help-key">Ctrl+Shift+R</span> — Start/Stop recording (WebSRT encoder → .ts)</li>
                         <li><span class="bp-help-key">Ctrl+Insert</span> — Start/Stop live stream</li>
                         <li><span class="bp-help-key">Ctrl+Shift+L</span> — Show modulation matrix</li>
                     </ul>
@@ -1395,60 +1395,8 @@
             </div>
         </div>
 
-        <!-- Recorder Panel -->
-        <div class="content-panel content-panel--scrollable" data-panel="recorder">
-            <div class="panel-section">
-                <div class="tool-grid tool-grid--2x1">
-                    <button class="tool-btn" id="startRecording">⏺ Rec</button>
-                    <button class="tool-btn disabled" id="stopRecording">⏹ Stop</button>
-                </div>
-                <div class="dropdown" id="rec-format-dropdown">
-                    <div class="dropdown__selected tool-btn">
-                        <span>WebM (VP9)</span>
-
-                    </div>
-                    <div class="dropdown__menu" id="rec-format-menu">
-                        <div class="dropdown__item active" data-value="webm">WebM (VP9)</div>
-                        <div class="dropdown__item" data-value="webm-vp8">WebM (VP8)</div>
-                    </div>
-                </div>
-                <div class="dropdown" id="rec-resolution-dropdown">
-                    <div class="dropdown__selected tool-btn">
-                        <span>1080p Full HD</span>
-
-                    </div>
-                    <div class="dropdown__menu" id="rec-resolution-menu">
-                        <div class="dropdown__item" data-value="720p">720p HD</div>
-                        <div class="dropdown__item active" data-value="1080p">1080p Full HD</div>
-                        <div class="dropdown__item" data-value="1440p">1440p 2K</div>
-                        <div class="dropdown__item" data-value="4k">4K UHD</div>
-                    </div>
-                </div>
-                <div class="dropdown" id="rec-fps-dropdown">
-                    <div class="dropdown__selected tool-btn">
-                        <span>60 fps</span>
-
-                    </div>
-                    <div class="dropdown__menu" id="rec-fps-menu">
-                        <div class="dropdown__item" data-value="30">30 fps</div>
-                        <div class="dropdown__item active" data-value="60">60 fps</div>
-                    </div>
-                </div>
-                <div class="slider" id="rec-bitrate-slider" data-param="recordBitrate" data-min="1" data-max="100" data-initial-value="25">
-                    <div class="slider__header">
-                        <span class="slider__label">Bitrate</span>
-                        <span class="slider__value" id="recordBitrateVal">25 Mbps</span>
-                    </div>
-                    <div class="slider__track">
-                        <div class="slider__fill">
-                            <div class="slider__handle"></div>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-            <div class="panel-divider"></div>
+        <!-- Stream Panel (live WebSRT stream + recording) -->
+        <div class="content-panel content-panel--scrollable" data-panel="stream">
             <div class="panel-section" id="stream-panel">
                 <div class="content-title">Live Stream (WebSRT)</div>
                 <input type="text" id="stream-gateway-url" value="https://127.0.0.1:4433/wt" placeholder="Gateway WT URL">
@@ -1481,6 +1429,9 @@
                 <div class="tool-grid tool-grid--2x1">
                     <button class="tool-btn" id="startStream">▶ Stream</button>
                     <button class="tool-btn disabled" id="stopStream">⏹ Stop</button>
+                </div>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="streamRecord">⏺ Rec</button>
                 </div>
                 <div id="stream-status"></div>
                 <div id="stream-stats"></div>

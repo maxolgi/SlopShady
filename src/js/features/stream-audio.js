@@ -9,7 +9,7 @@
  *
  * Phase 2 of the off-main-thread pipeline plan.
  *
- * Conventions follow recorder.js / streaming.js: singleton object.
+ * Conventions follow streaming.js: singleton object.
  */
 
 import { state } from '../state.js';

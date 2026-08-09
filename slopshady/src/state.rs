@@ -209,18 +209,6 @@ pub fn load_state(persist_path: &Path) -> SharedState {
     );
 
     base.insert(
-        "recorder".into(),
-        json!({
-            "isRecording": false,
-            "format": "webm",
-            "codec": "vp9",
-            "bitrate": 50000000,
-            "fps": 60,
-            "resolution": "1080p",
-        }),
-    );
-
-    base.insert(
         "player".into(),
         json!({
             "audioFile": null,

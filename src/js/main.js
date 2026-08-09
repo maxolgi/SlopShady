@@ -38,7 +38,6 @@ import { OnScreenKeyboard } from './ui/onScreenKeyboard.js';
 import { FeedbackUI } from './ui/feedback.js';
 import { PlayerUI } from './ui/player.js';
 import { WebampUI } from './ui/webamp.js';
-import { RecorderUI } from './ui/recorder.js';
 import { StreamingUI } from './ui/streaming.js';
 import { StreamingInputUI } from './ui/streaming-input.js';
 import { PlaylistSystem } from './features/playlist.js';
@@ -163,7 +162,6 @@ const SlopShady = {
         FeedbackUI.init();
         PlayerUI.init();
         WebampUI.init();
-        RecorderUI.init();
         StreamingUI.init();
         StreamingInputUI.init();
         PlaylistUI.init();

@@ -14,9 +14,9 @@
  * AudioEncoder lives in the worker. Capture and encode are both off the main
  * thread — panel reflow cannot starve audio.
  *
- * Conventions follow recorder.js: singleton object, init() wires DOM buttons
- * via getEl, state read from ../state.js. Streaming is frontend-local state —
- * it does NOT use Sync.send().
+ * Conventions: singleton object, init() wires DOM buttons via getEl, state
+ * read from ../state.js. Streaming is frontend-local state — it does NOT use
+ * Sync.send().
  */
 import { state, getEl } from '../state.js';
 import { StreamAudio } from '../features/stream-audio.js';
@@ -40,6 +40,8 @@ export const StreamingUI = {
     worker: null,
     transport: null,
     isStreaming: false,
+    isRecording: false,
+    _spawnedFresh: false,
     _epoch: 0,
     _forceKeyframe: false,
     _handshakeDone: false,
@@ -151,6 +153,8 @@ export const StreamingUI = {
         if (!startBtn) return;
         startBtn.addEventListener('click', () => this.start());
         stopBtn.addEventListener('click', () => this.stop());
+        const recBtn = getEl('streamRecord');
+        if (recBtn) recBtn.addEventListener('click', () => this.isRecording ? this.stopRecord() : this.startRecord());
         // Restore last-used gateway URL / stream name (overrides HTML defaults).
         this._loadPersisted();
         const urlEl = getEl('stream-gateway-url');
@@ -244,17 +248,23 @@ export const StreamingUI = {
         } catch (e) { /* ignore */ }
     },
 
-    async start() {
-        // Read UI inputs (with defaults fallback) on every start (also covers reconnects).
-        const urlEl = getEl('stream-gateway-url');
-        const nameEl = getEl('stream-name');
-        const webPortEl = getEl('stream-gateway-web-port');
-        if (urlEl && urlEl.value.trim()) this.gatewayUrl = urlEl.value.trim();
-        if (nameEl && nameEl.value.trim()) this.streamName = nameEl.value.trim();
-        if (webPortEl && webPortEl.value.trim()) this.gatewayWebPort = Number(webPortEl.value) || 5173;
+    /**
+     * Bring up the shared capture → encode → mux pipeline if it isn't already
+     * running: worker (VideoEncoder + TsMuxer + SRT receiver WASM), audio tap,
+     * and the background-tab capture keep-alive. Idempotent — a no-op when a
+     * worker is already alive (e.g. record started while streaming). Sets
+     * `_spawnedFresh` so callers know whether they're driving a fresh worker.
+     *
+     * Stream and record SHARE this pipeline. The WebTransport transport is
+     * wired separately by start(); recording is engaged by posting `startRecord`
+     * to the worker (buffering muxed TS for a .ts download on stop).
+     *
+     * Returns false (with a status message) if WebCodecs/codec setup fails.
+     */
+    async _ensurePipeline() {
         // Encoder tuning inputs (clamped defensively; NaN/empty → keep current).
         this._readBitrateInput();
-        // Reset adaptation state at stream start — begin at the user-set target.
+        // Reset adaptation state — begin at the user-set target.
         this._currentBitrate = this._videoBitrate;
         this._highMarkCount = 0;
         this._lowMarkCount = 0;
@@ -273,40 +283,25 @@ export const StreamingUI = {
             const kf = parseInt(keyframeEl.value, 10);
             if (Number.isFinite(kf)) this._keyframeMs = Math.max(100, Math.min(60000, kf));
         }
-        this._savePersisted();
 
-        // Reconnect-safety: tear down any stale session resources before rebuilding.
-        // (stop() is the full teardown with button updates; this only clears handles.)
-        if (this.worker || this.transport) this._abortSession();
-
-        this.isStreaming = true;
-        this._epoch = performance.now();
-        this._handshakeDone = false;
-        // Reset flow-control credits from any prior session. The worker
-        // grants fresh credits at init.
-        this._frameCredits = 0;
-
-        // 1) Capability gate
-        if (typeof WebTransport === 'undefined' || typeof VideoEncoder === 'undefined') {
-            this._setStatus('WebTransport/WebCodecs unavailable — run with --no-browser and open https://localhost:8100 in Chrome/Edge');
-            this.isStreaming = false;
-            return;
+        // Capability gate (WebCodecs required for both stream and record).
+        if (typeof VideoEncoder === 'undefined') {
+            this._setStatus('WebCodecs unavailable — use Chrome/Edge via --no-browser');
+            return false;
         }
 
-        // 1b) Pick a supported codec from the probe (pick a muxer-supported codec: h264/hevc/av1).
+        // Pick a supported codec from the probe (muxer-supported: h264/hevc/av1).
         let probe = this._codecProbe;
         if (!probe) probe = await this.probeCodecs();
         if (!probe.webcodecs) {
             this._setStatus('WebCodecs unavailable — use Chrome/Edge via --no-browser');
-            this.isStreaming = false;
-            return;
+            return false;
         }
         const usable = probe.video.filter((v) => v.supported && v.usable);
         if (!usable.length) {
             const alts = probe.video.filter((v) => v.supported).map((v) => v.codec).join(', ') || 'none';
             this._setStatus('No usable video encoder. Browser supports: ' + alts);
-            this.isStreaming = false;
-            return;
+            return false;
         }
         const sel = this._selectedCodec && usable.find((v) => v.codec === this._selectedCodec);
         this._codec = (sel || usable[0]).codec;
@@ -321,15 +316,116 @@ export const StreamingUI = {
             } catch (e) { opusSupported = false; }
             if (!opusSupported) {
                 this._setStatus('Opus AudioEncoder unsupported');
-                this.isStreaming = false;
-                return;
+                return false;
             }
+        }
+
+        // Pipeline already up (e.g. record started while streaming) — reuse it.
+        if (this.worker) { this._spawnedFresh = false; return true; }
+
+        this._epoch = performance.now();
+        this._handshakeDone = false;
+        // Reset flow-control credits from any prior session. The worker grants
+        // fresh credits at init.
+        this._frameCredits = 0;
+        this._encW = state.canvas.width & ~1;
+        this._encH = state.canvas.height & ~1;
+
+        // Spawn the module worker (loads both WASM modules). Pass the stream-
+        // epoch (ms) so the worker can stamp audio PTS on the same clock as video.
+        this.worker = new Worker('/js/features/stream-worker.js', { type: 'module' });
+        this.worker.onmessage = (e) => this.onWorkerMessage(e.data);
+        // Look up the probe result for the selected codec to find which HW mode
+        // actually passed probe (HW if available and clean, null if HW flaked
+        // and SW was the fallback). Without this the worker would blindly
+        // prefer-HW and could fail at encode time where the probe just flaked.
+        const probeEntry = this._codecProbe && this._codecProbe.video.find(v => v.codec === this._codec);
+        const videoHwMode = probeEntry ? probeEntry.hwMode : null;
+        this.worker.postMessage({
+            type: 'init',
+            latencyMs: this._latencyMs,
+            initialRttMs: this._initialRttMs,
+            videoCodec: this._codecFamily(this._codec),
+            videoCodecString: this._codec,
+            videoHwMode,
+            // Send _currentBitrate (which equals target when ABR is off; may
+            // differ when ABR is on). Subsequent changes are pushed via
+            // setBitrate messages — see _applyBitrate.
+            videoBitrate: this._currentBitrate,
+            videoFps: this._fps,
+            cbrEnabled: this._cbrEnabled,
+            encW: this._encW,
+            encH: this._encH,
+            keyframeMs: this._keyframeMs,
+            epochMs: this._epoch,
+        });
+
+        // Audio (Opus) — AudioWorklet taps the Webamp analyser and ships Float32
+        // frames directly to the worker via a transferred MessagePort. The
+        // AudioEncoder lives in the worker. Video-only fallback on worklet failure.
+        if (state.audioPlayerAnalyser) {
+            StreamAudio.init(state.audioPlayerAnalyser, this.worker).then((ok) => {
+                if (!ok) this._setStatus('Audio tap failed — ' + (this.isRecording ? 'recording' : 'streaming') + ' video-only');
+            });
+        }
+
+        // Keep captureFrame() alive when this tab is backgrounded. rAF throttles
+        // to ~1Hz in background tabs, so spawn a timer worker that ticks at the
+        // target fps; terminate it again on return to the foreground.
+        this._visHandler = () => {
+            if (document.hidden) this._startBgTimer();
+            else this._stopBgTimer();
+        };
+        document.addEventListener('visibilitychange', this._visHandler);
+        if (document.hidden) this._startBgTimer();
+
+        this._spawnedFresh = true;
+        return true;
+    },
+
+    async start() {
+        // Stream-specific inputs (gateway URL / name / web port).
+        const urlEl = getEl('stream-gateway-url');
+        const nameEl = getEl('stream-name');
+        const webPortEl = getEl('stream-gateway-web-port');
+        if (urlEl && urlEl.value.trim()) this.gatewayUrl = urlEl.value.trim();
+        if (nameEl && nameEl.value.trim()) this.streamName = nameEl.value.trim();
+        if (webPortEl && webPortEl.value.trim()) this.gatewayWebPort = Number(webPortEl.value) || 5173;
+        this._savePersisted();
+
+        // Reconnect-safety: if a stale transport exists (manual re-start while
+        // streaming, or a half-torn-down session), tear it down before rebuilding.
+        // _abortSession posts `stop` to the worker so an in-flight recording is
+        // finalized/delivered; isRecording (user intent) persists and is resumed
+        // on the fresh worker below. A worker-only session (recording with no
+        // transport) is REUSED as the shared pipeline — recording is uninterrupted.
+        if (this.transport) await this._abortSession();
+
+        if (!(await this._ensurePipeline())) return;
+
+        this.isStreaming = true;
+        this._handshakeDone = false;
+        this._frameCredits = 0;
+        // Resume recording on a freshly-spawned worker if the user was recording
+        // (e.g. stream reconnect mid-record → the prior segment was already
+        // delivered as a .ts; this starts a new segment on the new worker).
+        // When the worker was reused (start stream while recording), recording
+        // is already active — do NOT re-post startRecord (would wipe the buffer).
+        if (this.isRecording && this._spawnedFresh && this.worker) {
+            try { this.worker.postMessage({ type: 'startRecord' }); } catch (e) { /* ignore */ }
+        }
+
+        // Capability gate (WebTransport — stream-specific).
+        if (typeof WebTransport === 'undefined') {
+            this._setStatus('WebTransport unavailable — run with --no-browser and open https://localhost:8100 in Chrome/Edge');
+            this.isStreaming = false;
+            return;
         }
 
         this._wantStream = true;
 
-        // 2) Try direct WebTransport (CA validation) first — works for real certs.
-        //    Falls back to hash pinning via backend proxy for self-signed certs.
+        // Try direct WebTransport (CA validation) first — works for real certs.
+        // Falls back to hash pinning via backend proxy for self-signed certs.
         const wtUrl = `${this.gatewayUrl}?publish=${encodeURIComponent(this.streamName)}`;
         let connected = false;
 
@@ -382,82 +478,79 @@ export const StreamingUI = {
             () => this._handleTransportDrop(),
         );
 
-        // 3) Set up datagram writer
+        // Datagram writer.
         this._datagramWriter = this.transport.datagrams.writable.getWriter();
         try {
             const wtStats = await this.transport.getStats();
             if (wtStats && typeof wtStats.smoothedRtt === 'number' && wtStats.smoothedRtt > 0) this._initialRttMs = wtStats.smoothedRtt;
         } catch { /* getStats not supported */ }
 
-        // 4) Spawn worker (module worker; loads both WASM modules).
-        //    Pass the stream-epoch (ms) so the worker can stamp audio PTS
-        //    on the same clock as video.
-        this.worker = new Worker('/js/features/stream-worker.js', { type: 'module' });
-        this.worker.onmessage = (e) => this.onWorkerMessage(e.data);
-        this._encW = state.canvas.width & ~1;
-        this._encH = state.canvas.height & ~1;
-        // Look up the probe result for the selected codec to find which HW
-        // mode actually passed probe (HW if it was available and probed clean,
-        // null if HW flaked and SW was used as fallback). Without this the
-        // worker would blindly prefer-HW and could fail at encode time on the
-        // same machines where the probe just flaked.
-        const probeEntry = this._codecProbe && this._codecProbe.video.find(v => v.codec === this._codec);
-        const videoHwMode = probeEntry ? probeEntry.hwMode : null;
-        this.worker.postMessage({
-            type: 'init',
-            latencyMs: this._latencyMs,
-            initialRttMs: this._initialRttMs,
-            videoCodec: this._codecFamily(this._codec),
-            videoCodecString: this._codec,
-            videoHwMode,
-            // Send _currentBitrate (which equals target when ABR is off; may
-            // differ when ABR is on). Subsequent changes are pushed via
-            // setBitrate messages — see _applyBitrate.
-            videoBitrate: this._currentBitrate,
-            videoFps: this._fps,
-            cbrEnabled: this._cbrEnabled,
-            encW: this._encW,
-            encH: this._encH,
-            keyframeMs: this._keyframeMs,
-            epochMs: this._epoch,
-        });
-
-        // 5) VideoEncoder now lives in the worker (Phase 3). Main thread
-        //    captures VideoFrames from the canvas and posts them transferable;
-        //    the worker owns the encoder and runs Annex B / SPS-PPS / muxer.
-
-        // 6) Audio (Opus) — AudioWorklet taps the Webamp analyser and ships
-        //    Float32 frames directly to the worker via a transferred
-        //    MessagePort. AudioEncoder lives in the worker (see stream-worker.js
-        //    audio-port handler). Capture AND encode are off the main thread —
-        //    panel reflow can no longer starve audio. Video-only fallback if the
-        //    worklet fails to load.
-        if (state.audioPlayerAnalyser) {
-            StreamAudio.init(state.audioPlayerAnalyser, this.worker).then((ok) => {
-                if (!ok) this._setStatus('Audio tap failed — streaming video-only');
-            });
-        }
-
-        // 7) Receive loop (datagrams from gateway → worker)
+        // Receive loop (datagrams from gateway → worker).
         this._receiveLoop();
 
-        // 8) Keep captureFrame() alive when this tab is backgrounded. rAF
-        //     throttles to ~1Hz in background tabs, so spawn a timer worker
-        //     that ticks at the target fps; terminate it again on return to
-        //     the foreground (where the render loop's rAF drives capture).
-        this._visHandler = () => {
-            if (document.hidden) this._startBgTimer();
-            else this._stopBgTimer();
-        };
-        document.addEventListener('visibilitychange', this._visHandler);
-        if (document.hidden) this._startBgTimer();
-
-        // 9) Update buttons + status
+        // Buttons + status.
         const startBtn = getEl('startStream');
         const stopBtn = getEl('stopStream');
         if (startBtn) startBtn.classList.add('active');
         if (stopBtn) stopBtn.classList.remove('disabled');
         this._setStatus('Connecting…');
+    },
+
+    /**
+     * Begin recording to a .ts file via the WebSRT encoder. Spawns the shared
+     * pipeline if no stream is active (standalone record); otherwise engages
+     * the record sink on the existing worker (record-while-streaming). The
+     * worker buffers muxed TS; stopRecord() (or any teardown) delivers it.
+     */
+    async startRecord() {
+        if (this.isRecording) return;
+        this.isRecording = true;   // set intent before _ensurePipeline so it's reflected on spawn
+        if (!(await this._ensurePipeline())) {
+            this.isRecording = false;
+            return;
+        }
+        if (this.worker) {
+            try { this.worker.postMessage({ type: 'startRecord' }); } catch (e) { /* ignore */ }
+        }
+        const btn = getEl('streamRecord');
+        if (btn) btn.classList.add('active');
+        if (!this.isStreaming) this._setStatus('Recording · ' + this.streamName);
+    },
+
+    /**
+     * Stop recording and download the .ts. If a stream is active, the pipeline
+     * stays up for streaming; otherwise it is torn down (it only existed for
+     * the recording).
+     */
+    async stopRecord() {
+        if (!this.isRecording) return;
+        this.isRecording = false;
+        if (this.worker) {
+            try { this.worker.postMessage({ type: 'stopRecord' }); } catch (e) { /* ignore */ }
+            // 'recordData' arrives via onWorkerMessage → _downloadRecord.
+        }
+        const btn = getEl('streamRecord');
+        if (btn) btn.classList.remove('active');
+        if (!this.isStreaming) {
+            // Pipeline only existed for the recording — tear it down. The worker's
+            // stop handler is a no-op for recording (stopRecord already finalized).
+            await this._abortSession();
+            this._setStatus('Stopped');
+        }
+    },
+
+    /** Build a .ts Blob from the worker's buffer and trigger a download. */
+    _downloadRecord(buffer) {
+        try {
+            const blob = new Blob([buffer], { type: 'video/mp2t' });
+            const url = URL.createObjectURL(blob);
+            const ts = new Date().toISOString().replace(/[:.]/g, '-');
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `slopshady-${ts}.ts`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) { console.warn('record download failed', e); }
     },
 
     async stop() {
@@ -466,54 +559,36 @@ export const StreamingUI = {
         this._wantStream = false;
 
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
-        if (this._visHandler) { document.removeEventListener('visibilitychange', this._visHandler); this._visHandler = null; }
-        this._stopBgTimer();
 
-        this._handshakeDone = false;
-
-        // VideoEncoder lives in the worker (Phase 3); it is closed when the
-        // worker receives `stop` (or is terminated below).
-        // Audio tap is torn down via StreamAudio (disconnects the AudioWorkletNode).
-        // The AudioEncoder lives in the worker and is closed when the worker
-        // receives `stop` (or is terminated below).
-        StreamAudio.stop();
-        if (this._receiveReader) {
-            try { await this._receiveReader.cancel(); } catch (e) { /* ignore */ }
-            this._receiveReader = null;
-        }
-        if (this._datagramWriter) {
-            try { this._datagramWriter.releaseLock(); } catch (e) { /* ignore */ }
-            this._datagramWriter = null;
-        }
-        if (this.transport) {
-            try { await this.transport.close(); } catch (e) { /* ignore */ }
-            this.transport = null;
-        }
-        if (this.worker) {
-            const worker = this.worker;
-            try { worker.postMessage({ type: 'stop' }); } catch (e) { /* ignore */ }
-            // Give the worker up to 200ms to ack (it flushes remaining TS in
-            // its stop handler). A misbehaving worker can't hang teardown.
-            await new Promise((resolve) => {
-                let done = false;
-                const finish = () => { if (done) return; done = true; worker.removeEventListener('message', onMsg); clearTimeout(timer); resolve(); };
-                const onMsg = (e) => { if (e.data && e.data.type === 'stopped') finish(); };
-                const timer = setTimeout(finish, 200);
-                worker.addEventListener('message', onMsg);
-            });
-            try { worker.terminate(); } catch (e) { /* ignore */ }
-            this.worker = null;
+        if (this.isRecording) {
+            // Recording owns the pipeline now — drop ONLY the transport so
+            // capture + encode keep running for the .ts sink.
+            if (this._receiveReader) {
+                try { await this._receiveReader.cancel(); } catch (e) { /* ignore */ }
+                this._receiveReader = null;
+            }
+            if (this._datagramWriter) {
+                try { this._datagramWriter.releaseLock(); } catch (e) { /* ignore */ }
+                this._datagramWriter = null;
+            }
+            if (this.transport) {
+                try { await this.transport.close(); } catch (e) { /* ignore */ }
+                this.transport = null;
+            }
+            this._handshakeDone = false;
+        } else {
+            // Full teardown — worker `stop` finalizes any in-flight recording
+            // (none here, isRecording is false) before terminate.
+            await this._abortSession();
         }
 
-        this.datagramQueue.length = 0;
-        this._flushPending = false;
         this.reconnectAttempts = 0;
 
         const startBtn = getEl('startStream');
         const stopBtn = getEl('stopStream');
         if (startBtn) startBtn.classList.remove('active');
         if (stopBtn) stopBtn.classList.add('disabled');
-        this._setStatus('Stopped');
+        this._setStatus(this.isRecording ? ('Recording · ' + this.streamName) : 'Stopped');
     },
 
     onWorkerMessage(msg) {
@@ -545,6 +620,10 @@ export const StreamingUI = {
             this._frameCredits += (typeof msg.count === 'number') ? msg.count : 1;
         } else if (msg.type === 'videoEncoderFailed') {
             this._handleVideoEncoderFailed(msg.msg);
+        } else if (msg.type === 'recordData') {
+            // Finalized .ts from the worker (stopRecord, or a teardown while
+            // recording was active). Download it.
+            this._downloadRecord(msg.data);
         } else if (msg.type === 'close') {
             this._handshakeDone = false;
             this._setStatus('Stream closed');
@@ -606,6 +685,7 @@ export const StreamingUI = {
     _handleInitFailed(reason) {
         this.isStreaming = false;
         this._handshakeDone = false;
+        this._clearRecordOnAbort();
         this._abortSession();
         const startBtn = getEl('startStream');
         const stopBtn = getEl('stopStream');
@@ -621,6 +701,7 @@ export const StreamingUI = {
     _handleVideoEncoderFailed(reason) {
         this.isStreaming = false;
         this._handshakeDone = false;
+        this._clearRecordOnAbort();
         this._abortSession();
         const startBtn = getEl('startStream');
         const stopBtn = getEl('stopStream');
@@ -634,7 +715,7 @@ export const StreamingUI = {
      *  Captures one even-dimensioned VideoFrame (H.264 rejects odd sizes) and
      *  transfers it to the worker; the worker owns the VideoEncoder. */
     captureFrame() {
-        if (!this.worker || !this._handshakeDone) return;
+        if (!this.worker || !(this._handshakeDone || this.isRecording)) return;
         // Flow control: skip capture if worker hasn't granted a credit. This
         // is the critical guard against postMessage backlog during complex
         // scenes where the encoder can't keep up with capture rate.
@@ -962,10 +1043,27 @@ export const StreamingUI = {
     },
 
     /**
-     * Tear down the live session handles WITHOUT flipping button state. Used at
-     * the top of start() on a reconnect so we don't leak a second worker/transport.
+     * Clear the record intent + button when the pipeline is being torn down for
+     * an unrecoverable reason (init/encoder failure). The worker's `stop`
+     * handler (invoked by _abortSession) still finalizes + delivers the .ts
+     * recorded so far; this just resets local UI state.
      */
-    _abortSession() {
+    _clearRecordOnAbort() {
+        if (!this.isRecording) return;
+        this.isRecording = false;
+        const btn = getEl('streamRecord');
+        if (btn) btn.classList.remove('active');
+    },
+
+    /**
+     * Tear down the live session handles WITHOUT flipping button state. Used by
+     * reconnect-safety and transport-drop. Posts `stop` to the worker so it can
+     * flush + finalize any in-flight recording (delivering a .ts via
+     * 'recordData'), then terminates after a short grace. Async — callers that
+     * rebuild immediately should await to avoid spawning a second worker while
+     * the old one finalizes.
+     */
+    async _abortSession() {
         this._closing = true;
         if (this._visHandler) { document.removeEventListener('visibilitychange', this._visHandler); this._visHandler = null; }
         this._stopBgTimer();
@@ -973,7 +1071,29 @@ export const StreamingUI = {
         // VideoEncoder lives in the worker (Phase 3); terminating the worker reaps it.
         StreamAudio.stop();
         if (this.transport) { try { this.transport.close(); } catch (e) { /* ignore */ } this.transport = null; }
-        if (this.worker) { try { this.worker.terminate(); } catch (e) { /* ignore */ } this.worker = null; }
+        if (this._datagramWriter) { try { this._datagramWriter.releaseLock(); } catch (e) { /* ignore */ } this._datagramWriter = null; }
+        // Null the worker reference SYNCHRONOUSLY before awaiting, so a concurrent
+        // start()/_ensurePipeline (e.g. a reconnect timer firing during the stop
+        // grace window) sees no worker and spawns a fresh one instead of reusing
+        // one that is mid-finalization. The finalize still runs against the local
+        // reference; recordData/stopped are handled by onWorkerMessage + the temp
+        // listener below (neither depends on this.worker).
+        const worker = this.worker;
+        this.worker = null;
+        if (worker) {
+            try { worker.postMessage({ type: 'stop' }); } catch (e) { /* ignore */ }
+            // Give the worker up to 200ms to ack (it flushes remaining TS and
+            // finalizes a recording in its stop handler). A misbehaving worker
+            // can't hang teardown.
+            await new Promise((resolve) => {
+                let done = false;
+                const finish = () => { if (done) return; done = true; worker.removeEventListener('message', onMsg); clearTimeout(timer); resolve(); };
+                const onMsg = (e) => { if (e.data && e.data.type === 'stopped') finish(); };
+                const timer = setTimeout(finish, 200);
+                worker.addEventListener('message', onMsg);
+            });
+            try { worker.terminate(); } catch (e) { /* ignore */ }
+        }
         this.datagramQueue.length = 0;
         this._flushPending = false;
     },

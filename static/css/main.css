@@ -2251,25 +2251,6 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     flex: 1;
 }
 
-/* Recorder Buttons */
-#startRecording.active {
-    background: var(--slop-active);
-}
-
-#stopRecording {
-    background: var(--slop-button-face, #4A4A4A);
-}
-
-#stopRecording:hover {
-    background: var(--slop-hover, #555);
-}
-
-#stopRecording.disabled,
-#startRecording.disabled {
-    opacity: 0.4;
-    pointer-events: none;
-}
-
 /* Clear History Button */
 /* Playlist Buttons (ID-based) */
 #plAddCurrent {
@@ -2837,6 +2818,9 @@ body.nodes-view #node-inspector { pointer-events: auto; }
 }
 #stream-config { font-size: 10px; color: #666; margin-top: 4px; white-space: pre; }
 #startStream.active {
+    background: var(--slop-active);
+}
+#streamRecord.active {
     background: var(--slop-active);
 }
 #stopStream.disabled {

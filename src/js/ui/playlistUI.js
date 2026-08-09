@@ -1,7 +1,7 @@
 /**
  * Playlist UI Module
  * UI panel for the preset playlist system.
- * Follows LayerMixer / RecorderUI patterns.
+ * Follows LayerMixer patterns.
  */
 
 import { state, getEl } from '../state.js';

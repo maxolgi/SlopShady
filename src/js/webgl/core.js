@@ -605,7 +605,7 @@ out vec4 fragColor;
             resolve(state.canvas.toDataURL('image/png'));
         }
 
-        if (StreamingUI.isStreaming) {
+        if (StreamingUI.isStreaming || StreamingUI.isRecording) {
             StreamingUI.captureFrame();
         }
 
