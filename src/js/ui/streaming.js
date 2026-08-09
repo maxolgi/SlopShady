@@ -149,10 +149,8 @@ export const StreamingUI = {
 
     init() {
         const startBtn = getEl('startStream');
-        const stopBtn = getEl('stopStream');
         if (!startBtn) return;
-        startBtn.addEventListener('click', () => this.start());
-        stopBtn.addEventListener('click', () => this.stop());
+        startBtn.addEventListener('click', () => this.isStreaming ? this.stop() : this.start());
         const recBtn = getEl('streamRecord');
         if (recBtn) recBtn.addEventListener('click', () => this.isRecording ? this.stopRecord() : this.startRecord());
         // Restore last-used gateway URL / stream name (overrides HTML defaults).
@@ -490,9 +488,7 @@ export const StreamingUI = {
 
         // Buttons + status.
         const startBtn = getEl('startStream');
-        const stopBtn = getEl('stopStream');
         if (startBtn) startBtn.classList.add('active');
-        if (stopBtn) stopBtn.classList.remove('disabled');
         this._setStatus('Connecting…');
     },
 
@@ -585,9 +581,7 @@ export const StreamingUI = {
         this.reconnectAttempts = 0;
 
         const startBtn = getEl('startStream');
-        const stopBtn = getEl('stopStream');
         if (startBtn) startBtn.classList.remove('active');
-        if (stopBtn) stopBtn.classList.add('disabled');
         this._setStatus(this.isRecording ? ('Recording · ' + this.streamName) : 'Stopped');
     },
 
@@ -688,9 +682,7 @@ export const StreamingUI = {
         this._clearRecordOnAbort();
         this._abortSession();
         const startBtn = getEl('startStream');
-        const stopBtn = getEl('stopStream');
         if (startBtn) startBtn.classList.remove('active');
-        if (stopBtn) stopBtn.classList.add('disabled');
         this._setStatus('Init failed: ' + reason);
         // No reconnect — WASM modules won't reload without a fresh start()
         // and an immediate retry would just hit the same failure.
@@ -704,9 +696,7 @@ export const StreamingUI = {
         this._clearRecordOnAbort();
         this._abortSession();
         const startBtn = getEl('startStream');
-        const stopBtn = getEl('stopStream');
         if (startBtn) startBtn.classList.remove('active');
-        if (stopBtn) stopBtn.classList.add('disabled');
         this._setStatus('VideoEncoder error: ' + reason);
         // No reconnect — a runtime encoder failure would just recur.
     },

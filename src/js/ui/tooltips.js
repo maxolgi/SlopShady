@@ -63,8 +63,7 @@ const T = {
     PLAYER_STOP: 'Stop MIDI playback and reset to start',
     PLAYER_PROGRESS: 'Seek position within MIDI file',
 
-    STREAM_START: 'Start live stream over WebSRT · Ctrl+Insert',
-    STREAM_STOP: 'Stop live stream',
+    STREAM_START: 'Start/stop live stream over WebSRT · Ctrl+Insert',
     STREAM_RECORD: 'Record canvas via the WebSRT encoder to a .ts file · Ctrl+Shift+R (works with or without an active stream)',
     STREAM_GATEWAY: 'WebSRT gateway WebTransport URL (e.g. https://127.0.0.1:4433/wt)',
     STREAM_GATEWAY_WEB_PORT: 'Port of the gateway\'s built-in HTTPS web server, where cert-hash.js lives (default 5173). Used to fetch the cert hash for self-signed pinning · persists',
@@ -581,7 +580,6 @@ const STATIC_MAP = [
     ['#playerProgress', 'PLAYER_PROGRESS'],
 
     ['#startStream', 'STREAM_START'],
-    ['#stopStream', 'STREAM_STOP'],
     ['#streamRecord', 'STREAM_RECORD'],
     ['#stream-gateway-url', 'STREAM_GATEWAY'],
     ['#stream-gateway-web-port', 'STREAM_GATEWAY_WEB_PORT'],

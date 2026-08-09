@@ -1399,8 +1399,14 @@
         <div class="content-panel content-panel--scrollable" data-panel="stream">
             <div class="panel-section" id="stream-panel">
                 <div class="content-title">Live Stream (WebSRT)</div>
+                <div class="tool-grid tool-grid--2x1">
+                    <button class="tool-btn" id="startStream">▶ Stream</button>
+                    <button class="tool-btn" id="streamRecord">⏺ Rec</button>
+                </div>
                 <input type="text" id="stream-gateway-url" value="https://127.0.0.1:4433/wt" placeholder="Gateway WT URL">
-                <input type="number" id="stream-gateway-web-port" value="5173" min="1" max="65535" step="1" placeholder="Gateway web port">
+                <label class="stream-input-label">Port
+                    <input type="number" id="stream-gateway-web-port" value="5173" min="1" max="65535" step="1" placeholder="Gateway web port">
+                </label>
                 <input type="text" id="stream-name" value="slopshady" placeholder="Stream name">
                 <div class="dropdown" id="stream-codec-dropdown">
                     <button class="dropdown__selected tool-btn"><span>AV1</span></button>
@@ -1426,13 +1432,9 @@
                     <button class="tool-btn" id="stream-abr-toggle">Adaptive Bitrate</button>
                     <button class="tool-btn" id="stream-cbr-toggle">Constant Bitrate</button>
                 </div>
-                <div class="tool-grid tool-grid--2x1">
-                    <button class="tool-btn" id="startStream">▶ Stream</button>
-                    <button class="tool-btn disabled" id="stopStream">⏹ Stop</button>
-                </div>
-                <div class="tool-grid tool-grid--2x1">
-                    <button class="tool-btn" id="streamRecord">⏺ Rec</button>
-                </div>
+            </div>
+            <div class="panel-section" id="stream-stats-panel">
+                <div class="content-title">Stream Stats</div>
                 <div id="stream-status"></div>
                 <div id="stream-stats"></div>
                 <div id="stream-config"></div>

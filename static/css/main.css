@@ -1346,6 +1346,10 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     min-width: 134px;
 }
 
+[data-panel="stream"] > .panel-section {
+    min-width: 280px;
+}
+
 [data-panel="codedials"] > .panel-section {
     width: 134px;
     flex-shrink: 0;
@@ -2822,10 +2826,6 @@ body.nodes-view #node-inspector { pointer-events: auto; }
 }
 #streamRecord.active {
     background: var(--slop-active);
-}
-#stopStream.disabled {
-    opacity: 0.4;
-    pointer-events: none;
 }
 
 /* Live Stream Inputs panel (WebSRT receive) — master-detail */
