@@ -193,6 +193,90 @@ fn wasm_needs_rebuild(repo_root: &Path) -> bool {
     false
 }
 
+/// Build the three WebSRT WASM crates (`srt-wasm`, `ts-muxer-wasm`,
+/// `mpeg2ts-wasm`) from `vendor/WebSRT/crates/` and stage their `pkg/`
+/// output into `static/wasm/`. Invokes `wasm-pack` directly from Rust so
+/// it works on any OS without a shell (an earlier bash-driven version
+/// could not run on Windows without Git Bash/WSL). Output is byte-stable
+/// for a given toolchain version. `wasm_needs_rebuild` gates this so
+/// untouched builds skip the ~8s-per-crate wasm-pack overhead.
+fn build_wasm_crates(repo_root: &Path) {
+    let sub = repo_root.join("vendor").join("WebSRT");
+    if !sub.join(".git").exists() {
+        panic!(
+            "vendor/WebSRT submodule not initialized — run \
+             `git submodule update --init --recursive`"
+        );
+    }
+    let crates_root = sub.join("crates");
+    let out = repo_root.join("static").join("wasm");
+
+    for crate_name in ["srt-wasm", "ts-muxer-wasm", "mpeg2ts-wasm"] {
+        let crate_dir = crates_root.join(crate_name);
+        println!("cargo:warning=building WASM crate {crate_name}...");
+        let status = std::process::Command::new("wasm-pack")
+            .args(["build", "--target", "web", "--release"])
+            .current_dir(&crate_dir)
+            .status();
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => panic!("wasm-pack build failed for {crate_name} (status {s})"),
+            Err(e) => panic!(
+                "failed to invoke wasm-pack for {crate_name} — install it with \
+                 `cargo install wasm-pack` and add the target with \
+                 `rustup target add wasm32-unknown-unknown`: {e}"
+            ),
+        }
+
+        // Stage pkg/* → static/wasm/<crate>/ (mirrors the old bash script).
+        let pkg = crate_dir.join("pkg");
+        let dest = out.join(crate_name);
+        match fs::remove_dir_all(&dest) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => panic!("failed to remove {}: {}", dest.display(), e),
+        }
+        if let Err(e) = fs::create_dir_all(&dest) {
+            panic!("failed to create {}: {}", dest.display(), e);
+        }
+        if let Err(e) = copy_dir_all(&pkg, &dest) {
+            panic!("failed to copy {} → {}: {}", pkg.display(), dest.display(), e);
+        }
+        // wasm-pack emits a per-pkg .gitignore; static/wasm is already
+        // gitignored at the repo root, so drop the redundant one.
+        let _ = fs::remove_file(dest.join(".gitignore"));
+    }
+}
+
+/// Recursively copy a directory's *contents* (entries, not the dir itself)
+/// into `out`, preserving every file type. Unlike `copy_dir_recursive`
+/// (which only mirrors `.js`/`.mjs`), this is used to stage wasm-pack `pkg/`
+/// output verbatim (`.wasm`, `.js`, `.d.ts`, `package.json`).
+fn copy_dir_all(src: &Path, out: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let path = entry.path();
+        let dest = out.join(entry.file_name());
+        if path.is_dir() {
+            fs::create_dir_all(&dest)?;
+            copy_dir_all(&path, &dest)?;
+        } else {
+            fs::copy(&path, &dest)?;
+        }
+    }
+    Ok(())
+}
+
+/// Path to the tsc binary in `node_modules/.bin`, with the extension npm
+/// installs for the host platform (`tsc.cmd` on Windows; extensionless `tsc`
+/// elsewhere). The extensionless shim npm emits on Windows is a POSIX shell
+/// script that `CreateProcess` cannot execute (os error 193, "%1 is not a valid
+/// Win32 application"), so we must select the `.cmd` shim there.
+fn tsc_bin(repo_root: &Path) -> std::path::PathBuf {
+    let name = if cfg!(windows) { "tsc.cmd" } else { "tsc" };
+    repo_root.join("node_modules").join(".bin").join(name)
+}
+
 fn main() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let src_js = repo_root.join("src").join("js");
@@ -218,10 +302,6 @@ fn main() {
         "cargo:rerun-if-changed={}/vendor/WebSRT/crates/mpeg2ts-wasm",
         repo_root.display()
     );
-    println!(
-        "cargo:rerun-if-changed={}/scripts/build-wasm.sh",
-        repo_root.display()
-    );
     // Watch the WASM output dir so that deleting it (e.g. `rm -rf static/wasm`
     // or a fresh clone) re-runs build.rs and triggers a rebuild. After a
     // rebuild the next run finds artifacts fresh and skips, so this converges.
@@ -232,22 +312,10 @@ fn main() {
 
     // Step 0: Build the three WASM crates from vendor/WebSRT/ when artifacts
     // are missing or stale. Step 2 (vendor tsc) reads the .d.ts that wasm-pack
-    // emits into static/wasm/mpeg2ts-wasm/, so this must run before it. The
-    // script self-checks for wasm-pack and the wasm32 target; we only invoke
-    // it when something actually changed to keep cold builds fast.
+    // emits into static/wasm/mpeg2ts-wasm/, so this must run before it. We only
+    // do it when something actually changed to keep cold builds fast.
     if wasm_needs_rebuild(&repo_root) {
-        let script = repo_root.join("scripts").join("build-wasm.sh");
-        let result = std::process::Command::new("bash").arg(&script).status();
-        match result {
-            Ok(s) if s.success() => {}
-            Ok(s) => panic!("scripts/build-wasm.sh failed with status {}", s),
-            Err(e) => panic!(
-                "failed to invoke bash {} (on Windows install Git Bash or WSL; \
-                 ensure bash is on PATH): {}",
-                script.display(),
-                e
-            ),
-        }
+        build_wasm_crates(&repo_root);
     }
 
     // Step 1: Mirror `.js` and `.mjs` files verbatim from src/js → static/js.
@@ -315,7 +383,7 @@ fn main() {
     }
 
     if has_ts_files(&vendor_src) {
-        let tsc_bin = repo_root.join("node_modules").join(".bin").join("tsc");
+        let tsc_bin = tsc_bin(&repo_root);
         if !tsc_bin.exists() {
             panic!(
                 "TypeScript files found under {} but tsc is not installed.\n\
@@ -408,7 +476,7 @@ fn main() {
     // Writes to static/js/. Now that vendor .d.ts files exist (Step 2),
     // the upstream decode/demux imports type-check properly.
     if has_ts_files(&src_js) {
-        let tsc_bin = repo_root.join("node_modules").join(".bin").join("tsc");
+        let tsc_bin = tsc_bin(&repo_root);
         if !tsc_bin.exists() {
             panic!(
                 "TypeScript files found under {} but tsc is not installed.\n\

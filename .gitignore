@@ -31,6 +31,5 @@ node_modules/
 static/js/
 static/vendor/
 
-# WASM build output (regenerated from vendor/WebSRT/ by build.rs via
-# scripts/build-wasm.sh when sources change)
+# WASM build output (regenerated from vendor/WebSRT/ by build.rs when sources change)
 static/wasm/

@@ -955,8 +955,6 @@ The application loads with "Obsidian Flow / Kinetic Bismuth" as the default shad
 │   └── content/
 │       ├── manifest.json      # Factory shader catalog
 │       └── shaders/factory/   # 80 built-in GLSL shaders
-├── scripts/
-│   └── build-wasm.sh          # Builds the three WebSRT WASM crates (invoked by build.rs)
 ├── vendor/
 │   └── WebSRT/                # Git submodule — source for the WASM crates
 ├── .gitmodules                # Submodule definition (vendor/WebSRT)
