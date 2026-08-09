@@ -1347,7 +1347,8 @@ body.nodes-view #node-inspector { pointer-events: auto; }
 }
 
 [data-panel="stream"] > .panel-section {
-    min-width: 280px;
+    width: 280px;
+    flex-shrink: 0;
 }
 
 [data-panel="codedials"] > .panel-section {
@@ -2791,6 +2792,10 @@ body.nodes-view #node-inspector { pointer-events: auto; }
 
 /* Live Stream panel */
 .panel-divider { height: 1px; background: #333; margin: 12px 0; border: none; }
+#stream-panel .stream-btn-row {
+    display: flex;
+    gap: 4px;
+}
 #stream-panel input[type="text"] {
     padding: 6px 8px;
     font-size: 0.85em;
