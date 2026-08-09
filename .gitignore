@@ -21,9 +21,6 @@ slopshady.conf
 playlist.json
 plan.md
 
-# Agent guidance (per AGENTS.md: this file is gitignored by design)
-AGENTS.md
-
 # opencode session state
 .opencode/
 
