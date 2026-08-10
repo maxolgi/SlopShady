@@ -88,10 +88,22 @@ impl ControlPanel {
         let mut panel = Self {
             rt: Some(tokio::runtime::Runtime::new().expect("Failed to create tokio runtime")),
             bind: cfg.as_ref().map(|c| c.bind.clone()).unwrap_or(cli.bind),
-            port: cfg.as_ref().map(|c| c.port.clone()).unwrap_or(cli.port.to_string()),
-            data_dir: cfg.as_ref().map(|c| c.data_dir.clone()).unwrap_or(cli.data_dir.to_string_lossy().into_owned()),
-            osc_port: cfg.as_ref().map(|c| c.osc_port.clone()).unwrap_or(cli.osc_port.to_string()),
-            osc_bind: cfg.as_ref().map(|c| c.osc_bind.clone()).unwrap_or(cli.osc_bind),
+            port: cfg
+                .as_ref()
+                .map(|c| c.port.clone())
+                .unwrap_or(cli.port.to_string()),
+            data_dir: cfg
+                .as_ref()
+                .map(|c| c.data_dir.clone())
+                .unwrap_or(cli.data_dir.to_string_lossy().into_owned()),
+            osc_port: cfg
+                .as_ref()
+                .map(|c| c.osc_port.clone())
+                .unwrap_or(cli.osc_port.to_string()),
+            osc_bind: cfg
+                .as_ref()
+                .map(|c| c.osc_bind.clone())
+                .unwrap_or(cli.osc_bind),
             running: false,
             app_state: None,
             handle: None,
@@ -160,13 +172,17 @@ impl ControlPanel {
         let server_cert = cert_path.clone();
         let server_key = key_path.clone();
         let server_bind = self.bind.clone();
-        self.rt
-            .as_ref()
-            .expect("runtime")
-            .spawn(async move {
-                crate::run_https_server(server_state, server_bind, port, server_cert, server_key, server_handle)
-                    .await;
-            });
+        self.rt.as_ref().expect("runtime").spawn(async move {
+            crate::run_https_server(
+                server_state,
+                server_bind,
+                port,
+                server_cert,
+                server_key,
+                server_handle,
+            )
+            .await;
+        });
 
         let display_ip = if self.bind == "0.0.0.0" || self.bind.is_empty() {
             lan_ip().unwrap_or_else(|| "localhost".to_string())

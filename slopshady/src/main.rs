@@ -1,4 +1,7 @@
-#![cfg_attr(all(feature = "gui", target_os = "windows"), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(feature = "gui", target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 
 mod cert;
 #[cfg(feature = "gui")]
@@ -34,7 +37,11 @@ pub(crate) struct Cli {
     #[arg(long, default_value = "0.0.0.0", help = "Bind address for OSC input")]
     pub(crate) osc_bind: String,
 
-    #[arg(long, default_value = "0.0.0.0", help = "Bind address for HTTPS server")]
+    #[arg(
+        long,
+        default_value = "0.0.0.0",
+        help = "Bind address for HTTPS server"
+    )]
     pub(crate) bind: String,
 }
 
@@ -129,5 +136,13 @@ async fn run_headless(cli: Cli) {
         .unwrap()
         .spawn(app_state.clone(), cli.osc_bind.clone(), cli.osc_port);
 
-    run_https_server(app_state, cli.bind, cli.port, cert_path, key_path, axum_server::Handle::new()).await;
+    run_https_server(
+        app_state,
+        cli.bind,
+        cli.port,
+        cert_path,
+        key_path,
+        axum_server::Handle::new(),
+    )
+    .await;
 }

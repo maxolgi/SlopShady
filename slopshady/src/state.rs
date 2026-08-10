@@ -19,9 +19,17 @@ pub struct AppState {
 pub fn default_layers(shader_source: &str) -> Vec<Value> {
     let mut layers = Vec::with_capacity(8);
     for i in 0..8 {
-        let name = if i == 0 { "Main".to_string() } else { format!("Layer {i}") };
+        let name = if i == 0 {
+            "Main".to_string()
+        } else {
+            format!("Layer {i}")
+        };
         let opacity = if i == 0 { 1.0 } else { 0.0 };
-        let source = if i == 0 { shader_source.to_string() } else { String::new() };
+        let source = if i == 0 {
+            shader_source.to_string()
+        } else {
+            String::new()
+        };
         let voice_mode = "poly";
         layers.push(json!({
             "id": format!("layer_{i}"),
@@ -46,7 +54,11 @@ pub fn default_layers(shader_source: &str) -> Vec<Value> {
 }
 
 pub fn normalize_layer(layer: &mut Value, index: usize) {
-    let name = if index == 0 { "Main".to_string() } else { format!("Layer {index}") };
+    let name = if index == 0 {
+        "Main".to_string()
+    } else {
+        format!("Layer {index}")
+    };
     let opacity = if index == 0 { 1.0 } else { 0.0 };
     let voice_mode = "poly";
     let defaults = json!({

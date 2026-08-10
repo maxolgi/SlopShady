@@ -2,7 +2,10 @@ use base64::Engine;
 use rosc::OscPacket;
 use serde_json::{json, Value};
 use std::net::UdpSocket;
-use std::sync::{mpsc::{channel, Receiver, Sender}, Arc};
+use std::sync::{
+    mpsc::{channel, Receiver, Sender},
+    Arc,
+};
 use std::thread::JoinHandle;
 use std::time::Duration;
 

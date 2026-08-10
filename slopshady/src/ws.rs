@@ -132,9 +132,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
 
                 if has_shader_code {
                     let shader_code_val = shared.get("shaderCode").cloned();
-                    if let Some(layers) =
-                        shared.get_mut("layers").and_then(|v| v.as_array_mut())
-                    {
+                    if let Some(layers) = shared.get_mut("layers").and_then(|v| v.as_array_mut()) {
                         if let Some(layer0) = layers.first_mut() {
                             if let Some(mat) = layer0.get_mut("material") {
                                 if mat.is_object() {
@@ -185,11 +183,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
 
     let send_task = tokio::spawn(async move {
         while let Ok(msg) = broadcast_rx.recv().await {
-            if sender
-                .send(Message::Text(msg.into()))
-                .await
-                .is_err()
-            {
+            if sender.send(Message::Text(msg.into())).await.is_err() {
                 break;
             }
         }

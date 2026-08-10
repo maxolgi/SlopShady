@@ -14,7 +14,9 @@ pub fn validate_lm_url(url: &str) -> Result<(), String> {
     let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {e}"))?;
     match parsed.scheme() {
         "http" | "https" => Ok(()),
-        scheme => Err(format!("Unsupported URL scheme '{scheme}' — only http/https allowed")),
+        scheme => Err(format!(
+            "Unsupported URL scheme '{scheme}' — only http/https allowed"
+        )),
     }
 }
 
@@ -48,12 +50,10 @@ pub async fn get_models(
     let url = format!("{}/models", lm_url.trim_end_matches('/'));
 
     match client.get(&url).headers(headers).send().await {
-        Ok(resp) => {
-            match resp.json::<Value>().await {
-                Ok(data) => axum::Json(data),
-                Err(_) => axum::Json(json!({"error": "Failed to parse response"})),
-            }
-        }
+        Ok(resp) => match resp.json::<Value>().await {
+            Ok(data) => axum::Json(data),
+            Err(_) => axum::Json(json!({"error": "Failed to parse response"})),
+        },
         Err(e) => {
             if e.is_connect() {
                 axum::Json(json!({"error": "Cannot connect to LM Studio", "detail": e.to_string()}))
@@ -79,10 +79,7 @@ pub async fn chat_completions(
     };
 
     if let Err(e) = validate_lm_url(&lm_url) {
-        return Response::builder()
-            .status(400)
-            .body(Body::from(e))
-            .unwrap();
+        return Response::builder().status(400).body(Body::from(e)).unwrap();
     }
 
     let mut headers = reqwest::header::HeaderMap::new();

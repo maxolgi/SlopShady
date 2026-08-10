@@ -144,10 +144,8 @@ async fn stream_llm_call(
                     }
                     if let Some(tcs) = delta.get("tool_calls").and_then(|c| c.as_array()) {
                         for tc in tcs {
-                            let idx = tc
-                                .get("index")
-                                .and_then(|i| i.as_u64())
-                                .unwrap_or(0) as usize;
+                            let idx =
+                                tc.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
                             while idx >= tool_calls.len() {
                                 tool_calls.push(ToolCall {
                                     id: String::new(),
@@ -162,8 +160,7 @@ async fn stream_llm_call(
                                 if let Some(name) = fn_obj.get("name").and_then(|n| n.as_str()) {
                                     tool_calls[idx].function_name.push_str(name);
                                 }
-                                if let Some(args) =
-                                    fn_obj.get("arguments").and_then(|a| a.as_str())
+                                if let Some(args) = fn_obj.get("arguments").and_then(|a| a.as_str())
                                 {
                                     tool_calls[idx].function_arguments.push_str(args);
                                 }
@@ -513,7 +510,10 @@ pub async fn live_tuning_screenshot(
     state: Arc<crate::state::AppState>,
     body: serde_json::Value,
 ) -> axum::Json<serde_json::Value> {
-    let screenshot = body.get("screenshot").and_then(|v| v.as_str()).unwrap_or("");
+    let screenshot = body
+        .get("screenshot")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     state.tuning.send_screenshot(screenshot.to_string());
     axum::Json(json!({"ok": true}))
 }
@@ -523,7 +523,10 @@ pub async fn live_tuning_shader_result(
     body: serde_json::Value,
 ) -> axum::Json<serde_json::Value> {
     let result = ShaderResult {
-        success: body.get("success").and_then(|v| v.as_bool()).unwrap_or(false),
+        success: body
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         error: body.get("error").and_then(|v| v.as_str()).map(String::from),
         transformed_source: body
             .get("transformedSource")
@@ -534,9 +537,7 @@ pub async fn live_tuning_shader_result(
     axum::Json(json!({"ok": true}))
 }
 
-pub async fn live_tuning_stop(
-    state: Arc<crate::state::AppState>,
-) -> axum::Json<serde_json::Value> {
+pub async fn live_tuning_stop(state: Arc<crate::state::AppState>) -> axum::Json<serde_json::Value> {
     state
         .tuning
         .stop_requested

@@ -64,7 +64,9 @@ fn has_ts_files(src: &Path) -> bool {
 /// (standard TS style) which browsers can't resolve in native ES modules.
 fn rewrite_vendor_imports(dir: &Path) {
     fn visit(dir: &Path) {
-        let Ok(entries) = fs::read_dir(dir) else { return };
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
@@ -74,7 +76,9 @@ fn rewrite_vendor_imports(dir: &Path) {
             if path.extension().and_then(|s| s.to_str()) != Some("js") {
                 continue;
             }
-            let Ok(contents) = fs::read_to_string(&path) else { continue };
+            let Ok(contents) = fs::read_to_string(&path) else {
+                continue;
+            };
             let rewritten = fix_extensionless_specifiers(&contents);
             if rewritten != contents {
                 let _ = fs::write(&path, rewritten);
@@ -253,7 +257,12 @@ fn build_wasm_crates(repo_root: &Path) {
             panic!("failed to create {}: {}", dest.display(), e);
         }
         if let Err(e) = copy_dir_all(&pkg, &dest) {
-            panic!("failed to copy {} → {}: {}", pkg.display(), dest.display(), e);
+            panic!(
+                "failed to copy {} → {}: {}",
+                pkg.display(),
+                dest.display(),
+                e
+            );
         }
         // wasm-pack emits a per-pkg .gitignore; static/wasm is already
         // gitignored at the repo root, so drop the redundant one.
@@ -310,14 +319,30 @@ fn main() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let src_js = repo_root.join("src").join("js");
     let out_js = repo_root.join("static").join("js");
-    let vendor_src = repo_root.join("vendor").join("WebSRT").join("web").join("src");
+    let vendor_src = repo_root
+        .join("vendor")
+        .join("WebSRT")
+        .join("web")
+        .join("src");
 
     println!("cargo:rerun-if-changed={}", src_js.display());
     println!("cargo:rerun-if-changed={}", vendor_src.display());
-    println!("cargo:rerun-if-changed={}/tsconfig.json", repo_root.display());
-    println!("cargo:rerun-if-changed={}/tsconfig.emit.json", repo_root.display());
-    println!("cargo:rerun-if-changed={}/tsconfig.vendor.json", repo_root.display());
-    println!("cargo:rerun-if-changed={}/package.json", repo_root.display());
+    println!(
+        "cargo:rerun-if-changed={}/tsconfig.json",
+        repo_root.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/tsconfig.emit.json",
+        repo_root.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/tsconfig.vendor.json",
+        repo_root.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/package.json",
+        repo_root.display()
+    );
     println!("cargo:rerun-if-changed={}/src/types", repo_root.display());
     println!(
         "cargo:rerun-if-changed={}/vendor/WebSRT/crates/srt-wasm",
@@ -334,10 +359,7 @@ fn main() {
     // Watch the WASM output dir so that deleting it (e.g. `rm -rf static/wasm`
     // or a fresh clone) re-runs build.rs and triggers a rebuild. After a
     // rebuild the next run finds artifacts fresh and skips, so this converges.
-    println!(
-        "cargo:rerun-if-changed={}/static/wasm",
-        repo_root.display()
-    );
+    println!("cargo:rerun-if-changed={}/static/wasm", repo_root.display());
 
     // Step 0: Build the three WASM crates from vendor/WebSRT/ when artifacts
     // are missing or stale. Step 2 (vendor tsc) reads the .d.ts that wasm-pack
@@ -375,7 +397,12 @@ fn main() {
     // layout has wasm/ as a sibling of src/; SlopShady serves wasm from
     // static/wasm/ at /wasm/. Without this rewrite the emitted demux.js
     // would 404 at runtime.
-    let vendor_out = repo_root.join("static").join("vendor").join("WebSRT").join("web").join("src");
+    let vendor_out = repo_root
+        .join("static")
+        .join("vendor")
+        .join("WebSRT")
+        .join("web")
+        .join("src");
 
     // Stage mpeg2ts-wasm and srt-wasm .d.ts files where tsc expects them.
     // demux.ts imports `../wasm/mpeg2ts-wasm/mpeg2ts_wasm.js` and worker.ts
@@ -383,7 +410,12 @@ fn main() {
     // tsc paths mappings don't resolve, so the same staging pattern applies
     // to both crates.
     for crate_name in ["mpeg2ts-wasm", "srt-wasm"] {
-        let stage_dir = repo_root.join("vendor").join("WebSRT").join("web").join("wasm").join(crate_name);
+        let stage_dir = repo_root
+            .join("vendor")
+            .join("WebSRT")
+            .join("web")
+            .join("wasm")
+            .join(crate_name);
         let wasm_src_dir = repo_root.join("static").join("wasm").join(crate_name);
         if !wasm_src_dir.exists() {
             continue;
@@ -395,14 +427,20 @@ fn main() {
             Ok(entries) => {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    let is_dts = path.file_name()
+                    let is_dts = path
+                        .file_name()
                         .and_then(|s| s.to_str())
                         .map(|n| n.ends_with(".d.ts"))
                         .unwrap_or(false);
                     if is_dts {
                         let dest = stage_dir.join(entry.file_name());
                         if let Err(e) = fs::copy(&path, &dest) {
-                            panic!("failed to copy {} → {}: {}", path.display(), dest.display(), e);
+                            panic!(
+                                "failed to copy {} → {}: {}",
+                                path.display(),
+                                dest.display(),
+                                e
+                            );
                         }
                     }
                 }

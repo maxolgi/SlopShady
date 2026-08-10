@@ -34,7 +34,11 @@ async fn serve_static_file(uri: axum::http::Uri) -> Response {
     match Asset::get(path) {
         Some(content) => {
             let mime = from_path(path).first_or_octet_stream();
-            ([(header::CONTENT_TYPE, mime.as_ref())], content.data.to_vec()).into_response()
+            (
+                [(header::CONTENT_TYPE, mime.as_ref())],
+                content.data.to_vec(),
+            )
+                .into_response()
         }
         None => StatusCode::NOT_FOUND.into_response(),
     }
@@ -62,35 +66,30 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/models", post(api_models))
         .route("/api/chat/completions", post(api_chat_completions))
         .route("/api/live-tuning/start", post(api_live_tuning_start))
-        .route("/api/live-tuning/screenshot", post(api_live_tuning_screenshot))
-        .route("/api/live-tuning/shader-result", post(api_live_tuning_shader_result))
+        .route(
+            "/api/live-tuning/screenshot",
+            post(api_live_tuning_screenshot),
+        )
+        .route(
+            "/api/live-tuning/shader-result",
+            post(api_live_tuning_shader_result),
+        )
         .route("/api/live-tuning/stop", post(api_live_tuning_stop))
         .route("/api/shaders/download", get(download_shaders))
         .route("/api/stream/cert-hash", get(api_stream_cert_hash));
 
-    router
-        .fallback(serve_static_file)
-        .with_state(state)
+    router.fallback(serve_static_file).with_state(state)
 }
 
-async fn api_models(
-    state: State<Arc<AppState>>,
-    body: axum::Json<Value>,
-) -> axum::Json<Value> {
+async fn api_models(state: State<Arc<AppState>>, body: axum::Json<Value>) -> axum::Json<Value> {
     crate::llm::get_models(state, body).await
 }
 
-async fn api_chat_completions(
-    state: State<Arc<AppState>>,
-    body: axum::Json<Value>,
-) -> Response {
+async fn api_chat_completions(state: State<Arc<AppState>>, body: axum::Json<Value>) -> Response {
     crate::llm::chat_completions(state, body).await
 }
 
-async fn api_live_tuning_start(
-    state: State<Arc<AppState>>,
-    body: axum::Json<Value>,
-) -> Response {
+async fn api_live_tuning_start(state: State<Arc<AppState>>, body: axum::Json<Value>) -> Response {
     crate::live_tuning::live_tuning_start(state.0, body.0).await
 }
 
@@ -108,9 +107,7 @@ async fn api_live_tuning_shader_result(
     crate::live_tuning::live_tuning_shader_result(state.0, body.0).await
 }
 
-async fn api_live_tuning_stop(
-    state: State<Arc<AppState>>,
-) -> axum::Json<Value> {
+async fn api_live_tuning_stop(state: State<Arc<AppState>>) -> axum::Json<Value> {
     crate::live_tuning::live_tuning_stop(state.0).await
 }
 
@@ -132,15 +129,11 @@ struct CertHashParams {
     web_port: Option<u16>,
 }
 
-async fn api_stream_cert_hash(
-    Query(params): Query<CertHashParams>,
-) -> axum::Json<Value> {
+async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Json<Value> {
     let parsed = match url::Url::parse(&params.url) {
         Ok(u) => u,
         Err(_) => {
-            return axum::Json(
-                serde_json::json!({ "hash": null, "error": "invalid gateway url" }),
-            )
+            return axum::Json(serde_json::json!({ "hash": null, "error": "invalid gateway url" }))
         }
     };
     // cert-hash.js lives on the gateway's web port (configurable; default
