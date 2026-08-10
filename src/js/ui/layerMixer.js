@@ -1419,7 +1419,7 @@ export const LayerMixer = {
                 const wrapper = shaderBtn.closest('.dropdown') || shaderBtn;
                 const matType = layer.material?.type;
                 const showShader = matType === 'shader' || matType === 'milkdrop' || !!layer.material?.params?.shaderMode;
-                wrapper.style.display = showShader ? '' : 'none';
+                wrapper.style.visibility = showShader ? '' : 'hidden';
             }
             if (mixBlendSelected) {
                 const blend = layer.blendMode || 'normal';
