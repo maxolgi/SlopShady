@@ -1492,6 +1492,7 @@ export const LayerMixer = {
         }
         
         this.updateLayerEditorIndicator();
+        this._rebuildShaderDropdowns();
     },
 
     updateModulatedSliders() {
