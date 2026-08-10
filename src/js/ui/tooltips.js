@@ -67,8 +67,7 @@ const T = {
 
     STREAM_START: 'Start/stop live stream over WebSRT · Ctrl+Insert',
     STREAM_RECORD: 'Record canvas via the WebSRT encoder to a .ts file · Ctrl+Shift+R (works with or without an active stream)',
-    STREAM_GATEWAY: 'WebSRT gateway WebTransport URL (e.g. https://127.0.0.1:4433/wt)',
-    STREAM_GATEWAY_WEB_PORT: 'Port of the gateway\'s built-in HTTPS web server, where cert-hash.js lives (default 5173). Used to fetch the cert hash for self-signed pinning · persists',
+    STREAM_GATEWAY: 'WebSRT gateway web URL — the page you browse to (e.g. https://host:8443/). The WT port and cert hash are discovered automatically from cert-hash.js.',
     STREAM_NAME: 'Stream name viewers connect to (?stream=<name>)',
     STREAM_CODEC: 'Video codec for the live stream. AV1 is the most reliably supported on this machine · persists',
     STREAM_ABR: 'Adaptive bitrate: auto-reduce encoder bitrate when the SRT sender queue grows (experimental — tune constants in streaming.js) · persists',
@@ -579,7 +578,6 @@ const STATIC_MAP = [
     ['#startStream', 'STREAM_START'],
     ['#streamRecord', 'STREAM_RECORD'],
     ['#stream-gateway-url', 'STREAM_GATEWAY'],
-    ['#stream-gateway-web-port', 'STREAM_GATEWAY_WEB_PORT'],
     ['#stream-name', 'STREAM_NAME'],
     ['#stream-codec-dropdown .dropdown__selected', 'STREAM_CODEC'],
     ['#stream-abr-toggle', 'STREAM_ABR'],

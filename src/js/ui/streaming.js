@@ -71,8 +71,7 @@ export const StreamingUI = {
     _flushPending: false,
 
     // ---- config ----
-    gatewayUrl: 'https://127.0.0.1:4433/wt',
-    gatewayWebPort: 5173,
+    gatewayUrl: 'https://127.0.0.1:5173/',
     streamName: 'slopshady',
     _videoBitrate: 8_000_000,       // user-set target bitrate (bps)
     _currentBitrate: 8_000_000,     // live bitrate (adapted when ABR is on; equals target otherwise)
@@ -157,10 +156,8 @@ export const StreamingUI = {
         this._loadPersisted();
         const urlEl = getEl('stream-gateway-url');
         const nameEl = getEl('stream-name');
-        const webPortEl = getEl('stream-gateway-web-port');
         if (urlEl) urlEl.addEventListener('change', () => this._savePersisted());
         if (nameEl) nameEl.addEventListener('change', () => this._savePersisted());
-        if (webPortEl) webPortEl.addEventListener('change', () => this._savePersisted());
         for (const id of ['stream-fps', 'stream-latency', 'stream-keyframe']) {
             const el = getEl(id);
             if (el) el.addEventListener('change', () => this._savePersisted());
@@ -199,11 +196,8 @@ export const StreamingUI = {
             const name = localStorage.getItem('slopshady.stream.name');
             const urlEl = getEl('stream-gateway-url');
             const nameEl = getEl('stream-name');
-            const webPortEl = getEl('stream-gateway-web-port');
             if (url) { if (urlEl) urlEl.value = url; this.gatewayUrl = url; }
             if (name) { if (nameEl) nameEl.value = name; this.streamName = name; }
-            const webPort = localStorage.getItem('slopshady.stream.gatewayWebPort');
-            if (webPort) { if (webPortEl) webPortEl.value = webPort; this.gatewayWebPort = Number(webPort) || 5173; }
             const codec = localStorage.getItem('slopshady.stream.codec');
             if (codec) this._selectedCodec = codec;
             // Encoder tuning inputs (clamped at read time in start()).
@@ -229,10 +223,8 @@ export const StreamingUI = {
         try {
             const urlEl = getEl('stream-gateway-url');
             const nameEl = getEl('stream-name');
-            const webPortEl = getEl('stream-gateway-web-port');
             if (urlEl && urlEl.value.trim()) { this.gatewayUrl = urlEl.value.trim(); localStorage.setItem('slopshady.stream.gatewayUrl', this.gatewayUrl); }
             if (nameEl && nameEl.value.trim()) { this.streamName = nameEl.value.trim(); localStorage.setItem('slopshady.stream.name', this.streamName); }
-            if (webPortEl && webPortEl.value.trim()) { this.gatewayWebPort = Number(webPortEl.value) || 5173; localStorage.setItem('slopshady.stream.gatewayWebPort', String(this.gatewayWebPort)); }
             const saveNum = (id, key) => {
                 const el = getEl(id);
                 if (el && el.value !== '') localStorage.setItem(key, el.value);
@@ -382,13 +374,11 @@ export const StreamingUI = {
     },
 
     async start() {
-        // Stream-specific inputs (gateway URL / name / web port).
+        // Stream-specific inputs (gateway web URL / name).
         const urlEl = getEl('stream-gateway-url');
         const nameEl = getEl('stream-name');
-        const webPortEl = getEl('stream-gateway-web-port');
         if (urlEl && urlEl.value.trim()) this.gatewayUrl = urlEl.value.trim();
         if (nameEl && nameEl.value.trim()) this.streamName = nameEl.value.trim();
-        if (webPortEl && webPortEl.value.trim()) this.gatewayWebPort = Number(webPortEl.value) || 5173;
         this._savePersisted();
 
         // Reconnect-safety: if a stale transport exists (manual re-start while
@@ -422,49 +412,40 @@ export const StreamingUI = {
 
         this._wantStream = true;
 
-        // Try direct WebTransport (CA validation) first — works for real certs.
-        // Falls back to hash pinning via backend proxy for self-signed certs.
-        const wtUrl = `${this.gatewayUrl}?publish=${encodeURIComponent(this.streamName)}`;
-        let connected = false;
-
+        // gatewayUrl is the gateway WEB URL (the page the user browses to).
+        // One proxy fetch at that origin yields the cert hash (hex for
+        // self-signed, null for PKI) AND the WT port — both advertised by
+        // cert-hash.js. We build the WT endpoint from the URL's host + the
+        // discovered port, then connect once with the right cert options.
+        let webHost;
         try {
-            this.transport = new WebTransport(wtUrl);
-            await this.transport.ready;
-            connected = true;
-        } catch (directErr) {
-            // Likely self-signed cert — fetch hash via backend proxy and retry with pinning
-            let hash = null;
-            try {
-                const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(this.gatewayUrl) + '&webPort=' + this.gatewayWebPort, { cache: 'no-store' });
-                if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
-                hash = (await resp.json()).hash ?? null;
-            } catch (e) {
-                this._setStatus('WebTransport failed and cert hash fetch failed: ' + (e && e.message || e));
-                this.isStreaming = false;
-                this._scheduleReconnect();
-                return;
-            }
-            if (!hash) {
-                this._setStatus('WebTransport failed and no cert hash available from gateway');
-                this.isStreaming = false;
-                this._scheduleReconnect();
-                return;
-            }
-            try {
-                this.transport = new WebTransport(wtUrl, {
-                    serverCertificateHashes: [{ algorithm: 'sha-256', value: this._hexToBytes(hash) }],
-                });
-                await this.transport.ready;
-                connected = true;
-            } catch (e) {
-                this._setStatus('WebTransport connect failed: ' + (e && e.message || e));
-                this.isStreaming = false;
-                this._scheduleReconnect();
-                return;
-            }
+            webHost = new URL(this.gatewayUrl).hostname;
+        } catch {
+            this._setStatus('invalid gateway URL');
+            this.isStreaming = false;
+            this._scheduleReconnect();
+            return;
         }
-
-        if (!connected) {
+        let hash = null, wtPort = null;
+        try {
+            const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(this.gatewayUrl), { cache: 'no-store' });
+            if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
+            const j = await resp.json();
+            hash = j.hash ?? null;
+            wtPort = j.wtPort ?? null;
+        } catch (e) {
+            this._setStatus('Cert hash fetch failed: ' + (e && e.message || e));
+            this.isStreaming = false;
+            this._scheduleReconnect();
+            return;
+        }
+        const wtUrl = `https://${webHost}:${wtPort || 4433}/wt?publish=${encodeURIComponent(this.streamName)}`;
+        const wtOpts = hash ? { serverCertificateHashes: [{ algorithm: 'sha-256', value: this._hexToBytes(hash) }] } : undefined;
+        try {
+            this.transport = new WebTransport(wtUrl, wtOpts);
+            await this.transport.ready;
+        } catch (e) {
+            this._setStatus('WebTransport connect failed: ' + (e && e.message || e));
             this.isStreaming = false;
             this._scheduleReconnect();
             return;
