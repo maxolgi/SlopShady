@@ -416,26 +416,18 @@ export const StreamingInputUI = {
         this._setStatus(inputIndex, 'Connecting…');
         this._syncToggleButton(); this._syncToggleAllButton();
 
-        // Fetch cert hash: try direct browser fetch first (works for real-cert
-        // gateways), fall back to backend proxy (for self-signed certs / CORS).
+        // Fetch the gateway's cert-hash.js via backend proxy. The gateway
+        // serves it same-origin on its own web port; SlopShady can't reach it
+        // directly (cross-origin + self-signed cert), so the proxy is the only
+        // path — same data as the gateway's <script src="/cert-hash.js">.
         let hash = null as string | null;
         try {
-            const directResp = await fetch(cfg.url.replace(/\/$/, '') + '/cert-hash.js', { cache: 'no-store' });
-            if (directResp.ok) {
-                const text = await directResp.text();
-                const m = text.match(/CERT_HASH\s*=\s*"([0-9a-fA-F]+)"/);
-                if (m) hash = m[1];
-            }
-        } catch { /* self-signed cert or CORS — fall back to proxy */ }
-        if (!hash) {
-            try {
-                const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(cfg.url), { cache: 'no-store' });
-                if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
-                hash = (await resp.json()).hash ?? null;
-            } catch (e) {
-                this._setStatus(inputIndex, 'Cert hash fetch failed');
-                return;
-            }
+            const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(cfg.url), { cache: 'no-store' });
+            if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
+            hash = (await resp.json()).hash ?? null;
+        } catch (e) {
+            this._setStatus(inputIndex, 'Cert hash fetch failed');
+            return;
         }
 
         entry.handle = mountPlayer(null, {
