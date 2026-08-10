@@ -660,9 +660,12 @@ export const LayerMixer = {
             if (type === 'milkdrop') {
                 menu.classList.add('dropdown__menu--scrollable');
                 itemsHtml = this._buildMilkdropMenuItems();
-            } else {
+            } else if (type === 'shader' || layer?.material?.params?.shaderMode) {
                 menu.classList.remove('dropdown__menu--scrollable');
                 itemsHtml = this._buildShaderMenuItems();
+            } else {
+                menu.classList.remove('dropdown__menu--scrollable');
+                itemsHtml = '';
             }
 
             menu.innerHTML = itemsHtml;
@@ -1281,6 +1284,7 @@ export const LayerMixer = {
         }
         const btn = getEl(`mix-fx-${index}`);
         if (btn) btn.classList.toggle('active', !!params.shaderMode);
+        this._rebuildShaderDropdowns();
         this.sendUpdate();
     },
 
