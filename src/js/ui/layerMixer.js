@@ -1413,6 +1413,14 @@ export const LayerMixer = {
                 fxBtn.style.display = isSupported ? '' : 'none';
                 fxBtn.classList.toggle('active', !!layer.material?.params?.shaderMode);
             }
+            // Shader dropdown: only visible for shader, milkdrop, or FX-enabled layers
+            const shaderBtn = getEl(`mix-shader-dropdown-${i}`);
+            if (shaderBtn) {
+                const wrapper = shaderBtn.closest('.dropdown') || shaderBtn;
+                const matType = layer.material?.type;
+                const showShader = matType === 'shader' || matType === 'milkdrop' || !!layer.material?.params?.shaderMode;
+                wrapper.style.display = showShader ? '' : 'none';
+            }
             if (mixBlendSelected) {
                 const blend = layer.blendMode || 'normal';
                 mixBlendSelected.textContent = blend.charAt(0).toUpperCase() + blend.slice(1);
