@@ -569,7 +569,6 @@ const STATIC_MAP = [
     ['#recompile', 'CODE_COMPILE'],
     ['#timeSliderWrap', 'CODE_TIME'],
     ['#timeSliderFineWrap', 'CODE_TIME_FINE'],
-    ['#codedials-help-btn', 'CODE_HELP'],
 
     ['#midiDropZone', 'PLAYER_DROP'],
     ['#playerPlay', 'PLAYER_PLAY'],
