@@ -1361,9 +1361,16 @@ export const LayerMixer = {
     /** Returns the WebSRT input index routed to this layer, or -1 if none. */
     _layerWebSRTInput(index) {
         const layer = LayerSystem.layers[index];
-        if (!layer || layer.material?.type !== 'websrt') return -1;
-        const idx = layer.material.params?.inputIndex;
-        return Number.isFinite(idx) ? idx : -1;
+        if (!layer) return -1;
+        if (layer.material?.type === 'websrt') {
+            const idx = layer.material.params?.inputIndex;
+            return Number.isFinite(idx) ? idx : -1;
+        }
+        if (layer.material?.type === 'mediaShader' && layer.material.params?.mediaType === 'websrt') {
+            const idx = layer.material.params?.mediaInputIndex;
+            return Number.isFinite(idx) ? idx : -1;
+        }
+        return -1;
     },
 
     toggleBrain(index) {
