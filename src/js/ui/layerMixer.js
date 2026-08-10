@@ -504,6 +504,16 @@ export const LayerMixer = {
             case 'screen':
                 return `<span class="content-label">Fit</span>
                     ${this._buildFitDropdown(prefix, params)}`;
+            case 'websrt': {
+                const currentInput = String(params.inputIndex ?? 0);
+                const inputOptions = [];
+                for (let i = 0; i < 8; i++) {
+                    const name = StreamingInputUI.getInputName(i) || `Input ${i + 1}`;
+                    inputOptions.push({ value: String(i), label: name });
+                }
+                return `<span class="content-label">Input</span>
+                    ${this._dropdownHtml(`${prefix}-srtInput`, inputOptions, currentInput)}`;
+            }
             case 'text':
                 return `<span class="content-label">Text</span>
                     <textarea id="${prefix}-content" rows="2" placeholder="Enter text...">${escapeHtml(source)}</textarea>
@@ -638,15 +648,6 @@ export const LayerMixer = {
         return html;
     },
 
-    _buildWebSRTMenuItems() {
-        let html = '';
-        for (let i = 0; i < 8; i++) {
-            const name = StreamingInputUI.getInputName(i) || `Input ${i + 1}`;
-            html += `<div class="dropdown__item" data-value="websrt:${i}">${escapeHtml(name)}</div>`;
-        }
-        return html;
-    },
-
     _rebuildShaderDropdowns() {
         for (let i = 0; i < 8; i++) {
             const layer = LayerSystem.layers[i];
@@ -659,9 +660,6 @@ export const LayerMixer = {
             if (type === 'milkdrop') {
                 menu.classList.add('dropdown__menu--scrollable');
                 itemsHtml = this._buildMilkdropMenuItems();
-            } else if (type === 'websrt') {
-                menu.classList.remove('dropdown__menu--scrollable');
-                itemsHtml = this._buildWebSRTMenuItems();
             } else {
                 menu.classList.remove('dropdown__menu--scrollable');
                 itemsHtml = this._buildShaderMenuItems();
@@ -674,8 +672,6 @@ export const LayerMixer = {
                     const val = item.dataset.value;
                     if (val.startsWith('milkdrop:')) {
                         this._onMilkdropPresetSelect(i, parseInt(val.split(':')[1]));
-                    } else if (val.startsWith('websrt:')) {
-                        this._onWebSRTInputSelect(i, parseInt(val.split(':')[1]));
                     } else {
                         this.onShaderSelect(i, val);
                     }
@@ -700,19 +696,6 @@ export const LayerMixer = {
             const idx = MilkdropFeature.currentIndex;
             selectedSpan.textContent = MilkdropFeature.getPresetName(idx) || `Preset ${idx}`;
             this._syncDropdownActive(`mix-shader-menu-${layerIndex}`, `milkdrop:${idx}`);
-            return;
-        }
-
-        if (type === 'websrt') {
-            const inputIndex = layer?.material?.params?.inputIndex;
-            if (Number.isFinite(inputIndex)) {
-                const name = StreamingInputUI.getInputName(inputIndex) || `Input ${inputIndex + 1}`;
-                selectedSpan.textContent = name;
-                this._syncDropdownActive(`mix-shader-menu-${layerIndex}`, `websrt:${inputIndex}`);
-            } else {
-                selectedSpan.textContent = '--';
-                this._syncDropdownActive(`mix-shader-menu-${layerIndex}`, 'none');
-            }
             return;
         }
 
@@ -741,27 +724,6 @@ export const LayerMixer = {
         MilkdropFeature.loadPresetByIndex(presetIndex);
         this.syncAllMilkdropLayers(presetIndex);
         this.refreshAllMilkdropDropdowns();
-        this._syncShaderDropdownDisplay(layerIndex);
-        this.sendUpdate();
-    },
-
-    _onWebSRTInputSelect(layerIndex, inputIndex) {
-        if (inputIndex < 0 || inputIndex >= 8) return;
-        const layer = LayerSystem.layers[layerIndex];
-        if (!layer) return;
-        // Release the previous input if any.
-        const oldInput = layer.material?.params?.inputIndex;
-        if (Number.isFinite(oldInput) && oldInput !== inputIndex) {
-            StreamingInputUI.removeLayerTap(oldInput, layerIndex);
-            StreamingInputUI.release(oldInput);
-        }
-        layer.material.type = 'websrt';
-        layer.material.source = `websrt:${inputIndex}`;
-        layer.material.params = { inputIndex };
-        // Acquire the new input + apply current audio settings.
-        StreamingInputUI.acquire(inputIndex);
-        StreamingInputUI.setLayerVolume(inputIndex, layerIndex, layer.volume ?? 1.0);
-        StreamingInputUI.setLayerMute(inputIndex, layerIndex, !!layer.audioMuted);
         this._syncShaderDropdownDisplay(layerIndex);
         this.sendUpdate();
     },
@@ -853,6 +815,10 @@ export const LayerMixer = {
             case 'webcam':
             case 'screen':
                 return { source: '', params: { fit: this._readDropdownValue(`${prefix}-fit`) || 'contain' } };
+            case 'websrt': {
+                const inputIndex = parseInt(this._readDropdownValue(`${prefix}-srtInput`), 10) || 0;
+                return { source: null, params: { inputIndex } };
+            }
             case 'text': {
                 const contentInput = getEl(`${prefix}-content`);
                 const fontInput = getEl(`${prefix}-font`);
@@ -990,6 +956,7 @@ export const LayerMixer = {
             this._wireAutoSave(`mix-edit-source-container-${layerIndex}`, () => {
                 const values = this._readSourceValues(type, `edit-${type}-${layerIndex}`);
                 if (values) {
+                    const oldInput = layer.material.params?.inputIndex;
                     if (values.source !== null) layer.material.source = values.source;
                     layer.material.params = { ...layer.material.params, ...values.params };
                     if (type === 'milkdrop') {
@@ -1009,6 +976,21 @@ export const LayerMixer = {
                             values.params.fit
                         );
                         this.refreshAllMilkdropDropdowns();
+                    }
+                    if (type === 'websrt') {
+                        const newInput = values.params.inputIndex;
+                        if (Number.isFinite(oldInput) && oldInput !== newInput) {
+                            StreamingInputUI.removeLayerTap(oldInput, layerIndex);
+                            StreamingInputUI.release(oldInput);
+                        }
+                        if (!Number.isFinite(oldInput) || oldInput !== newInput) {
+                            StreamingInputUI.acquire(newInput);
+                            StreamingInputUI.setLayerVolume(newInput, layerIndex, layer.volume ?? 1.0);
+                            StreamingInputUI.setLayerMute(newInput, layerIndex, !!layer.audioMuted);
+                        }
+                        if (!layer.material.params?.shaderMode) {
+                            layer.material.source = `websrt:${newInput}`;
+                        }
                     }
                 }
                 // Ensure audio textures are enabled for visualizer layers
