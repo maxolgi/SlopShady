@@ -707,6 +707,11 @@ export const AUDIO_FFT_SIZE = 256;
 export const AUDIO_TEXTURE_WAVEFORM_UNIT = 3;
 export const AUDIO_TEXTURE_SPECTRUM_UNIT = 4;
 
+// =============== LAYER MEDIA TEXTURE UNITS ===============
+export const LAYER_VIDEO_TEXTURE_UNIT = 5;
+export const LAYER_IMAGE_TEXTURE_UNIT = 6;
+export const LAYER_SRT_TEXTURE_UNIT = 7;
+
 // =============== VISUALIZER SHADERS ===============
 export const VISUALIZER_WAVEFORM_FS = `#version 300 es
 precision highp float;
@@ -1122,6 +1127,30 @@ void main() {
     fragColor = vec4(col, 1.0);
 }`;
 
+// =============== DEFAULT MEDIA SHADER CODE ===============
+// Cover-fit display shaders for mediaShader layers. Each samples its respective
+// per-layer media texture with aspect-correct "cover" fit (mirrors IMAGE_FS).
+// The body is identical except for the sampler name.
+function _mediaCoverShader(sampler) {
+    return `// Media Shader — cover-fit display. Edit me!
+void main() {
+    vec2 uv = gl_FragCoord.xy / iResolution.xy;
+    float imgA = u_layerTexRes.x / max(u_layerTexRes.y, 1.0);
+    float canA = iResolution.x / iResolution.y;
+    vec2 scale = vec2(1.0);
+    if (imgA > canA) scale.x = canA / max(imgA, 0.0001);
+    else scale.y = imgA / max(canA, 0.0001);
+    uv = (uv - 0.5) / scale + 0.5;
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
+        fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    else
+        fragColor = texture(${sampler}, uv);
+}`;
+}
+export const DEFAULT_MEDIA_VIDEO_SHADER = _mediaCoverShader('iLayerVideo');
+export const DEFAULT_MEDIA_IMAGE_SHADER = _mediaCoverShader('iLayerImage');
+export const DEFAULT_MEDIA_SRT_SHADER = _mediaCoverShader('iLayerSRT');
+
 // =============== AI PROMPT CONSTANTS ===============
 
 export const AI_SHADER_BASE_PROMPT = `=== COMPLETE GLSL ES 3.0 REFERENCE ===
@@ -1202,6 +1231,19 @@ VIDEO INPUTS (sampler2D, available when Camera/Screen is enabled):
 - iScreen: live screen capture
   vec4 cam = texture(iVideo, uv);  // uv is vec2(0.0-1.0)
   vec4 screen = texture(iScreen, uv);
+
+PER-LAYER MEDIA (sampler2D, available on Media Shader layers when a media source is selected):
+- iLayerVideo: video file texture (Media Shader layer with Video source)
+- iLayerImage: image file texture (Media Shader layer with Image source)
+- iLayerSRT: WebSRT live stream texture (Media Shader layer with WebSRT source)
+- u_layerTexRes: vec2 — resolution of the active media texture (x, y in pixels)
+  vec4 media = texture(iLayerVideo, uv);  // sample the video/image/stream
+  // Cover-fit example using u_layerTexRes:
+  float imgA = u_layerTexRes.x / max(u_layerTexRes.y, 1.0);
+  float canA = iResolution.x / iResolution.y;
+  vec2 scale = vec2(1.0);
+  if (imgA > canA) scale.x = canA / imgA; else scale.y = imgA / canA;
+  uv = (uv - 0.5) / scale + 0.5;
 
 AUDIO TEXTURES (sampler2D, LUMINANCE format):
 - u_audioWaveform: 256-sample time-domain waveform, values ~0.0-1.0 centered at 0.5

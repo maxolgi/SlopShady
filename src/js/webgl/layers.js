@@ -4,7 +4,7 @@
  */
 
 import { state, getEl } from '../state.js';
-import { BLEND_MODES, COMPOSITE_VS, COMPOSITE_FS, BACKGROUND_FS, PASSTHROUGH_FS, IMAGE_FS, FEEDBACK_FS, MAX_VOICES, VISUALIZER_TYPES, AUDIO_TEXTURE_WAVEFORM_UNIT, AUDIO_TEXTURE_SPECTRUM_UNIT, LAYER_PARAM_UNIFORMS } from '../config.js';
+import { BLEND_MODES, COMPOSITE_VS, COMPOSITE_FS, BACKGROUND_FS, PASSTHROUGH_FS, IMAGE_FS, FEEDBACK_FS, MAX_VOICES, VISUALIZER_TYPES, AUDIO_TEXTURE_WAVEFORM_UNIT, AUDIO_TEXTURE_SPECTRUM_UNIT, LAYER_VIDEO_TEXTURE_UNIT, LAYER_IMAGE_TEXTURE_UNIT, LAYER_SRT_TEXTURE_UNIT, LAYER_PARAM_UNIFORMS } from '../config.js';
 import { FramebufferManager } from './framebuffers.js';
 import { VoiceManager } from './voices.js';
 import { EGSystem } from '../features/envelopeGenerators.js';
@@ -794,6 +794,9 @@ export const LayerSystem = {
             gl.uniform1i(layer.audioSpectrumLoc, AUDIO_TEXTURE_SPECTRUM_UNIT);
         }
 
+        // Per-layer media textures (mediaShader layers)
+        this._bindLayerMedia(layer);
+
         this._drawQuad(layer.posLoc);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     },
@@ -807,7 +810,101 @@ export const LayerSystem = {
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     },
-    
+
+    /**
+     * Bind per-layer media textures for mediaShader layers.
+     * Keyed on layer.material.params.mediaType:
+     *   'video'  → upload + bind iLayerVideo (unit 5)
+     *   'image'  → bind iLayerImage (unit 6)
+     *   'websrt' → upload latest VideoFrame + bind iLayerSRT (unit 7)
+     * Also sets u_layerTexRes to the active media texture's resolution.
+     */
+    _bindLayerMedia(layer) {
+        const gl = state.gl;
+        if (!gl || !layer || layer.material?.type !== 'mediaShader') return;
+        const params = layer.material?.params;
+        if (!params) return;
+        const mt = params.mediaType;
+
+        if (mt === 'video' && layer.layerVideoLoc) {
+            const url = params.mediaUrl;
+            if (!url) return;
+            const vd = this._ensureVideoTexture(url, params);
+            if (!vd?.texture) return;
+            if (vd.ready && vd.video && !vd.video.paused && vd.video.currentTime > 0) {
+                gl.bindTexture(gl.TEXTURE_2D, vd.texture);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, vd.video);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+            }
+            gl.activeTexture(gl.TEXTURE0 + LAYER_VIDEO_TEXTURE_UNIT);
+            gl.bindTexture(gl.TEXTURE_2D, vd.texture);
+            gl.uniform1i(layer.layerVideoLoc, LAYER_VIDEO_TEXTURE_UNIT);
+            if (layer.layerTexResLoc) gl.uniform2f(layer.layerTexResLoc, vd.width, vd.height);
+        } else if (mt === 'image' && layer.layerImageLoc) {
+            const url = params.mediaUrl;
+            if (!url) return;
+            const id = this._ensureImageTexture(url);
+            if (!id?.texture) return;
+            gl.activeTexture(gl.TEXTURE0 + LAYER_IMAGE_TEXTURE_UNIT);
+            gl.bindTexture(gl.TEXTURE_2D, id.texture);
+            gl.uniform1i(layer.layerImageLoc, LAYER_IMAGE_TEXTURE_UNIT);
+            if (layer.layerTexResLoc) gl.uniform2f(layer.layerTexResLoc, id.width, id.height);
+        } else if (mt === 'websrt' && layer.layerSrtLoc) {
+            const inputIndex = params.mediaInputIndex;
+            if (!Number.isFinite(inputIndex)) return;
+            const entry = this._uploadLayerSrtFrame(layer, inputIndex);
+            if (!entry) return;
+            gl.activeTexture(gl.TEXTURE0 + LAYER_SRT_TEXTURE_UNIT);
+            gl.bindTexture(gl.TEXTURE_2D, entry.tex);
+            gl.uniform1i(layer.layerSrtLoc, LAYER_SRT_TEXTURE_UNIT);
+            if (layer.layerTexResLoc) gl.uniform2f(layer.layerTexResLoc, entry.w || 0, entry.h || 0);
+        }
+    },
+
+    /**
+     * Upload the latest WebSRT VideoFrame for a layer into its per-layer GL
+     * texture. Shared by both renderWebSRT (websrt layer type) and
+     * _bindLayerMedia (mediaShader layer type).
+     * @returns {object|null} entry { tex, w, h, lastFrame } or null
+     */
+    _uploadLayerSrtFrame(layer, inputIndex) {
+        const gl = state.gl;
+        if (!gl || !Number.isFinite(inputIndex)) return null;
+        const frame = StreamingInputUI.latestVideoFrame(inputIndex);
+        if (!frame) return null;
+
+        if (!this._websrtTextures) this._websrtTextures = new Map();
+        let entry = this._websrtTextures.get(layer.index);
+        if (!entry) {
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            entry = { tex, w: 0, h: 0, lastFrame: null };
+            this._websrtTextures.set(layer.index, entry);
+        }
+
+        if (entry.lastFrame !== frame) {
+            gl.bindTexture(gl.TEXTURE_2D, entry.tex);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            const fw = frame.codedWidth || frame.displayWidth || entry.w;
+            const fh = frame.codedHeight || frame.displayHeight || entry.h;
+            if (fw !== entry.w || fh !== entry.h || entry.w === 0) {
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+                entry.w = fw;
+                entry.h = fh;
+            } else {
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+            }
+            entry.lastFrame = frame;
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        }
+        return entry;
+    },
+
     /**
      * Render audio visualizer material for a layer
      */
@@ -1183,45 +1280,9 @@ export const LayerSystem = {
         if (!gl || !this.imageProgram) return;
         const inputIndex = layer.material?.params?.inputIndex;
         if (!Number.isFinite(inputIndex)) { this._clearLayerFBO(layerFBO); return; }
-        const frame = StreamingInputUI.latestVideoFrame(inputIndex);
-        if (!frame) { this._clearLayerFBO(layerFBO); return; }
 
-        // Lazy per-layer texture cache.
-        if (!this._websrtTextures) this._websrtTextures = new Map();
-        let entry = this._websrtTextures.get(layer.index);
-        if (!entry) {
-            const tex = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, tex);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            entry = { tex, w: 0, h: 0, lastFrame: null };
-            this._websrtTextures.set(layer.index, entry);
-        }
-
-        // Upload only when a new VideoFrame is available. The PTS-paced
-        // `latestVideoFrame` returns the same reference across multiple RAFs
-        // when source fps < display fps (e.g., 30 fps OBS on a 60 Hz display
-        // returns the same frame for ~2 RAFs); re-uploading the identical
-        // bytes every RAF wastes GPU/host bandwidth and main-thread time.
-        // Identity compare is correct — `displayedFrame` is a stable
-        // reference until `_advanceDisplayedFrame` shifts it.
-        if (entry.lastFrame !== frame) {
-            gl.bindTexture(gl.TEXTURE_2D, entry.tex);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            const fw = frame.codedWidth || frame.displayWidth || entry.w;
-            const fh = frame.codedHeight || frame.displayHeight || entry.h;
-            if (fw !== entry.w || fh !== entry.h || entry.w === 0) {
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
-                entry.w = fw;
-                entry.h = fh;
-            } else {
-                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, frame);
-            }
-            entry.lastFrame = frame;
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        }
+        const entry = this._uploadLayerSrtFrame(layer, inputIndex);
+        if (!entry) { this._clearLayerFBO(layerFBO); return; }
 
         const fitModeInt = {
             'cover': 0, 'contain': 1, 'stretch': 2,
