@@ -401,8 +401,24 @@ export const StreamingInputUI = {
         // field (no 'input' event would have fired for the final value).
         if (inputIndex === this._selectedInput) this._saveSelected();
         const cfg = this._readConfig(inputIndex);
-        if (!cfg.url || !cfg.name) {
-            this._setStatus(inputIndex, 'missing url/name');
+        if (!cfg.url) {
+            this._setStatus(inputIndex, 'missing gateway URL');
+            this._syncToggleButton(); this._syncToggleAllButton();
+            return;
+        }
+        // cfg.url is the gateway WEB URL — the page the user browses to
+        // (e.g. https://host:8443/?stream=cv-1). The stream name comes from the
+        // explicit field if set, else from the URL's ?stream=.
+        let webUrl: URL;
+        try { webUrl = new URL(cfg.url); }
+        catch {
+            this._setStatus(inputIndex, 'invalid gateway URL');
+            this._syncToggleButton(); this._syncToggleAllButton();
+            return;
+        }
+        const stream = cfg.name || webUrl.searchParams.get('stream') || '';
+        if (!stream) {
+            this._setStatus(inputIndex, 'missing stream name');
             this._syncToggleButton(); this._syncToggleAllButton();
             return;
         }
@@ -416,15 +432,17 @@ export const StreamingInputUI = {
         this._setStatus(inputIndex, 'Connecting…');
         this._syncToggleButton(); this._syncToggleAllButton();
 
-        // Fetch the gateway's cert-hash.js via backend proxy. The gateway
-        // serves it same-origin on its own web port; SlopShady can't reach it
-        // directly (cross-origin + self-signed cert), so the proxy is the only
-        // path — same data as the gateway's <script src="/cert-hash.js">.
+        // One proxy fetch at the web origin yields the cert hash (hex for
+        // self-signed, null for PKI) AND the WT port — both advertised by
+        // cert-hash.js. We then mount against the WT endpoint directly.
         let hash = null as string | null;
+        let wtPort = null as number | null;
         try {
             const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(cfg.url), { cache: 'no-store' });
             if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
-            hash = (await resp.json()).hash ?? null;
+            const j = await resp.json();
+            hash = j.hash ?? null;
+            wtPort = j.wtPort ?? null;
         } catch (e) {
             this._setStatus(inputIndex, 'Cert hash fetch failed');
             return;
@@ -433,8 +451,9 @@ export const StreamingInputUI = {
         entry.handle = mountPlayer(null, {
             decodeInWorker: true,
             workerUrl: '/static/vendor/WebSRT/web/src/worker.js',
-            url: cfg.url,
-            stream: cfg.name,
+            host: webUrl.hostname,
+            port: wtPort || 4433,
+            stream,
             certHash: hash,
             latencyMs: cfg.latency,
         });

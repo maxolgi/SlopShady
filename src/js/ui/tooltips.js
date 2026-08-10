@@ -76,7 +76,7 @@ const T = {
     STREAM_INPUT_SELECTOR: 'Which of the 8 WebSRT input slots to configure (1-8). Each slot stores its own gateway URL / stream name / latency.',
     STREAM_INPUT_TOGGLE: 'Start or stop the WebSRT connection for the selected input. Connection also opens automatically when a layer routes here.',
     STREAM_INPUT_TOGGLE_ALL: 'Start all configured inputs, or stop all running inputs.',
-    STREAM_INPUT_URL: 'WebTransport gateway URL for the selected input (e.g. https://host:port/wt). My code appends ?stream=<name> automatically.',
+    STREAM_INPUT_URL: 'Gateway web URL for the selected input — the page you browse to (e.g. https://host:8443/?stream=name). The WT port and cert hash are discovered automatically from cert-hash.js.',
     STREAM_INPUT_NAME: 'Stream name to subscribe to (?stream=<name>) for the selected input. Must match the name the publisher sends to the gateway.',
     STREAM_INPUT_LATENCY: 'SRT TSBPD latency (ms) for the selected input — rule of thumb: 4× WT RTT',
     STREAM_INPUT_STATUS: 'Live status of the selected input (idle / connecting / live · mbps · RTT · loss)',

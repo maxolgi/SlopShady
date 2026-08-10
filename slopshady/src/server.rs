@@ -111,12 +111,12 @@ async fn api_live_tuning_stop(state: State<Arc<AppState>>) -> axum::Json<Value> 
     crate::live_tuning::live_tuning_stop(state.0).await
 }
 
-/// Proxy the WebSRT gateway's cert hash so the browser fetches same-origin
-/// (avoids cross-origin/CORS + self-signed-cert trust issues on LAN). The user
-/// enters the WebTransport URL, but `cert-hash.js` is served by the gateway's
-/// built-in HTTPS web server on a SEPARATE port (default 5173, not the WT
-/// port 4433) — see vendor/WebSRT/docs/embedding.md. We derive the host from
-/// the entered URL; the browser sends the gateway's web port (default 5173).
+/// Proxy the WebSRT gateway's `cert-hash.js`. The caller passes the gateway's
+/// WEB URL (the page the user browses to); `cert-hash.js` is served same-origin
+/// on that host:port. The body advertises both `CERT_HASH` (hex for self-signed
+/// pinning, null for PKI/mkcert) and `WT_PORT` (the WebTransport port), so one
+/// fetch tells the caller everything needed to build the WT URL and pin the
+/// cert. See vendor/WebSRT/docs/embedding.md.
 ///
 /// `danger_accept_invalid_certs(true)` is acceptable here because the real
 /// trust anchor is the WebTransport `serverCertificateHashes` pinning done
@@ -133,15 +133,18 @@ async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Jso
     let parsed = match url::Url::parse(&params.url) {
         Ok(u) => u,
         Err(_) => {
-            return axum::Json(serde_json::json!({ "hash": null, "error": "invalid gateway url" }))
+            return axum::Json(serde_json::json!({ "hash": null, "wtPort": null, "error": "invalid gateway url" }))
         }
     };
-    // cert-hash.js lives on the gateway's web port (configurable; default
-    // 5173), not the WT port the user typed. The browser sends the web port;
-    // the host is derived from the entered WT URL.
+    // cert-hash.js is served same-origin on the gateway's web server. The
+    // input side passes a web URL (port in the URL itself); the legacy
+    // `web_port` param (publish side, which still passes a WT URL) overrides.
     let host = parsed.host_str().unwrap_or("127.0.0.1");
-    let web_port = params.web_port.unwrap_or(5173);
-    let cert_url = format!("https://{}:{}/cert-hash.js", host, web_port);
+    let port = match params.web_port {
+        Some(p) => p,
+        None => parsed.port_or_known_default().unwrap_or(443),
+    };
+    let cert_url = format!("https://{}:{}/cert-hash.js", host, port);
     let client = match reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(std::time::Duration::from_secs(4))
@@ -150,7 +153,7 @@ async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Jso
         Ok(c) => c,
         Err(e) => {
             return axum::Json(
-                serde_json::json!({ "hash": null, "error": format!("client build: {e}") }),
+                serde_json::json!({ "hash": null, "wtPort": null, "error": format!("client build: {e}") }),
             )
         }
     };
@@ -158,13 +161,16 @@ async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Jso
     match client.get(&cert_url).send().await {
         Ok(r) if r.status().is_success() => {
             let text = r.text().await.unwrap_or_default();
-            axum::Json(serde_json::json!({ "hash": extract_cert_hash(&text) }))
+            axum::Json(serde_json::json!({
+                "hash": extract_cert_hash(&text),
+                "wtPort": extract_wt_port(&text),
+            }))
         }
         Ok(r) => axum::Json(
-            serde_json::json!({ "hash": null, "error": format!("upstream status {} for {}", r.status(), cert_url) }),
+            serde_json::json!({ "hash": null, "wtPort": null, "error": format!("upstream status {} for {}", r.status(), cert_url) }),
         ),
         Err(e) => axum::Json(
-            serde_json::json!({ "hash": null, "error": format!("fetch failed for {cert_url}: {e}") }),
+            serde_json::json!({ "hash": null, "wtPort": null, "error": format!("fetch failed for {cert_url}: {e}") }),
         ),
     }
 }
@@ -181,4 +187,14 @@ fn extract_cert_hash(text: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Parse `WT_PORT = <number>;` from the cert-hash.js body. None when absent
+/// (older gateways that don't advertise it — caller falls back to 4433).
+fn extract_wt_port(text: &str) -> Option<u16> {
+    let idx = text.find("WT_PORT")?;
+    let after = text[idx + "WT_PORT".len()..].trim_start();
+    let after = after.strip_prefix('=')?.trim_start();
+    let end = after.find(|c: char| !c.is_ascii_digit())?;
+    after[..end].parse().ok()
 }
