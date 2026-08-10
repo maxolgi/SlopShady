@@ -18,7 +18,7 @@ export const state = {
     isPaused: false,
     manualTime: 0,
     loopSeconds: 25.13,
-    chatMode: false,
+    llmMode: 'shader',
     conversationHistory: [],
     isLiveTuning: false,
     liveTuningIteration: 0,

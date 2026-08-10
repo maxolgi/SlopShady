@@ -63,7 +63,7 @@ export const LLM = {
         
         const apiUrl = getEl('apiUrl').value.trim();
         const model = includeImage ? getEl('modelNameImage').value.trim() : getEl('modelNameText').value.trim();
-        const roleTemplate = state.chatMode ? AI_CHAT_PROMPT_ROLE : AI_SYSTEM_PROMPT_ROLE;
+        const roleTemplate = state.llmMode === 'chat' ? AI_CHAT_PROMPT_ROLE : AI_SYSTEM_PROMPT_ROLE;
         const shaderCode = getEl('shaderCode').value;
         
         const fullSystemPrompt = AI_SHADER_BASE_PROMPT + '\n\n' + roleTemplate.replace('[SEND_SHADER_CODE]', shaderCode);
@@ -284,7 +284,7 @@ export const LLM = {
             getEl('response').insertAdjacentHTML('beforeend', responseHtml);
         }
 
-        if (state.chatMode) {
+        if (state.llmMode === 'chat') {
             status.innerHTML = '✅ Response received.';
             return false;
         } else {

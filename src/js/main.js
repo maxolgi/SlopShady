@@ -225,9 +225,10 @@ const SlopShady = {
         });
         
         // Mode buttons
-        getEl('modeShader').addEventListener('click', () => this.setMode(false));
-        getEl('modeChat').addEventListener('click', () => this.setMode(true));
-        this.setMode(false);
+        getEl('modeShader').addEventListener('click', () => this.setLLMMode('shader'));
+        getEl('modeChat').addEventListener('click', () => this.setLLMMode('chat'));
+        getEl('modeLiveTuning').addEventListener('click', () => this.setLLMMode('livetuning'));
+        this.setLLMMode(state.llmMode);
         
         // LLM buttons
         getEl('askLLM').addEventListener('click', () => LLM.send(false));
@@ -254,6 +255,9 @@ const SlopShady = {
         // User message
         getEl('userMessage').addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) LLM.send();
+        });
+        getEl('liveTuningPrompt').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) LiveTuning.start();
         });
         
         // Shader code input
@@ -307,12 +311,24 @@ const SlopShady = {
         }
     },
     
-    setMode(mode) {
-        state.chatMode = mode;
-        getEl('modeShader').classList.toggle('active', !mode);
-        getEl('modeShader').classList.toggle('inactive', !!mode);
-        getEl('modeChat').classList.toggle('active', !!mode);
-        getEl('modeChat').classList.toggle('inactive', !mode);
+    setLLMMode(mode) {
+        state.llmMode = mode;
+
+        const shaderBtn = getEl('modeShader');
+        const chatBtn = getEl('modeChat');
+        const ltBtn = getEl('modeLiveTuning');
+        shaderBtn.classList.toggle('active', mode === 'shader');
+        shaderBtn.classList.toggle('inactive', mode !== 'shader');
+        chatBtn.classList.toggle('active', mode === 'chat');
+        chatBtn.classList.toggle('inactive', mode !== 'chat');
+        ltBtn.classList.toggle('active', mode === 'livetuning');
+        ltBtn.classList.toggle('inactive', mode !== 'livetuning');
+
+        const isLT = mode === 'livetuning';
+        getEl('userMessage').classList.toggle('hidden', isLT);
+        getEl('liveTuningPrompt').classList.toggle('hidden', !isLT);
+        getEl('llmButtons').classList.toggle('hidden', isLT);
+        getEl('liveTuningButtons').classList.toggle('hidden', !isLT);
     }
 };
 

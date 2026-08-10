@@ -28,7 +28,7 @@ export function saveState() {
         liveTuningMaxIterations: getEl('liveTuningMaxIterations').value,
         bearerKey: getEl('bearerKey').value,
         codeDialOriginals: state.codeDialOriginals,
-        chatMode: state.chatMode,
+        llmMode: state.llmMode,
         conversationHistory: state.conversationHistory,
         modulationRoutes: state.modulationRoutes,
         layerModulationMatrices: state.layerModulationMatrices,
@@ -144,7 +144,11 @@ export function loadState(data) {
         state.codeDialOriginals = data.codeDialOriginals;
         Object.assign(state.codeDialValues, data.codeDialOriginals);
     }
-    if (data.chatMode !== undefined) state.chatMode = data.chatMode;
+    if (data.llmMode) {
+        state.llmMode = data.llmMode;
+    } else if (data.chatMode !== undefined) {
+        state.llmMode = data.chatMode ? 'chat' : 'shader';
+    }
     if (data.conversationHistory) state.conversationHistory = data.conversationHistory;
     if (data.modulationRoutes) {
         state.modulationRoutes = data.modulationRoutes;

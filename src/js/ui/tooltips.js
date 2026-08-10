@@ -245,6 +245,7 @@ const T = {
 
     LLM_MODE_SHADER: 'Shader mode — LLM generates GLSL fragment shader code',
     LLM_MODE_CHAT: 'Chat mode — LLM general conversation',
+    LLM_MODE_LIVE_TUNING: 'Live Tuning mode — iterative AI shader refinement with screenshot feedback',
     LLM_SEND: 'Send message to LLM · Ctrl+Enter · click while pending = cancel',
     LLM_SEND_IMAGE: 'Capture screenshot and send with message for visual analysis',
     LLM_CLEAR: 'Clear conversation history',
@@ -702,6 +703,7 @@ const STATIC_MAP = [
 
     ['#modeShader', 'LLM_MODE_SHADER'],
     ['#modeChat', 'LLM_MODE_CHAT'],
+    ['#modeLiveTuning', 'LLM_MODE_LIVE_TUNING'],
     ['#askLLM', 'LLM_SEND'],
     ['#askLLMWithImage', 'LLM_SEND_IMAGE'],
     ['#clearHistory', 'LLM_CLEAR'],
