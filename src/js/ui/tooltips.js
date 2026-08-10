@@ -25,7 +25,7 @@ const T = {
     MIX_MIDI_DEVICE: 'Select which MIDI input device to listen to, or All MIDI Devices',
     MIX_DEVICE_EXPAND: 'Camera and monitor device selection',
     MIX_BG_EXPAND: 'Background color, source type, and image/video settings',
-    MIX_EDIT_EXPAND: 'Per-layer source material editor',
+    MIX_EDIT_EXPAND: 'Per-layer source material config',
     MIX_CONTROLS_EXPAND: 'Layer parameters: brightness, speed, position, scale, rotation, etc.',
     MIX_MASK_EXPAND: 'Layer mask: radius, center position, softness/feather',
     MIX_PLAYLIST_EXPAND: 'Shader playlist sequencer with crossfade transitions',
