@@ -27,7 +27,6 @@ const TYPE_OPTIONS = [
     { value: 'milkdrop', label: 'Milkdrop' },
     { value: 'scanimate', label: 'Scanimate' },
     { value: 'websrt', label: 'WebSRT' },
-    { value: 'mediaShader', label: 'Media Shader' },
 ];
 
 const BLEND_OPTIONS = [
@@ -147,6 +146,7 @@ export const LayerMixer = {
                         <button class="tool-btn" id="mix-show-${i}" data-tooltip="${escapeAttr(ti('LAYER_SHOW', {n}))}">Hide</button>
                     </div>
                     <button class="tool-btn" id="mix-brain-${i}" data-tooltip="${escapeAttr(ti('MIX_BRAIN_TOGGLE', {n}))}">Brain</button>
+                    <button class="tool-btn" id="mix-fx-${i}" data-tooltip="${escapeAttr(ti('MIX_FX_TOGGLE', {n}))}">FX</button>
                     <div class="slider" id="mix-opacity-slider-${i}" data-tooltip="${escapeAttr(ti('LAYER_OPACITY', {n}))}">
                         <div class="slider__header">
                             <span class="slider__label">Opacity</span>
@@ -264,6 +264,10 @@ export const LayerMixer = {
             const brainBtn = getEl(`mix-brain-${i}`);
             if (brainBtn) {
                 brainBtn.addEventListener('click', () => this.toggleBrain(idx));
+            }
+            const fxBtn = getEl(`mix-fx-${i}`);
+            if (fxBtn) {
+                fxBtn.addEventListener('click', () => this.toggleShaderMode(idx));
             }
             
             // Opacity slider
@@ -480,33 +484,6 @@ export const LayerMixer = {
             case 'solid':
             case 'shader':
                 return '';
-            case 'mediaShader': {
-                const mediaType = params.mediaType || 'video';
-                const cleanUrl = (params.mediaUrl && !params.mediaUrl.startsWith('#')) ? escapeHtml(params.mediaUrl) : '';
-                let html = `<span class="content-label">Media</span>
-                    ${this._dropdownHtml(`${prefix}-mediaType`, [
-                        { value: 'video', label: 'Video' },
-                        { value: 'image', label: 'Image' },
-                        { value: 'websrt', label: 'WebSRT' },
-                    ], mediaType)}`;
-                if (mediaType === 'video' || mediaType === 'image') {
-                    const accept = mediaType === 'video' ? 'video/*' : 'image/*';
-                    html += `<span class="content-label">URL</span>
-                        <input type="text" id="${prefix}-url" placeholder="https://..." value="${cleanUrl}">
-                        <span class="content-label">File</span>
-                        <input type="file" id="${prefix}-file" accept="${accept}">`;
-                } else if (mediaType === 'websrt') {
-                    const currentInput = String(params.mediaInputIndex ?? 0);
-                    const inputOptions = [];
-                    for (let i = 0; i < 8; i++) {
-                        const name = StreamingInputUI.getInputName(i) || `Input ${i + 1}`;
-                        inputOptions.push({ value: String(i), label: name });
-                    }
-                    html += `<span class="content-label">Input</span>
-                        ${this._dropdownHtml(`${prefix}-srtInput`, inputOptions, currentInput)}`;
-                }
-                return html;
-            }
             case 'image':
                 return `<span class="content-label">URL</span>
                     <input type="text" id="${prefix}-url" placeholder="https://..." value="${cleanSource}">
@@ -787,69 +764,6 @@ export const LayerMixer = {
         this.sendUpdate();
     },
 
-    /**
-     * Handle media source changes for mediaShader layers.
-     * - Swaps the default shader when mediaType changes (if shader is still a default).
-     * - Manages WebSRT streaming input refcounting.
-     * - Re-renders source controls when mediaType changes (to show relevant inputs).
-     */
-    _onMediaShaderSourceChange(layerIndex, newParams) {
-        const layer = LayerSystem.layers[layerIndex];
-        if (!layer) return;
-        const newType = newParams.mediaType;
-        const oldType = layer._lastMediaType;
-
-        // WebSRT refcounting: release old input if moving away from websrt
-        if (oldType === 'websrt' && newType !== 'websrt') {
-            const oldInput = layer._lastMediaInputIndex;
-            if (Number.isFinite(oldInput)) {
-                StreamingInputUI.removeLayerTap(oldInput, layerIndex);
-                StreamingInputUI.release(oldInput);
-            }
-        }
-        // WebSRT refcounting: acquire input if moving to websrt or changing input
-        if (newType === 'websrt') {
-            const newInput = newParams.mediaInputIndex ?? 0;
-            const oldInput = (oldType === 'websrt') ? layer._lastMediaInputIndex : null;
-            if (Number.isFinite(oldInput) && oldInput !== newInput) {
-                StreamingInputUI.removeLayerTap(oldInput, layerIndex);
-                StreamingInputUI.release(oldInput);
-            }
-            if (!Number.isFinite(oldInput) || oldInput !== newInput) {
-                StreamingInputUI.acquire(newInput);
-                StreamingInputUI.setLayerVolume(newInput, layerIndex, layer.volume ?? 1.0);
-                StreamingInputUI.setLayerMute(newInput, layerIndex, !!layer.audioMuted);
-            }
-            layer._lastMediaInputIndex = newInput;
-        }
-        layer._lastMediaType = newType;
-
-        // Auto-swap default shader when mediaType changes
-        if (oldType && oldType !== newType) {
-            const defaults = {
-                video: DEFAULT_MEDIA_VIDEO_SHADER,
-                image: DEFAULT_MEDIA_IMAGE_SHADER,
-                websrt: DEFAULT_MEDIA_SRT_SHADER,
-            };
-            const oldDefault = defaults[oldType];
-            const newDefault = defaults[newType];
-            if (oldDefault && newDefault && layer.material.source === oldDefault) {
-                layer.material.source = newDefault;
-                if (layerIndex === state.selectedLayer) {
-                    getEl('shaderCode').value = newDefault;
-                    CodeDials.render();
-                }
-                if (window.WebGL) {
-                    if (layerIndex === state.selectedLayer) window.WebGL.initShader();
-                    else window.WebGL.compileForLayer(layerIndex);
-                }
-            }
-            // Re-render source controls to show relevant inputs
-            const container = getEl(`mix-edit-source-container-${layerIndex}`);
-            if (container) this.renderLayerSourceControls(layerIndex, container);
-        }
-    },
-
     async onShaderSelect(layerIndex, value) {
         const layer = LayerSystem.layers[layerIndex];
         if (!layer) return;
@@ -884,7 +798,7 @@ export const LayerMixer = {
 
         if (!code) return;
 
-        if (layer.material.type !== 'mediaShader') {
+        if (!layer.material.params?.shaderMode) {
             layer.material.type = 'shader';
         }
         layer.material.source = code;
@@ -916,24 +830,6 @@ export const LayerMixer = {
 
     _readSourceValues(type, prefix) {
         switch (type) {
-            case 'mediaShader': {
-                const mediaType = this._readDropdownValue(`${prefix}-mediaType`) || 'video';
-                const params = { mediaType };
-                if (mediaType === 'video' || mediaType === 'image') {
-                    const urlInput = getEl(`${prefix}-url`);
-                    const fileInput = getEl(`${prefix}-file`);
-                    let mediaUrl = '';
-                    if (fileInput && fileInput.files.length > 0) {
-                        mediaUrl = URL.createObjectURL(fileInput.files[0]);
-                    } else if (urlInput) {
-                        mediaUrl = urlInput.value;
-                    }
-                    params.mediaUrl = mediaUrl;
-                } else if (mediaType === 'websrt') {
-                    params.mediaInputIndex = parseInt(this._readDropdownValue(`${prefix}-srtInput`), 10) || 0;
-                }
-                return { source: null, params };
-            }
             case 'image':
             case 'video': {
                 const urlInput = getEl(`${prefix}-url`);
@@ -944,7 +840,13 @@ export const LayerMixer = {
                 } else if (urlInput) {
                     source = urlInput.value;
                 }
-                return { source, params: { fit: this._readDropdownValue(`${prefix}-fit`) || 'contain' } };
+                const fit = this._readDropdownValue(`${prefix}-fit`) || 'contain';
+                const layerIdx = parseInt(prefix.split('-').pop(), 10);
+                const shaderMode = LayerSystem.layers[layerIdx]?.material?.params?.shaderMode;
+                if (shaderMode) {
+                    return { source: null, params: { mediaUrl: source, fit } };
+                }
+                return { source, params: { fit } };
             }
             case 'webcam':
             case 'screen':
@@ -1087,7 +989,7 @@ export const LayerMixer = {
                 const values = this._readSourceValues(type, `edit-${type}-${layerIndex}`);
                 if (values) {
                     if (values.source !== null) layer.material.source = values.source;
-                    layer.material.params = values.params;
+                    layer.material.params = { ...layer.material.params, ...values.params };
                     if (type === 'milkdrop') {
                         if (typeof values.params.blendTime === 'number') {
                             MilkdropFeature.setBlendTime(values.params.blendTime);
@@ -1105,9 +1007,6 @@ export const LayerMixer = {
                             values.params.fit
                         );
                         this.refreshAllMilkdropDropdowns();
-                    }
-                    if (type === 'mediaShader') {
-                        this._onMediaShaderSourceChange(layerIndex, values.params);
                     }
                 }
                 // Ensure audio textures are enabled for visualizer layers
@@ -1224,20 +1123,6 @@ export const LayerMixer = {
             }
         }
 
-        // If leaving mediaShader with websrt media, release the streaming input.
-        if (oldType === 'mediaShader') {
-            const oldMt = layer.material?.params?.mediaType;
-            if (oldMt === 'websrt') {
-                const oldInput = layer._lastMediaInputIndex;
-                if (Number.isFinite(oldInput)) {
-                    StreamingInputUI.removeLayerTap(oldInput, layerIndex);
-                    StreamingInputUI.release(oldInput);
-                }
-            }
-            layer._lastMediaType = undefined;
-            layer._lastMediaInputIndex = undefined;
-        }
-
         // Set type and clear source
         layer.material.type = newType;
         layer.material.source = '';
@@ -1272,18 +1157,6 @@ export const LayerMixer = {
             StreamingInputUI.setLayerVolume(0, layerIndex, layer.volume ?? 1.0);
             StreamingInputUI.setLayerMute(0, layerIndex, !!layer.audioMuted);
             layer.material.source = 'websrt:0';
-        } else if (newType === 'mediaShader') {
-            layer.material.params = { mediaType: 'video', mediaUrl: '' };
-            layer.material.source = DEFAULT_MEDIA_VIDEO_SHADER;
-            layer._lastMediaType = 'video';
-            if (layerIndex === state.selectedLayer) {
-                getEl('shaderCode').value = DEFAULT_MEDIA_VIDEO_SHADER;
-                CodeDials.render();
-            }
-            if (window.WebGL) {
-                if (layerIndex === state.selectedLayer) window.WebGL.initShader();
-                else window.WebGL.compileForLayer(layerIndex);
-            }
         } else {
             layer.material.params = {};
         }
@@ -1361,16 +1234,9 @@ export const LayerMixer = {
     /** Returns the WebSRT input index routed to this layer, or -1 if none. */
     _layerWebSRTInput(index) {
         const layer = LayerSystem.layers[index];
-        if (!layer) return -1;
-        if (layer.material?.type === 'websrt') {
-            const idx = layer.material.params?.inputIndex;
-            return Number.isFinite(idx) ? idx : -1;
-        }
-        if (layer.material?.type === 'mediaShader' && layer.material.params?.mediaType === 'websrt') {
-            const idx = layer.material.params?.mediaInputIndex;
-            return Number.isFinite(idx) ? idx : -1;
-        }
-        return -1;
+        if (!layer || layer.material?.type !== 'websrt') return -1;
+        const idx = layer.material.params?.inputIndex;
+        return Number.isFinite(idx) ? idx : -1;
     },
 
     toggleBrain(index) {
@@ -1382,7 +1248,59 @@ export const LayerMixer = {
             this.sendUpdate();
         }
     },
-    
+
+    toggleShaderMode(index) {
+        const layer = LayerSystem.layers[index];
+        if (!layer) return;
+        const type = layer.material?.type;
+        const defaults = {
+            video: DEFAULT_MEDIA_VIDEO_SHADER,
+            image: DEFAULT_MEDIA_IMAGE_SHADER,
+            websrt: DEFAULT_MEDIA_SRT_SHADER,
+        };
+        if (!defaults[type]) return;
+
+        const params = layer.material.params || (layer.material.params = {});
+        if (params.shaderMode) {
+            // Toggle OFF: restore cached source, delete program
+            params._shaderCache = layer.material.source;
+            layer.material.source = params._cachedMediaSource || '';
+            params.shaderMode = false;
+            if (layer.program) {
+                const ownedGlobal = (state.program === layer.program);
+                if (ownedGlobal) state.program = null;
+                state.gl.deleteProgram(layer.program);
+                layer.program = null;
+            }
+            if (index === state.selectedLayer) {
+                getEl('shaderCode').value = layer.material.source;
+                CodeDials.render();
+            }
+        } else {
+            // Toggle ON: cache media source, inject default shader
+            params._cachedMediaSource = layer.material.source;
+            if (type === 'video' || type === 'image') {
+                params.mediaUrl = layer.material.source;
+            }
+            const cached = params._shaderCache;
+            layer.material.source = cached || defaults[type];
+            params.shaderMode = true;
+            if (window.WebGL) {
+                if (index === state.selectedLayer) {
+                    getEl('shaderCode').value = layer.material.source;
+                    CodeDials.render();
+                    window.WebGL.initShader();
+                } else {
+                    window.WebGL.compileForLayer(index);
+                }
+            }
+        }
+        const btn = getEl(`mix-fx-${index}`);
+        if (btn) btn.classList.toggle('active', !!params.shaderMode);
+        this.sendUpdate();
+    },
+
+
     setBlendMode(index, mode) {
         if (LayerSystem.layers[index]) {
             LayerSystem.layers[index].blendMode = mode;
@@ -1499,6 +1417,14 @@ export const LayerMixer = {
                 mixShowBtn.classList.toggle('active', !layer.enabled);
             }
             if (mixAudioMuteBtn) mixAudioMuteBtn.classList.toggle('active', !!layer.audioMuted);
+            // FX button: only visible for video/image/websrt types
+            const fxBtn = getEl(`mix-fx-${i}`);
+            if (fxBtn) {
+                const supported = ['video', 'image', 'websrt'];
+                const isSupported = supported.includes(layer.material?.type);
+                fxBtn.style.display = isSupported ? '' : 'none';
+                fxBtn.classList.toggle('active', !!layer.material?.params?.shaderMode);
+            }
             if (mixBlendSelected) {
                 const blend = layer.blendMode || 'normal';
                 mixBlendSelected.textContent = blend.charAt(0).toUpperCase() + blend.slice(1);

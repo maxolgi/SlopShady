@@ -585,7 +585,7 @@ export const LayerSystem = {
         }
 
         // Handle image material type
-        if (layer.material && layer.material.type === 'image') {
+        if (layer.material && layer.material.type === 'image' && !layer.material.params?.shaderMode) {
             // Skip if no image source
             if (!layer.material.source || layer.material.source.trim() === '') {
                 return;
@@ -595,7 +595,7 @@ export const LayerSystem = {
         }
 
         // Handle video material type
-        if (layer.material && layer.material.type === 'video') {
+        if (layer.material && layer.material.type === 'video' && !layer.material.params?.shaderMode) {
             // Skip if no video source
             if (!layer.material.source || layer.material.source.trim() === '') {
                 return;
@@ -662,7 +662,7 @@ export const LayerSystem = {
         }
 
         // Handle WebSRT input type — upload latest decoded VideoFrame.
-        if (layer.material && layer.material.type === 'websrt') {
+        if (layer.material && layer.material.type === 'websrt' && !layer.material.params?.shaderMode) {
             this.renderWebSRT(layer, layerFBO);
             return;
         }
@@ -794,7 +794,7 @@ export const LayerSystem = {
             gl.uniform1i(layer.audioSpectrumLoc, AUDIO_TEXTURE_SPECTRUM_UNIT);
         }
 
-        // Per-layer media textures (mediaShader layers)
+        // Per-layer media textures (shader-mode layers)
         this._bindLayerMedia(layer);
 
         this._drawQuad(layer.posLoc);
@@ -812,21 +812,21 @@ export const LayerSystem = {
     },
 
     /**
-     * Bind per-layer media textures for mediaShader layers.
-     * Keyed on layer.material.params.mediaType:
-     *   'video'  → upload + bind iLayerVideo (unit 5)
-     *   'image'  → bind iLayerImage (unit 6)
-     *   'websrt' → upload latest VideoFrame + bind iLayerSRT (unit 7)
+     * Bind per-layer media textures for layers with shaderMode enabled.
+     * Maps media source by layer type:
+     *   video  → upload + bind iLayerVideo (unit 5) from params.mediaUrl
+     *   image  → bind iLayerImage (unit 6) from params.mediaUrl
+     *   websrt → upload latest VideoFrame + bind iLayerSRT (unit 7) from params.inputIndex
      * Also sets u_layerTexRes to the active media texture's resolution.
      */
     _bindLayerMedia(layer) {
         const gl = state.gl;
-        if (!gl || !layer || layer.material?.type !== 'mediaShader') return;
+        if (!gl || !layer) return;
         const params = layer.material?.params;
-        if (!params) return;
-        const mt = params.mediaType;
+        if (!params?.shaderMode) return;
+        const type = layer.material?.type;
 
-        if (mt === 'video' && layer.layerVideoLoc) {
+        if (type === 'video' && layer.layerVideoLoc) {
             const url = params.mediaUrl;
             if (!url) return;
             const vd = this._ensureVideoTexture(url, params);
@@ -841,7 +841,7 @@ export const LayerSystem = {
             gl.bindTexture(gl.TEXTURE_2D, vd.texture);
             gl.uniform1i(layer.layerVideoLoc, LAYER_VIDEO_TEXTURE_UNIT);
             if (layer.layerTexResLoc) gl.uniform2f(layer.layerTexResLoc, vd.width, vd.height);
-        } else if (mt === 'image' && layer.layerImageLoc) {
+        } else if (type === 'image' && layer.layerImageLoc) {
             const url = params.mediaUrl;
             if (!url) return;
             const id = this._ensureImageTexture(url);
@@ -850,8 +850,8 @@ export const LayerSystem = {
             gl.bindTexture(gl.TEXTURE_2D, id.texture);
             gl.uniform1i(layer.layerImageLoc, LAYER_IMAGE_TEXTURE_UNIT);
             if (layer.layerTexResLoc) gl.uniform2f(layer.layerTexResLoc, id.width, id.height);
-        } else if (mt === 'websrt' && layer.layerSrtLoc) {
-            const inputIndex = params.mediaInputIndex;
+        } else if (type === 'websrt' && layer.layerSrtLoc) {
+            const inputIndex = params.inputIndex;
             if (!Number.isFinite(inputIndex)) return;
             const entry = this._uploadLayerSrtFrame(layer, inputIndex);
             if (!entry) return;
@@ -865,7 +865,7 @@ export const LayerSystem = {
     /**
      * Upload the latest WebSRT VideoFrame for a layer into its per-layer GL
      * texture. Shared by both renderWebSRT (websrt layer type) and
-     * _bindLayerMedia (mediaShader layer type).
+     * _bindLayerMedia (shader-mode layers).
      * @returns {object|null} entry { tex, w, h, lastFrame } or null
      */
     _uploadLayerSrtFrame(layer, inputIndex) {

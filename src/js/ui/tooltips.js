@@ -31,6 +31,7 @@ const T = {
     MIX_PLAYLIST_EXPAND: 'Shader playlist sequencer with crossfade transitions',
     MIX_BRAIN_EXPAND: 'VisualBrain — concatenative visual synthesis from corpus of image blocks',
     MIX_BRAIN_TOGGLE: 'Enable Brain effect on layer {n} — re-renders output using corpus-matched blocks',
+    MIX_FX_TOGGLE: 'Toggle shader mode on layer {n} — media is exposed as iLayerVideo/iLayerImage/iLayerSRT for GPU effects',
     MIX_BG_TOGGLE: 'Toggle background layer visibility',
     MIX_BG_COLOR: 'Background solid color picker',
     MIX_BG_TYPE: 'Background source type: Solid, Image, Video, Camera, or Screen',

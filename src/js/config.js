@@ -1128,7 +1128,7 @@ void main() {
 }`;
 
 // =============== DEFAULT MEDIA SHADER CODE ===============
-// Cover-fit display shaders for mediaShader layers. Each samples its respective
+// Cover-fit display shaders for shader-mode layers. Each samples its respective
 // per-layer media texture with aspect-correct "cover" fit (mirrors IMAGE_FS).
 // The body is identical except for the sampler name.
 function _mediaCoverShader(sampler) {
