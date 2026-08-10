@@ -99,12 +99,10 @@ pub async fn chat_completions(
     }
 
     let mut payload = body.0;
-    payload
-        .as_object_mut()
-        .map(|m| {
-            m.remove("lm_studio_url");
-            m.remove("bearer_key");
-        });
+    if let Some(m) = payload.as_object_mut() {
+        m.remove("lm_studio_url");
+        m.remove("bearer_key");
+    }
 
     let url = format!("{}/chat/completions", lm_url.trim_end_matches('/'));
 

@@ -78,7 +78,7 @@ pub(crate) async fn run_https_server(
     let app = server::build_router(app_state);
     let bind_addr: std::net::IpAddr = bind
         .parse()
-        .unwrap_or_else(|_| std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+        .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
     let addr = SocketAddr::new(bind_addr, port);
 
     let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert_path, &key_path)

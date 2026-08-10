@@ -182,8 +182,7 @@ fn extract_cert_hash(text: &str) -> Option<String> {
     let idx = text.find("CERT_HASH")?;
     let after = text[idx + "CERT_HASH".len()..].trim_start();
     let after = after.strip_prefix('=')?.trim_start();
-    if after.starts_with('"') {
-        let rest = &after[1..];
+    if let Some(rest) = after.strip_prefix('"') {
         let end = rest.find('"')?;
         Some(rest[..end].to_string())
     } else {

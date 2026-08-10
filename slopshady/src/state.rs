@@ -70,7 +70,7 @@ pub fn normalize_layer(layer: &mut Value, index: usize) {
     }
 
     let mat_default = json!({"type": "shader", "source": "", "params": {}});
-    let has_material = layer.get("material").map_or(false, |m| m.is_object());
+    let has_material = layer.get("material").is_some_and(|m| m.is_object());
     if !has_material {
         layer["material"] = mat_default;
     } else {

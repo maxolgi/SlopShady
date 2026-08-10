@@ -17,22 +17,12 @@ use crate::state::AppState;
 ///
 /// `OscBridge` owns the listener thread and can be hot-swapped to a new
 /// bind/port via `restart()` (used when the UI changes oscPort/oscBind).
+#[derive(Default)]
 pub struct OscBridge {
     handle: Option<JoinHandle<()>>,
     shutdown: Option<Sender<()>>,
     bind: String,
     port: u16,
-}
-
-impl Default for OscBridge {
-    fn default() -> Self {
-        Self {
-            handle: None,
-            shutdown: None,
-            bind: String::new(),
-            port: 0,
-        }
-    }
 }
 
 impl OscBridge {
