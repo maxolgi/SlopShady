@@ -564,10 +564,6 @@ const STATIC_MAP = [
     ['#vb-audio', 'VB_AUDIO'],
     ['#vb-audio-drive-slider', 'VB_AUDIO_DRIVE'],
 
-    ['#layerPrev', 'CODE_LAYER_PREV'],
-    ['#layerNext', 'CODE_LAYER_NEXT'],
-    ['#zoomOut', 'CODE_ZOOM_OUT'],
-    ['#zoomIn', 'CODE_ZOOM_IN'],
     ['#code-edit-mode', 'CODE_EDIT_EXPAND'],
     ['#pausePlay', 'CODE_PAUSE'],
     ['#recompile', 'CODE_COMPILE'],

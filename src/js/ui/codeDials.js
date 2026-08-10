@@ -14,8 +14,6 @@ import { modulationMatrixUI } from './modulationMatrixUI.js';
 
 export const CodeDials = {
     init() {
-        getEl('zoomIn').addEventListener('click', () => this.zoom(0.1));
-        getEl('zoomOut').addEventListener('click', () => this.zoom(-0.1));
     },
 
     zoom(delta) {

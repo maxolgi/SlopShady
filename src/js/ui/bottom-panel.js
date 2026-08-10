@@ -292,13 +292,6 @@ export const BottomPanel = {
             });
         });
 
-        getEl('layerPrev').addEventListener('click', () => {
-            LayerMixer.selectLayer(Math.max(0, state.selectedLayer - 1));
-        });
-        getEl('layerNext').addEventListener('click', () => {
-            LayerMixer.selectLayer(Math.min(7, state.selectedLayer + 1));
-        });
-
         document.querySelectorAll('.layer-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 LayerMixer.selectLayer(parseInt(btn.dataset.layer, 10));
