@@ -145,8 +145,10 @@ export const LayerMixer = {
                         <button class="tool-btn" id="mix-solo-${i}" data-tooltip="${escapeAttr(ti('LAYER_SOLO', {n}))}">Solo</button>
                         <button class="tool-btn" id="mix-show-${i}" data-tooltip="${escapeAttr(ti('LAYER_SHOW', {n}))}">Hide</button>
                     </div>
-                    <button class="tool-btn" id="mix-brain-${i}" data-tooltip="${escapeAttr(ti('MIX_BRAIN_TOGGLE', {n}))}">Brain</button>
-                    <button class="tool-btn" id="mix-fx-${i}" data-tooltip="${escapeAttr(ti('MIX_FX_TOGGLE', {n}))}">FX</button>
+                    <div class="tool-grid tool-grid--2x2">
+                        <button class="tool-btn" id="mix-brain-${i}" data-tooltip="${escapeAttr(ti('MIX_BRAIN_TOGGLE', {n}))}">Brain</button>
+                        <button class="tool-btn" id="mix-fx-${i}" data-tooltip="${escapeAttr(ti('MIX_FX_TOGGLE', {n}))}">FX</button>
+                    </div>
                     <div class="slider" id="mix-opacity-slider-${i}" data-tooltip="${escapeAttr(ti('LAYER_OPACITY', {n}))}">
                         <div class="slider__header">
                             <span class="slider__label">Opacity</span>
