@@ -133,7 +133,9 @@ async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Jso
     let parsed = match url::Url::parse(&params.url) {
         Ok(u) => u,
         Err(_) => {
-            return axum::Json(serde_json::json!({ "hash": null, "wtPort": null, "error": "invalid gateway url" }))
+            return axum::Json(
+                serde_json::json!({ "hash": null, "wtPort": null, "error": "invalid gateway url" }),
+            )
         }
     };
     // cert-hash.js is served same-origin on the gateway's web server. The
