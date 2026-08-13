@@ -15,7 +15,64 @@ import { CodeDials } from '../ui/codeDials.js';
 
 export const LLM = {
     abortController: null,
-    
+    _streamRafId: null,
+    _streamGeneration: 0,
+    _streamFlushPending: false,
+    _streamingContentEl: null,
+    _streamState: null,
+
+    _cancelStreamFlush() {
+        if (this._streamRafId !== null) {
+            cancelAnimationFrame(this._streamRafId);
+            this._streamRafId = null;
+        }
+        this._streamGeneration++;
+        this._streamFlushPending = false;
+        this._streamState = null;
+        this._streamingContentEl = null;
+    },
+
+    _scheduleStreamFlush() {
+        if (this._streamFlushPending) return;
+        this._streamFlushPending = true;
+        const gen = this._streamGeneration;
+        this._streamRafId = requestAnimationFrame(() => {
+            this._streamRafId = null;
+            this._streamFlushPending = false;
+            this._flushStream(gen);
+        });
+    },
+
+    _flushStream(gen) {
+        if (gen !== this._streamGeneration) return;
+        const streamingDiv = this._streamingContentEl;
+        const streamState = this._streamState;
+        if (!streamingDiv || !streamState) return;
+        const { accumulated, reasoningAccumulated } = streamState;
+        let displayHtml = '';
+        if (reasoningAccumulated) {
+            const thinkDone = !!accumulated;
+            const thinkId = 'stream-reasoning';
+            displayHtml += `<div class="thinking-block">
+                <div class="thinking-header" data-toggle="${thinkId}">
+                    <span class="toggle-icon">${thinkDone ? '▶' : '▼'}</span>
+                    <span>💭 Thinking ${thinkDone ? '(click to expand)' : '...'}</span>
+                </div>
+                <div id="${thinkId}" class="thinking-content ${thinkDone ? '' : 'visible'}">${escapeHtml(reasoningAccumulated)}${!thinkDone ? '<span class="cursor">|</span>' : ''}</div>
+            </div>`;
+        }
+        if (accumulated) {
+            displayHtml += this.renderStreamingContent(accumulated, false);
+        }
+        if (!accumulated && !reasoningAccumulated) {
+            displayHtml += '<span class="cursor">|</span>';
+        }
+        streamingDiv.innerHTML = displayHtml;
+        const resp = getEl('response');
+        if (resp) resp.scrollTop = 1e9;
+        Conversation.updateTokenCount();
+    },
+
     setCancelMode(cancelMode) {
         const btn = getEl('askLLM');
         const btnImg = getEl('askLLMWithImage');
@@ -33,6 +90,7 @@ export const LLM = {
             this.abortController.abort();
             this.abortController = null;
             this.setCancelMode(false);
+            this._cancelStreamFlush();
             getEl('status').textContent = '❌ Request cancelled.';
         }
     },
@@ -144,9 +202,11 @@ export const LLM = {
         let assistantMessageAdded = false;
         
         status.textContent = '💭 Thinking...';
+        this._streamGeneration++;
         this._streamingEntry = document.createElement('div');
         this._streamingEntry.className = 'response-entry';
         this._streamingEntry.innerHTML = `<strong>LM Studio (${escapeHtml(model)})</strong><br><br><div class="streaming-content"></div>`;
+        this._streamingContentEl = this._streamingEntry.querySelector('.streaming-content');
         getEl('response').appendChild(this._streamingEntry);
         
         while (true) {
@@ -188,34 +248,11 @@ export const LLM = {
                     }
                     
                     if (reasoningDelta || contentDelta) {
-                        const streamingDiv = this._streamingEntry?.querySelector('.streaming-content');
-                        if (streamingDiv) {
-                            let displayHtml = '';
-                            if (reasoningAccumulated) {
-                                const thinkDone = !!accumulated;
-                                const thinkId = 'stream-reasoning';
-                                displayHtml += `<div class="thinking-block">
-                                    <div class="thinking-header" data-toggle="${thinkId}">
-                                        <span class="toggle-icon">${thinkDone ? '▶' : '▼'}</span>
-                                        <span>💭 Thinking ${thinkDone ? '(click to expand)' : '...'}</span>
-                                    </div>
-                                    <div id="${thinkId}" class="thinking-content ${thinkDone ? '' : 'visible'}">${escapeHtml(reasoningAccumulated)}${!thinkDone ? '<span class="cursor">|</span>' : ''}</div>
-                                </div>`;
-                            }
-                            if (accumulated) {
-                                displayHtml += this.renderStreamingContent(accumulated, false);
-                            }
-                            if (!accumulated && !reasoningAccumulated) {
-                                displayHtml += '<span class="cursor">|</span>';
-                            }
-                            streamingDiv.innerHTML = displayHtml;
-                        }
-                        getEl('response').scrollTop = getEl('response').scrollHeight;
-
                         if (assistantMessageAdded) {
                             state.conversationHistory[state.conversationHistory.length - 1].content = accumulated;
                         }
-                        Conversation.updateTokenCount();
+                        this._streamState = { accumulated, reasoningAccumulated };
+                        this._scheduleStreamFlush();
                     }
                 } catch (e) {}
             }
@@ -225,6 +262,7 @@ export const LLM = {
             ? `<think>${reasoningAccumulated}</think>` + accumulated
             : accumulated;
         
+        this._cancelStreamFlush();
         status.textContent = '✅ Complete';
         const retryInitiated = await this.processFinalResponse(fullContent, model, status);
         if (!retryInitiated) {
