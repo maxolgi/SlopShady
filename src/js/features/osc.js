@@ -51,7 +51,6 @@ export const OSCSystem = {
     enabled: true,
     available: true,
     port: 8101,
-    _lastMessageTime: 0,
     _monitorThrottle: null,
     _ws: null,
     _wsReconnectDelay: 1000,
@@ -228,8 +227,6 @@ export const OSCSystem = {
      * Update the live message monitor (throttled to ~10fps).
      */
     _updateMonitor(address, args) {
-        const now = performance.now();
-        this._lastMessageTime = now;
         if (this._monitorThrottle) return;
         this._monitorThrottle = setTimeout(() => {
             this._monitorThrottle = null;

@@ -6,7 +6,6 @@
 import { state, getEl } from '../state.js';
 import { AI_SHADER_BASE_PROMPT, AI_SYSTEM_PROMPT_ROLE } from '../config.js';
 import { Templates } from '../utils/templates.js';
-import { ContentParser } from '../utils/contentParser.js';
 import { escapeHtml, estimateTokens } from '../utils.js';
 import { CodeDials } from '../ui/codeDials.js';
 
@@ -72,25 +71,5 @@ export const Conversation = {
             status.innerHTML = '✅ Code loaded. <span class="status-highlight-green">Shader recompiled!</span>';
             setTimeout(() => status.textContent = '', 3000);
         }
-    },
-    
-    render() {
-    },
-    
-    renderAssistantMessage(content, index) {
-        const parts = ContentParser.parseContent(content);
-        let htmlContent = '';
-        
-        for (const part of parts) {
-            if (part.type === 'thinking') {
-                htmlContent += Templates.thinkingBlock(part.content, `think-${index}-${Math.random().toString(36).substr(2, 9)}`);
-            } else if (part.type === 'code') {
-                htmlContent += Templates.codeBlock(part.content, `code-${Math.random().toString(36).substr(2, 9)}`);
-            } else {
-                htmlContent += `<div class="status-highlight-green mb-2">${escapeHtml(part.content)}</div>`;
-            }
-        }
-        
-        return Templates.messageBubble(htmlContent, false, 'AI');
     }
 };

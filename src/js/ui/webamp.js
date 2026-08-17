@@ -114,6 +114,7 @@ export const WebampUI = {
     },
 
     stop() {
+        this.isPlaying = false;
         if (this.instance) this.instance.stop();
     },
 
@@ -128,6 +129,7 @@ export const WebampUI = {
     },
 
     close() {
+        this.isPlaying = false;
         if (this.instance) this.instance.close();
     },
 

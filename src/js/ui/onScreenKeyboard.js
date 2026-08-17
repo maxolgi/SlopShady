@@ -31,6 +31,7 @@ export const OnScreenKeyboard = {
     activeNotes: new Set(), // Currently pressed notes (for visual feedback)
     isMouseDown: false,
     touchNotes: new Map(), // Map touch IDs to notes
+    _docListenersAttached: false,
 
     /**
      * Initialize the on-screen keyboard
@@ -187,33 +188,38 @@ export const OnScreenKeyboard = {
      * Setup global event listeners
      */
     _setupEventListeners() {
-        // Track mouse state for drag-to-play
-        document.addEventListener('mousedown', () => {
-            this.isMouseDown = true;
-        });
+        // Document-level listeners persist across re-init — attach them only once
+        if (!this._docListenersAttached) {
+            // Track mouse state for drag-to-play
+            document.addEventListener('mousedown', () => {
+                this.isMouseDown = true;
+            });
 
-        document.addEventListener('mouseup', () => {
-            this.isMouseDown = false;
-            // Release all notes on mouse up
-            this.releaseAllKeys();
-        });
+            document.addEventListener('mouseup', () => {
+                this.isMouseDown = false;
+                // Release all notes on mouse up
+                this.releaseAllKeys();
+            });
 
-        // Reflect incoming notes (MIDI hardware, OSC, or any other source) on
-        // the piano visuals. Visual-only — voices are already triggered by the
-        // dispatcher (MIDISystem._handleNoteOn), so we must NOT call triggerKey
-        // here (that would re-trigger voices and loop via midi-noteon).
-        document.addEventListener('midi-noteon', (e) => {
-            const note = e.detail?.note;
-            if (note == null) return;
-            this.activeNotes.add(note);
-            this._updateKeyVisual(note, true);
-        });
-        document.addEventListener('midi-noteoff', (e) => {
-            const note = e.detail?.note;
-            if (note == null) return;
-            this.activeNotes.delete(note);
-            this._updateKeyVisual(note, false);
-        });
+            // Reflect incoming notes (MIDI hardware, OSC, or any other source) on
+            // the piano visuals. Visual-only — voices are already triggered by the
+            // dispatcher (MIDISystem._handleNoteOn), so we must NOT call triggerKey
+            // here (that would re-trigger voices and loop via midi-noteon).
+            document.addEventListener('midi-noteon', (e) => {
+                const note = e.detail?.note;
+                if (note == null) return;
+                this.activeNotes.add(note);
+                this._updateKeyVisual(note, true);
+            });
+            document.addEventListener('midi-noteoff', (e) => {
+                const note = e.detail?.note;
+                if (note == null) return;
+                this.activeNotes.delete(note);
+                this._updateKeyVisual(note, false);
+            });
+
+            this._docListenersAttached = true;
+        }
 
         // Prevent context menu on keyboard
         this.container.addEventListener('contextmenu', (e) => {
@@ -356,49 +362,3 @@ export const OnScreenKeyboard = {
         this.keysContainer = null;
     }
 };
-
-/**
- * Convenience function to initialize the keyboard
- * @param {HTMLElement|string} container - Container element or selector
- * @returns {boolean} Success
- */
-export function initOnScreenKeyboard(container) {
-    if (typeof container === 'string') {
-        container = document.querySelector(container);
-    }
-    return OnScreenKeyboard.init(container);
-}
-
-/**
- * Set the note range programmatically
- * @param {number} startNote - Starting MIDI note
- * @param {number} endNote - Ending MIDI note
- */
-export function setKeyRange(startNote, endNote) {
-    OnScreenKeyboard.setKeyRange(startNote, endNote);
-}
-
-/**
- * Trigger a key programmatically
- * @param {number} note - MIDI note number
- * @param {number} velocity - Velocity 0-127
- */
-export function triggerKey(note, velocity = 100) {
-    OnScreenKeyboard.triggerKey(note, velocity);
-}
-
-/**
- * Release a key programmatically
- * @param {number} note - MIDI note number
- */
-export function releaseKey(note) {
-    OnScreenKeyboard.releaseKey(note);
-}
-
-/**
- * Shift keyboard up/down by octaves
- * @param {number} octaves - Octaves to shift
- */
-export function shiftOctave(octaves) {
-    OnScreenKeyboard.shiftOctave(octaves);
-}

@@ -128,7 +128,6 @@ const SlopShady = {
         
         // Initialize API modules
         Shaders.init();
-        Conversation.render();
         Conversation.updateTokenCount();
         
         // Initialize features

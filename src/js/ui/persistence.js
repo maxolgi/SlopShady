@@ -232,7 +232,6 @@ export function loadState(data) {
     migrateMidiMappings(data);
 
     WebGL.initShader();
-    Conversation.render();
     Conversation.updateTokenCount();
     CodeDials.render();
     

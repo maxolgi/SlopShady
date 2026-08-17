@@ -3,7 +3,7 @@
  * Interactive numeric value adjustment from shader code
  */
 
-import { state, getEl, momentaryKeys } from '../state.js';
+import { state, getEl } from '../state.js';
 import { SHADER_BUILTINS, DIAL_KEY_MAP } from '../config.js';
 import { escapeHtml } from '../utils.js';
 import { ti, escapeAttr } from './tooltips.js';

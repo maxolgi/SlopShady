@@ -1,12 +1,15 @@
 import { state } from '../state.js';
 import { LFO_BEAT_DIVISIONS, LFO_WAVEFORMS } from '../config.js';
 
+// Beat multiplier per entry of LFO_BEAT_DIVISIONS ('1/4' → 4), kept index-aligned
+const BEAT_FACTORS = LFO_BEAT_DIVISIONS.map(div => parseInt(div.split('/')[1], 10));
+
 const _snhState = [0, 0, 0, 0];
 
 function _getEffectiveRate(lfo) {
     if (lfo.syncMode === 'sync') {
         const divIdx = LFO_BEAT_DIVISIONS.indexOf(lfo.syncRate);
-        const div = divIdx >= 0 ? [1, 2, 4, 8, 16][divIdx] : 4;
+        const div = divIdx >= 0 ? BEAT_FACTORS[divIdx] : 4;
         return (state.bpm / 60) * div;
     }
     return lfo.rate;

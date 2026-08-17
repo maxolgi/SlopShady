@@ -6,7 +6,7 @@
 
 import { state } from '../state.js';
 import { FramebufferManager } from '../webgl/framebuffers.js';
-import { compileUtilityProgram } from '../utils.js';
+import { compileUtilityProgram, hexToRgb } from '../utils.js';
 import { MODULATION_CURVES } from '../config.js';
 import {
     SCANIMATE_DEFLECT_FS,
@@ -15,11 +15,6 @@ import {
     SCANIMATE_CRT_FS
 } from '../config.js';
 import { ModulationMatrix } from './modulationMatrix.js';
-
-function hexToRGB(hex) {
-    const n = parseInt(hex.replace('#', ''), 16);
-    return [(n >> 16 & 0xFF) / 255, (n >> 8 & 0xFF) / 255, (n & 0xFF) / 255];
-}
 
 const V_RATE = 59.94;
 const H_RATE = 15734.0;
@@ -398,9 +393,9 @@ export const ScanimateEngine = {
         gl.bindTexture(gl.TEXTURE_2D, tempFBO.texture);
         gl.uniform1i(this.locs.colorize.u_source, 0);
         gl.uniform1i(this.locs.colorize.u_colorizerEnabled, col.enabled ? 1 : 0);
-        const cA = hexToRGB(col.colorA);
-        const cB = hexToRGB(col.colorB);
-        const cC = hexToRGB(col.colorC);
+        const cA = hexToRgb(col.colorA);
+        const cB = hexToRgb(col.colorB);
+        const cC = hexToRgb(col.colorC);
         gl.uniform3f(this.locs.colorize.u_colorA, cA[0], cA[1], cA[2]);
         gl.uniform3f(this.locs.colorize.u_colorB, cB[0], cB[1], cB[2]);
         gl.uniform3f(this.locs.colorize.u_colorC, cC[0], cC[1], cC[2]);

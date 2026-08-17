@@ -19,6 +19,7 @@ export const MIDIPlayer = {
     _tempoMap: [],
     _ticksPerBeat: 480,
     _notesCache: null,
+    _activeNotes: new Set(),
 
     // ── Public API ──────────────────────────────────────────────
 
@@ -139,8 +140,10 @@ export const MIDIPlayer = {
     _handleEvent(event) {
         if (event.type === 'noteOn') {
             MIDISystem._handleNoteOn(event.channel, event.note, event.velocity);
+            this._activeNotes.add(event.channel * 128 + event.note);
         } else if (event.type === 'noteOff') {
             MIDISystem._handleNoteOff(event.channel, event.note);
+            this._activeNotes.delete(event.channel * 128 + event.note);
         } else if (event.type === 'cc') {
             MIDISystem._handleCC(event.channel, event.cc, event.value);
         }
@@ -161,11 +164,10 @@ export const MIDIPlayer = {
     },
 
     _allNotesOff() {
-        for (let ch = 0; ch < 16; ch++) {
-            for (let note = 0; note < 128; note++) {
-                MIDISystem._handleNoteOff(ch, note);
-            }
+        for (const key of this._activeNotes) {
+            MIDISystem._handleNoteOff(key >> 7, key & 127);
         }
+        this._activeNotes.clear();
     },
 
     // ── MIDI Parser ─────────────────────────────────────────────
@@ -176,7 +178,6 @@ export const MIDIPlayer = {
             throw new Error('Not a valid MIDI file');
         }
         const headerLen = this._readUint32(data, 4);
-        const format = this._readUint16(data, 8);
         const numTracks = this._readUint16(data, 10);
         const division = this._readUint16(data, 12);
 
@@ -195,7 +196,7 @@ export const MIDIPlayer = {
             offset += 8 + trackLen;
         }
 
-        return { format, numTracks, ticksPerBeat, tracks };
+        return { numTracks, ticksPerBeat, tracks };
     },
 
     _parseTrack(data) {

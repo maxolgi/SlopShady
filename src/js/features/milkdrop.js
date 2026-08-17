@@ -46,10 +46,6 @@ export const MilkdropFeature = {
         return this._resolution;
     },
 
-    getBlendTime() {
-        return this._blendTime;
-    },
-
     getResolutionDimensions() {
         const dims = this.RESOLUTIONS[this._resolution];
         if (!dims) return [state.canvas?.width || 512, state.canvas?.height || 512];
