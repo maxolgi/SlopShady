@@ -20,11 +20,12 @@
  * Data layout: planar — [channel0 * FRAME_SIZE samples, channel1 * FRAME_SIZE].
  * Matches AudioData format 'f32-planar'.
  *
- * Frame size: 960 samples @ 48kHz = 20ms (Opus default).
+ * Frame size: derived from the context sample rate — Math.round(sampleRate / 50)
+ * samples = 20ms (Opus default). Typical values: 960 @ 48kHz, 882 @ 44.1kHz.
  *
- * 128-sample blocks (the AudioWorklet render quantum) don't divide 960 evenly
- * (960/128 = 7.5), so the processor buffers across calls and emits when the
- * buffer fills.
+ * 128-sample blocks (the AudioWorklet render quantum) don't divide a 20ms
+ * frame evenly (960/128 = 7.5 at 48kHz), so the processor buffers across
+ * calls and emits when the buffer fills.
  *
  * Timestamps: AudioWorkletGlobalScope does NOT expose `performance`; only the
  * `currentTime` global (AudioContext clock, in seconds) and `currentFrame`.
@@ -44,7 +45,7 @@
  * audible signal (zeros mixed into destination = no audible change).
  */
 
-const FRAME_SIZE = 960;       // 20ms at 48kHz
+const FRAME_SIZE = Math.round(sampleRate / 50); // 20ms; typical 960 @48k, 882 @44.1k
 const NUM_CHANNELS = 2;
 
 class StreamAudioProcessor extends AudioWorkletProcessor {
@@ -53,14 +54,11 @@ class StreamAudioProcessor extends AudioWorkletProcessor {
         this._ch0 = new Float32Array(FRAME_SIZE);
         this._ch1 = new Float32Array(FRAME_SIZE);
         this._filled = 0;     // samples filled in current frame, per channel
-        this._processCount = 0;
-        this._frameCount = 0;
         // processorOptions.baseTime is ctx.currentTime captured on the main
         // thread at stream start. Subtracting it gives a clock that starts at
         // 0 when streaming starts.
         const opts = (options && options.processorOptions) || {};
         this._baseTime = (typeof opts.baseTime === 'number') ? opts.baseTime : 0;
-        console.log('[StreamAudio worklet] constructor called; baseTime=', this._baseTime, 'ctx.currentTime=', currentTime);
     }
 
     /**
@@ -69,18 +67,6 @@ class StreamAudioProcessor extends AudioWorkletProcessor {
      * @returns {boolean} true to keep the processor alive
      */
     process(inputs, outputs) {
-        this._processCount++;
-        if (this._processCount === 1 || this._processCount === 60) {
-            const input = inputs[0];
-            const inCh0 = input && input[0];
-            console.log(`[StreamAudio worklet] process #${this._processCount}`, {
-                inputChannels: input ? input.length : 0,
-                inputLen: inCh0 ? inCh0.length : 0,
-                inputSample0: inCh0 && inCh0.length ? inCh0[0] : null,
-                currentTime,
-            });
-        }
-
         // Zero outputs regardless of input — we exist to tap, not to emit.
         // Without this, connecting node → ctx.destination would double audio.
         const out = outputs[0];
@@ -106,17 +92,13 @@ class StreamAudioProcessor extends AudioWorkletProcessor {
             inIdx += chunk;
 
             if (this._filled >= FRAME_SIZE) {
-                this._frameCount++;
-                // Planar stereo: [ch0 (960) || ch1 (960)]
+                // Planar stereo: [ch0 (FRAME_SIZE) || ch1 (FRAME_SIZE)]
                 const outFrame = new Float32Array(FRAME_SIZE * NUM_CHANNELS);
                 outFrame.set(this._ch0, 0);
                 outFrame.set(this._ch1, FRAME_SIZE);
                 // AudioWorkletGlobalScope.currentTime (seconds) — NOT
                 // performance.now(), which is unavailable here.
                 const tsUs = Math.round((currentTime - this._baseTime) * 1_000_000);
-                if (this._frameCount === 1 || this._frameCount === 50) {
-                    console.log(`[StreamAudio worklet] emitting frame #${this._frameCount}; ch0[0]=${this._ch0[0]} ch1[0]=${this._ch1[0]} tsUs=${tsUs}`);
-                }
                 this.port.postMessage({ ts: tsUs, data: outFrame }, [outFrame.buffer]);
                 this._filled = 0;
             }

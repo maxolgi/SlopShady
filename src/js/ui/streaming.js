@@ -21,8 +21,6 @@
 import { state, getEl } from '../state.js';
 import { StreamAudio } from '../features/stream-audio.js';
 
-const RECONNECT_RETRY_MS = 100;
-
 const TIMER_WORKER_SRC = `
 let id = null;
 onmessage = (e) => {
@@ -62,6 +60,8 @@ export const StreamingUI = {
     datagramQueue: [],
     reconnectTimer: null,
     reconnectAttempts: 0,
+    _reconnectDelay: 1000,
+    _maxReconnectDelay: 15000,
     _closing: false,
     _wantStream: false,
     _receiveReader: null,
@@ -560,6 +560,7 @@ export const StreamingUI = {
         }
 
         this.reconnectAttempts = 0;
+        this._reconnectDelay = 1000;
 
         const startBtn = getEl('startStream');
         if (startBtn) startBtn.classList.remove('active');
@@ -576,6 +577,7 @@ export const StreamingUI = {
             this._handshakeDone = true;
             this._forceKeyframe = true; // first muxed frame must be a keyframe (SPS/PPS+IDR)
             this.reconnectAttempts = 0;
+            this._reconnectDelay = 1000;
             this._setStatus('Streaming · ' + this.streamName);
         } else if (msg.type === 'stats') {
             if (this._abrEnabled) this._handleAbrStats(msg.stats);
@@ -650,10 +652,12 @@ export const StreamingUI = {
         const immediate = this.reconnectAttempts === 0;
         this.reconnectAttempts++;
         this._setStatus('Reconnecting…');
+        const delay = immediate ? 0 : this._reconnectDelay;
+        this._reconnectDelay = Math.min(this._reconnectDelay * 1.5, this._maxReconnectDelay);
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             this.start();
-        }, immediate ? 0 : RECONNECT_RETRY_MS);
+        }, delay);
     },
 
     /** Worker init (WASM/muxer) failed — stop without retry, surface the reason. */
@@ -1069,5 +1073,3 @@ export const StreamingUI = {
         this._flushPending = false;
     },
 };
-
-if (typeof window !== 'undefined') { window.StreamingUI = StreamingUI; window.__state = state; }
