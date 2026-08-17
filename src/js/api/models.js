@@ -4,7 +4,7 @@
  */
 
 import { state, getEl } from '../state.js';
-import { loadFromLocalStorage, saveToLocalStorage, setDropdownValue } from '../utils.js';
+import { loadFromLocalStorage, saveToLocalStorage, setDropdownValue, escapeHtml } from '../utils.js';
 import { SETTINGS_KEYS } from '../config.js';
 
 function _setMenuLabel(menuId, text) {
@@ -55,9 +55,10 @@ export const Models = {
                 return;
             }
 
-            const itemsHtml = models.map(m =>
-                `<div class="dropdown__item" data-value="${m.id}">${m.id}</div>`
-            ).join('');
+            const itemsHtml = models.map(m => {
+                const id = escapeHtml(m.id);
+                return `<div class="dropdown__item" data-value="${id.replace(/"/g, '&quot;')}">${id}</div>`;
+            }).join('');
             if (imageMenu) imageMenu.innerHTML = itemsHtml;
             if (textMenu) textMenu.innerHTML = itemsHtml;
 

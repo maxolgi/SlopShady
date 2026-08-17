@@ -40,6 +40,7 @@ export const LiveTuning = {
         fetch('/api/live-tuning/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: this.abortController.signal,
             body: JSON.stringify({
                 lm_studio_url: lmUrl,
                 bearer_key: bearerKey,
@@ -174,11 +175,7 @@ export const LiveTuning = {
 
     log(message, type = 'info') {
         const logEl = getEl('response');
-        const entry = document.createElement('div');
-        entry.className = `tuning-log ${type}`;
-        const ts = new Date().toLocaleTimeString();
-        entry.innerHTML = `<span class="tuning-timestamp">[${ts}]</span> ${escapeHtml(message)}`;
-        logEl.appendChild(entry);
+        logEl.insertAdjacentHTML('beforeend', Templates.tuningLog(escapeHtml(message), type));
         logEl.scrollTop = logEl.scrollHeight;
     }
 };

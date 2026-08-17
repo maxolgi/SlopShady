@@ -20,6 +20,7 @@ export const LLM = {
     _streamFlushPending: false,
     _streamingContentEl: null,
     _streamState: null,
+    _fixRetries: 0,
 
     _cancelStreamFlush() {
         if (this._streamRafId !== null) {
@@ -96,6 +97,7 @@ export const LLM = {
     },
     
     async send(includeImage = false, overrideMessage = null) {
+        if (overrideMessage === null) this._fixRetries = 0;
         if (this.abortController) {
             this.cancel();
             return;
@@ -311,7 +313,6 @@ export const LLM = {
                 responseHtml += `<div class="msg-success">${escapeHtml(part.content)}</div>`;
             }
         }
-        getEl('response');
         if (this._streamingEntry) {
             this._streamingEntry.innerHTML = responseHtml;
             this._streamingEntry.querySelectorAll('.tool-btn--success').forEach(btn => {
@@ -333,6 +334,12 @@ export const LLM = {
                 const compileResult = WebGL.compileProgram(newShader, true);
 
                 if (compileResult?.error) {
+                    if (this._fixRetries >= 5) {
+                        status.innerHTML = '❌ Shader compilation failed 5 times. Giving up — check the error above.';
+                        this._fixRetries = 0;
+                        return false;
+                    }
+                    this._fixRetries++;
                     status.innerHTML = '❌ Shader compilation failed! Sending error back to model...';
                     this.abortController = null;
                     await this.send(false, `Compilation error:\n${compileResult.error}\n\nPlease fix this error and provide the complete corrected shader code.`);
@@ -342,6 +349,7 @@ export const LLM = {
                     WebGL.initShader({ save: true });
                     CodeDials.render();
                     Conversation.updateTokenCount();
+                    this._fixRetries = 0;
 
                     status.innerHTML = '✅ Code received and loaded. <span class="status-highlight-green">Shader recompiled!</span>';
                     return false;
