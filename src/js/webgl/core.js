@@ -611,10 +611,11 @@ out vec4 fragColor;
             LayerSystem.render(currentTime, deltaTime);
         }
 
-        if (state.capturePending) {
-            const resolve = state.capturePending;
-            state.capturePending = null;
-            resolve(state.canvas.toDataURL('image/png'));
+        if (state.capturePending.length > 0) {
+            const resolvers = state.capturePending;
+            state.capturePending = [];
+            const dataUrl = state.canvas.toDataURL('image/png');
+            for (const resolve of resolvers) resolve(dataUrl);
         }
 
         if (StreamingUI.isStreaming || StreamingUI.isRecording) {

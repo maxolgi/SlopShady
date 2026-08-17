@@ -8,7 +8,7 @@ import { state, getEl } from '../state.js';
 
 function captureNextFrame() {
     return new Promise(resolve => {
-        state.capturePending = resolve;
+        state.capturePending.push(resolve);
     });
 }
 

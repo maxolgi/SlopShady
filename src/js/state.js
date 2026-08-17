@@ -84,7 +84,7 @@ export const state = {
     renderStarted: false,
     isStreaming: false,
     contextLost: false,
-    capturePending: null,
+    capturePending: [],
     resolutionScale: 1,
     fboFormat: 'rgba8',
     supportedFormats: {},
