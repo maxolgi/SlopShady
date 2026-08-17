@@ -3,13 +3,15 @@ import { initSlider } from './slider.js';
 import { Sync } from '../features/sync.js';
 import { ti, escapeAttr as _escapeAttr } from './tooltips.js';
 import { MidiLearn } from '../features/midi.js';
+import { createDebouncedSync } from '../utils.js';
 
 const NUM_MACROS = 8;
 const sliderApis = new Map();
+const scheduleSync = createDebouncedSync(() => {
+    Sync.send({ macros: state.macros.map(m => ({ name: m.name, value: m.value, cc: m.cc })) });
+});
 
 export const MacrosUI = {
-    _syncDebounceTimer: null,
-
     init() {
         this.container = getEl('macro-controls');
         if (!this.container) return;
@@ -48,7 +50,7 @@ export const MacrosUI = {
             input.addEventListener('change', (e) => {
                 const idx = parseInt(e.target.dataset.macroName, 10);
                 state.macros[idx].name = e.target.value || `Macro ${idx + 1}`;
-                this._debouncedSync();
+                scheduleSync();
             });
         });
 
@@ -60,7 +62,7 @@ export const MacrosUI = {
                 onChange: (val) => {
                     state.macros[idx].value = val;
                 },
-                onCommit: () => this._debouncedSync()
+                onCommit: scheduleSync
             });
             if (api) {
                 api.setValue(state.macros[idx].value);
@@ -80,7 +82,7 @@ export const MacrosUI = {
                 const idx = parseInt(btn.dataset.macroIndex, 10);
                 state.macros[idx].cc = null;
                 this.render();
-                this._debouncedSync();
+                scheduleSync();
             });
         });
     },
@@ -95,7 +97,7 @@ export const MacrosUI = {
         MidiLearn.start((cc) => {
             state.macros[idx].cc = cc;
             this.render();
-            this._debouncedSync();
+            scheduleSync();
         });
     },
 
@@ -116,13 +118,5 @@ export const MacrosUI = {
             }
         }
         this.render();
-    },
-
-    _debouncedSync() {
-        if (this._syncDebounceTimer) clearTimeout(this._syncDebounceTimer);
-        this._syncDebounceTimer = setTimeout(() => {
-            Sync.send({ macros: state.macros.map(m => ({ name: m.name, value: m.value, cc: m.cc })) });
-            this._syncDebounceTimer = null;
-        }, 150);
     }
 };

@@ -29,7 +29,7 @@ export const Templates = {
      * @returns {string} HTML string
      */
     codeBlock(code, id) {
-        const escapedCode = escapeHtml(code).replace(/"/g, '&quot;');
+        const escapedCode = escapeHtml(code);
         return `<div class="code-block">
             <div class="code-block-header">
                 <span data-toggle="${id}" class="template-clickable">

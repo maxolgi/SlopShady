@@ -11,7 +11,24 @@ import { COMPOSITE_VS } from './config.js';
  * @returns {string} Escaped string
  */
 export function escapeHtml(str) {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Create a debounced wrapper around a sync send function
+ * @param {Function} send - Function to invoke after the delay
+ * @param {number} delay - Delay in milliseconds
+ * @returns {Function} Debounced invoker
+ */
+export function createDebouncedSync(send, delay = 150) {
+    let timer = null;
+    return () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+            timer = null;
+            send();
+        }, delay);
+    };
 }
 
 export function toggleFullscreen() {

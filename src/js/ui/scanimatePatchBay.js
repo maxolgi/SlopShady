@@ -7,7 +7,8 @@ import { state, getEl } from '../state.js';
 import { Sync } from '../features/sync.js';
 import { initSlider } from './slider.js';
 import { MODULATION_SOURCES, MODULATION_CURVES } from '../config.js';
-import { T } from './tooltips.js';
+import { T, escapeAttr } from './tooltips.js';
+import { createDebouncedSync } from '../utils.js';
 
 const SCANIMATE_SOURCES = [
     ...MODULATION_SOURCES,
@@ -59,20 +60,9 @@ const SOURCE_ABBREV = {
 
 const CURVE_OPTIONS = ['linear', 'exponential', 'logarithmic', 'sine', 'smooth'];
 
-let _syncTimer = null;
 let _gridEditor = null;
 
-function debounceSync() {
-    if (_syncTimer) clearTimeout(_syncTimer);
-    _syncTimer = setTimeout(() => {
-        Sync.send({ scanimate: state.scanimate });
-        _syncTimer = null;
-    }, 150);
-}
-
-function escapeAttr(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-}
+const scheduleSync = createDebouncedSync(() => Sync.send({ scanimate: state.scanimate }));
 
 function getMatrix() {
     if (!Array.isArray(state.scanimate.patchMatrix)) {
@@ -127,7 +117,7 @@ export const ScanimatePatchBay = {
                 }
                 if (entry) {
                     entry.enabled = !entry.enabled;
-                    debounceSync();
+                    scheduleSync();
                 }
                 this.render();
                 return;
@@ -156,7 +146,7 @@ export const ScanimatePatchBay = {
                 } else {
                     entry.curve = value;
                 }
-                debounceSync();
+                scheduleSync();
                 this.render();
             }
         });
@@ -173,7 +163,7 @@ export const ScanimatePatchBay = {
             enabled: true,
             ...defaults,
         });
-        debounceSync();
+        scheduleSync();
     },
 
     removeEntry(id) {
@@ -181,7 +171,7 @@ export const ScanimatePatchBay = {
         const idx = matrix.findIndex(e => String(e.id) === String(id));
         if (idx !== -1) {
             matrix.splice(idx, 1);
-            debounceSync();
+            scheduleSync();
         }
     },
 
@@ -285,7 +275,7 @@ export const ScanimatePatchBay = {
                 }
             },
             onCommit: () => {
-                debounceSync();
+                scheduleSync();
                 this.render();
             },
         });

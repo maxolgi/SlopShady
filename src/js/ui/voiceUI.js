@@ -9,6 +9,17 @@ import { LayerSystem } from '../webgl/layers.js';
 import { Sync } from '../features/sync.js';
 import { LFOEngine } from '../features/lfoEngine.js';
 import { initSlider } from './slider.js';
+import { createDebouncedSync } from '../utils.js';
+
+const scheduleSync = createDebouncedSync(() => Sync.send(LayerSystem.getState()));
+const scheduleLFOSync = createDebouncedSync(() => Sync.send({
+    lfos: state.lfos.map(l => ({
+        rate: l.rate, waveform: l.waveform, phaseOffset: l.phaseOffset,
+        amplitude: l.amplitude, dcOffset: l.dcOffset,
+        syncMode: l.syncMode, syncRate: l.syncRate, keySync: l.keySync
+    })),
+    bpm: state.bpm
+}));
 
 const sliderControllers = new Map();
 
@@ -106,9 +117,6 @@ function midiNoteToNameInclusive(note) {
 
 export const VoiceUI = {
     _updateInterval: null,
-    _syncDebounceTimer: null,
-    _syncDebouncePending: null,
-    _lfoSyncTimer: null,
 
     init() {
         this.setupVoiceModeButtons();
@@ -146,7 +154,7 @@ export const VoiceUI = {
                 const layer = LayerSystem.layers[state.selectedLayer];
                 if (layer) {
                     layer.setGlideTime(val);
-                    this._debouncedSync();
+                    scheduleSync();
                 }
             },
         });
@@ -179,7 +187,7 @@ export const VoiceUI = {
             });
         }
 
-        this._debouncedSync();
+        scheduleSync();
     },
 
     setupMIDIInputFilter() {
@@ -211,7 +219,7 @@ export const VoiceUI = {
             }
 
             this._updateChannelButtonStates(layer);
-            this._debouncedSync();
+            scheduleSync();
         });
 
         this._setupNoteRangeSlider('midiNoteMinSlider', 0);
@@ -245,7 +253,7 @@ export const VoiceUI = {
                 } else {
                     layer.input.noteRange[rangeIndex] = val;
                 }
-                this._debouncedSync();
+                scheduleSync();
             },
             onCommit: () => {
                 const layer = LayerSystem.layers[state.selectedLayer];
@@ -309,9 +317,6 @@ export const VoiceUI = {
         this._updateChannelButtonStates(layer);
         this._updateNoteRangeSliderUI(0);
         this._updateNoteRangeSliderUI(1);
-
-        if (layer.voiceManager) {
-        }
 
         this.updateVoiceStatus();
     },
@@ -435,9 +440,6 @@ export const VoiceUI = {
             this._updateNoteRangeSliderUI(0);
             this._updateNoteRangeSliderUI(1);
         }
-
-        if (layer && layer.voiceManager) {
-        }
     },
 
     applyLFOState() {
@@ -507,36 +509,8 @@ export const VoiceUI = {
         }
     },
 
-    /**
-     * Debounce sync calls to avoid flooding WebSocket during slider drags
-     */
-    _debouncedSync() {
-        if (this._syncDebounceTimer) {
-            clearTimeout(this._syncDebounceTimer);
-        }
-        this._syncDebounceTimer = setTimeout(() => {
-            Sync.send(LayerSystem.getState());
-            this._syncDebounceTimer = null;
-        }, 150);
-    },
-
-    _debouncedLFOSync() {
-        if (this._lfoSyncTimer) clearTimeout(this._lfoSyncTimer);
-        this._lfoSyncTimer = setTimeout(() => {
-            Sync.send({
-                lfos: state.lfos.map(l => ({
-                    rate: l.rate, waveform: l.waveform, phaseOffset: l.phaseOffset,
-                    amplitude: l.amplitude, dcOffset: l.dcOffset,
-                    syncMode: l.syncMode, syncRate: l.syncRate, keySync: l.keySync
-                })),
-                bpm: state.bpm
-            });
-            this._lfoSyncTimer = null;
-        }, 150);
-    },
-
     initLFOControls() {
-        const lfoSync = () => this._debouncedLFOSync();
+        const lfoSync = scheduleLFOSync;
 
         // BPM slider
         const bpmSliderEl = getEl('lfo-bpm-slider');
@@ -700,10 +674,6 @@ export const VoiceUI = {
         if (this._updateInterval) {
             clearInterval(this._updateInterval);
             this._updateInterval = null;
-        }
-        if (this._syncDebounceTimer) {
-            clearTimeout(this._syncDebounceTimer);
-            this._syncDebounceTimer = null;
         }
         sliderControllers.clear();
     }

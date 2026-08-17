@@ -6,7 +6,8 @@
 import { state, getEl } from '../state.js';
 import { Sync } from '../features/sync.js';
 import { initSlider } from './slider.js';
-import { ti, escapeAttr as _escTip } from './tooltips.js';
+import { ti, escapeAttr } from './tooltips.js';
+import { createDebouncedSync } from '../utils.js';
 
 const LOCK_MODE_OPTIONS = [
     { value: '0', label: 'Free' },
@@ -20,15 +21,11 @@ const LOCK_TARGET_OPTIONS = Array.from({ length: 8 }, (_, i) => ({
 }));
 
 const sliderApis = new Map();
-let _syncTimer = null;
 let _oscRafId = null;
+let _oscLoopActive = false;
 let _animRafId = null;
 let _lastAnimTime = 0;
 let _lastSegmentCount = -1;
-
-function escapeAttr(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-}
 
 function syncDropdown(menuId, value) {
     const menu = typeof menuId === 'string' ? document.getElementById(menuId) : menuId;
@@ -45,13 +42,7 @@ function syncDropdown(menuId, value) {
     if (btn && activeLabel) btn.textContent = activeLabel;
 }
 
-function debounceSync() {
-    if (_syncTimer) clearTimeout(_syncTimer);
-    _syncTimer = setTimeout(() => {
-        Sync.send({ scanimate: state.scanimate });
-        _syncTimer = null;
-    }, 150);
-}
+const scheduleSync = createDebouncedSync(() => Sync.send({ scanimate: state.scanimate }));
 
 function bumpConfigVersion() {
     state.scanimate.configVersion++;
@@ -76,7 +67,7 @@ function initSimpleSlider(id, path, format) {
     };
     const api = initSlider(el, {
         format: format || (v => v.toFixed(2)),
-        onChange: (v) => { write(v); debounceSync(); },
+        onChange: (v) => { write(v); scheduleSync(); },
     });
     if (api) {
         api.setValue(read());
@@ -105,30 +96,30 @@ function buildOscBank() {
         return `
             <div class="panel-section" data-osc="${i}" data-expand-hide>
                 <span class="content-title">${i + 1}</span>
-                <button class="tool-btn${osc.enabled ? ' active' : ''}" data-osc-toggle="${i}" data-tooltip="${_escTip(ti('SC_OSC_TOGGLE', {n: i+1}))}">Osc ${i + 1}</button>
-                <div class="dropdown" data-osc-lockmode="${i}" data-tooltip="${_escTip(ti('SC_OSC_LOCK_MODE', {n: i+1}))}">
+                <button class="tool-btn${osc.enabled ? ' active' : ''}" data-osc-toggle="${i}" data-tooltip="${escapeAttr(ti('SC_OSC_TOGGLE', {n: i+1}))}">Osc ${i + 1}</button>
+                <div class="dropdown" data-osc-lockmode="${i}" data-tooltip="${escapeAttr(ti('SC_OSC_LOCK_MODE', {n: i+1}))}">
                     <button class="dropdown__selected tool-btn"><span>${escapeAttr(lockLabel)}</span></button>
                     <div class="dropdown__menu">${lockItems}</div>
                 </div>
-                <div class="dropdown" data-osc-locktarget="${i}" data-tooltip="${_escTip(ti('SC_OSC_LOCK_TARGET', {n: i+1}))}">
+                <div class="dropdown" data-osc-locktarget="${i}" data-tooltip="${escapeAttr(ti('SC_OSC_LOCK_TARGET', {n: i+1}))}">
                     <button class="dropdown__selected tool-btn"><span>${escapeAttr(targetLabel)}</span></button>
                     <div class="dropdown__menu">${targetItems}</div>
                 </div>
-                <div class="slider scanimate-osc-slider" data-osc-freq="${i}" data-min="0.1" data-max="20" data-step="0.1" data-tooltip="${_escTip(ti('SC_OSC_FREQ', {n: i+1}))}">
+                <div class="slider scanimate-osc-slider" data-osc-freq="${i}" data-min="0.1" data-max="20" data-step="0.1" data-tooltip="${escapeAttr(ti('SC_OSC_FREQ', {n: i+1}))}">
                     <div class="slider__header">
                         <span class="slider__label">Freq</span>
                         <span class="slider__value">${osc.freqMult.toFixed(1)}</span>
                     </div>
                     <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
                 </div>
-                <div class="slider scanimate-osc-slider" data-osc-phase="${i}" data-min="0" data-max="1" data-step="0.01" data-tooltip="${_escTip(ti('SC_OSC_PHASE', {n: i+1}))}">
+                <div class="slider scanimate-osc-slider" data-osc-phase="${i}" data-min="0" data-max="1" data-step="0.01" data-tooltip="${escapeAttr(ti('SC_OSC_PHASE', {n: i+1}))}">
                     <div class="slider__header">
                         <span class="slider__label">Phase</span>
                         <span class="slider__value">${osc.phaseOffset.toFixed(2)}</span>
                     </div>
                     <div class="slider__track"><div class="slider__fill"><div class="slider__handle"></div></div></div>
                 </div>
-                <div class="slider scanimate-osc-slider" data-osc-amp="${i}" data-min="0" data-max="1" data-step="0.01" data-tooltip="${_escTip(ti('SC_OSC_AMP', {n: i+1}))}">
+                <div class="slider scanimate-osc-slider" data-osc-amp="${i}" data-min="0" data-max="1" data-step="0.01" data-tooltip="${escapeAttr(ti('SC_OSC_AMP', {n: i+1}))}">
                     <div class="slider__header">
                         <span class="slider__label">Amp</span>
                         <span class="slider__value">${osc.amplitude.toFixed(2)}</span>
@@ -163,7 +154,7 @@ function initOscSliders() {
             onChange: (v) => {
                 state.scanimate.oscillators[idx][prop] = v;
                 bumpConfigVersion();
-                debounceSync();
+                scheduleSync();
             },
         });
         if (api) {
@@ -180,7 +171,7 @@ function wireOscToggles() {
             state.scanimate.oscillators[idx].enabled = !state.scanimate.oscillators[idx].enabled;
             el.classList.toggle('active', state.scanimate.oscillators[idx].enabled);
             bumpConfigVersion();
-            debounceSync();
+            scheduleSync();
         });
     });
 }
@@ -191,7 +182,7 @@ function wireOscDropdowns() {
         dd.addEventListener('dropdown-select', (e) => {
             state.scanimate.oscillators[idx].lockMode = parseInt(e.detail.value, 10);
             bumpConfigVersion();
-            debounceSync();
+            scheduleSync();
         });
     });
     document.querySelectorAll('[data-osc-locktarget]').forEach(dd => {
@@ -199,15 +190,14 @@ function wireOscDropdowns() {
         dd.addEventListener('dropdown-select', (e) => {
             state.scanimate.oscillators[idx].lockTarget = parseInt(e.detail.value, 10);
             bumpConfigVersion();
-            debounceSync();
+            scheduleSync();
         });
     });
 }
 
 function drawOscCanvases() {
-    const scanimatePanelActive = document.querySelector('.content-panel[data-panel="scanimate"]')?.classList.contains('content-panel--active');
-    if (!scanimatePanelActive) {
-        _oscRafId = requestAnimationFrame(drawOscCanvases);
+    if (!_oscLoopActive) {
+        _oscRafId = null;
         return;
     }
     for (let i = 0; i < 8; i++) {
@@ -247,6 +237,31 @@ function drawOscCanvases() {
     _oscRafId = requestAnimationFrame(drawOscCanvases);
 }
 
+function startOscLoop() {
+    if (_oscLoopActive) return;
+    _oscLoopActive = true;
+    _oscRafId = requestAnimationFrame(drawOscCanvases);
+}
+
+function stopOscLoop() {
+    _oscLoopActive = false;
+    if (_oscRafId) {
+        cancelAnimationFrame(_oscRafId);
+        _oscRafId = null;
+    }
+}
+
+function watchPanelVisibility() {
+    const panel = document.querySelector('.content-panel[data-panel="scanimate"]');
+    if (!panel) return;
+    const observer = new MutationObserver(() => {
+        if (panel.classList.contains('content-panel--active')) startOscLoop();
+        else stopOscLoop();
+    });
+    observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
+    if (panel.classList.contains('content-panel--active')) startOscLoop();
+}
+
 function buildSegmentControls() {
     const container = getEl('scanimate-segment-controls');
     if (!container) return;
@@ -284,7 +299,7 @@ function buildSegmentControls() {
                 format: v => v.toFixed(2),
                 onChange: (v) => {
                     state.scanimate.deflection.segmentThresholds[idx] = v;
-                    debounceSync();
+                    scheduleSync();
                 },
             });
             if (api) {
@@ -301,7 +316,7 @@ function buildSegmentControls() {
                 format: v => v.toFixed(2),
                 onChange: (v) => {
                     state.scanimate.deflection.segmentDepthMultipliers[idx] = v;
-                    debounceSync();
+                    scheduleSync();
                 },
             });
             if (api) {
@@ -588,7 +603,7 @@ export const ScanimatePanel = {
             _animRafId = requestAnimationFrame(animationLoop);
         }
 
-        _oscRafId = requestAnimationFrame(drawOscCanvases);
+        watchPanelVisibility();
     },
 
     _wireToggles() {
@@ -610,7 +625,7 @@ export const ScanimatePanel = {
             el.addEventListener('click', () => {
                 write(!read());
                 el.classList.toggle('active', read());
-                debounceSync();
+                scheduleSync();
             });
         };
         wire('scanimate-enabled-toggle', 'enabled');
@@ -632,7 +647,7 @@ export const ScanimatePanel = {
                 if (urlInput.value && window.LayerSystem?.loadImageTexture) {
                     window.LayerSystem.loadImageTexture(urlInput.value);
                 }
-                debounceSync();
+                scheduleSync();
             });
         }
 
@@ -646,7 +661,7 @@ export const ScanimatePanel = {
                     if (window.LayerSystem?.loadImageTexture) {
                         window.LayerSystem.loadImageTexture(blobUrl);
                     }
-                    debounceSync();
+                    scheduleSync();
                 }
             });
         }
@@ -660,7 +675,7 @@ export const ScanimatePanel = {
             const applyColor = () => {
                 state.scanimate.colorizer[stateKey] = input.value;
                 if (btn) btn.style.setProperty('--btn-color', input.value);
-                debounceSync();
+                scheduleSync();
             };
             input.value = state.scanimate.colorizer[stateKey] || input.value;
             if (btn) {
@@ -679,7 +694,7 @@ export const ScanimatePanel = {
         if (fitDd) {
             fitDd.addEventListener('dropdown-select', (e) => {
                 state.scanimate.fit = e.detail.value;
-                debounceSync();
+                scheduleSync();
             });
         }
 
@@ -688,7 +703,7 @@ export const ScanimatePanel = {
             segDd.addEventListener('dropdown-select', (e) => {
                 state.scanimate.deflection.segmentCount = parseInt(e.detail.value, 10);
                 buildSegmentControls();
-                debounceSync();
+                scheduleSync();
             });
         }
     },
@@ -713,7 +728,7 @@ export const ScanimatePanel = {
                     }
                     _lastAnimTime = 0;
                 }
-                debounceSync();
+                scheduleSync();
             });
         }
 
@@ -729,7 +744,7 @@ export const ScanimatePanel = {
                     _lastAnimTime = 0;
                     _animRafId = requestAnimationFrame(animationLoop);
                 }
-                debounceSync();
+                scheduleSync();
             });
         }
 
@@ -752,7 +767,7 @@ export const ScanimatePanel = {
                         _animRafId = requestAnimationFrame(animationLoop);
                     }
                 }
-                debounceSync();
+                scheduleSync();
             });
         }
 
@@ -775,7 +790,7 @@ export const ScanimatePanel = {
                         _animRafId = requestAnimationFrame(animationLoop);
                     }
                 }
-                debounceSync();
+                scheduleSync();
             });
         }
     },

@@ -7,11 +7,13 @@ import { state, getEl } from '../state.js';
 import { LayerSystem } from '../webgl/layers.js';
 import { Sync } from '../features/sync.js';
 import { initSlider } from './slider.js';
-import { escapeHtml } from '../utils.js';
+import { escapeHtml, createDebouncedSync } from '../utils.js';
 import { T, escapeAttr } from './tooltips.js';
 import { MODULATION_SOURCES, DEFAULT_MODULATION_ENTRY, DEFAULT_OSC_ADDRESSES, MAX_VOICES } from '../config.js';
 import { MidiLearn } from '../features/midi.js';
 import { OscLearn } from '../features/osc.js';
+
+const scheduleSync = createDebouncedSync(() => Sync.send(LayerSystem.getState()));
 
 const CURVE_OPTIONS = [
     { value: 'linear', label: 'Linear' },
@@ -56,7 +58,6 @@ function _buildSourceConfig(source, dest) {
 }
 
 export const modulationMatrixUI = {
-    _syncDebounceTimer: null,
     _sliderApis: new Map(),
     _gridEditor: null,
 
@@ -84,7 +85,7 @@ export const modulationMatrixUI = {
                         entry.sourceConfig = entry.sourceConfig || {};
                         entry.sourceConfig.address = address;
                         this.render();
-                        this._debouncedSync();
+                        scheduleSync();
                     });
                 } else {
                     MidiLearn.start((cc) => {
@@ -92,7 +93,7 @@ export const modulationMatrixUI = {
                         entry.sourceConfig = entry.sourceConfig || {};
                         entry.sourceConfig.cc = cc;
                         this.render();
-                        this._debouncedSync();
+                        scheduleSync();
                     });
                 }
                 learnBtn.textContent = 'Learning...';
@@ -109,7 +110,7 @@ export const modulationMatrixUI = {
                 const enabled = !enabledBtn.classList.contains('active');
                 entry.enabled = enabled;
                 this._mirrorToLayer();
-                this._debouncedSync();
+                scheduleSync();
                 this.render();
                 return;
             }
@@ -143,7 +144,7 @@ export const modulationMatrixUI = {
                     entry.sourceConfig = entry.sourceConfig || {};
                     entry.sourceConfig.cc = val;
                     this._mirrorToLayer();
-                    this._debouncedSync();
+                    scheduleSync();
                 }
                 return;
             }
@@ -159,7 +160,7 @@ export const modulationMatrixUI = {
                     entry.sourceConfig = entry.sourceConfig || {};
                     entry.sourceConfig.address = addr;
                     this._mirrorToLayer();
-                    this._debouncedSync();
+                    scheduleSync();
                 }
             }
         };
@@ -176,7 +177,7 @@ export const modulationMatrixUI = {
             if (field === 'curve') {
                 entry.curve = e.detail.value;
                 this._mirrorToLayer();
-                this._debouncedSync();
+                scheduleSync();
                 this.render();
                 return;
             }
@@ -381,7 +382,7 @@ export const modulationMatrixUI = {
         const enabled = entry ? entry.enabled : false;
 
         const idAttr = entry
-            ? `data-entry-id="${escapeHtml(String(entry.id)).replace(/"/g, '&quot;')}"`
+            ? `data-entry-id="${escapeAttr(String(entry.id))}"`
             : '';
 
         return `
@@ -444,7 +445,7 @@ export const modulationMatrixUI = {
                         this._mirrorToLayer();
                         this._updateCell(entry.source, entry.destination);
                     },
-                    onCommit: () => this._debouncedSync(),
+                    onCommit: scheduleSync,
                 });
                 if (api) {
                     api.setValue(initial);
@@ -479,7 +480,7 @@ export const modulationMatrixUI = {
                     this._updateCell(source, dest);
                 },
                 onCommit: () => {
-                    this._debouncedSync();
+                    scheduleSync();
                     this.render();
                 },
             });
@@ -557,13 +558,5 @@ export const modulationMatrixUI = {
             ? `rgba(74,170,136,${opacity.toFixed(2)})`
             : (entry ? `rgba(74,170,136,0.08)` : '');
         cell.classList.toggle('matrix-grid__cell--active', !!active);
-    },
-
-    _debouncedSync() {
-        if (this._syncDebounceTimer) clearTimeout(this._syncDebounceTimer);
-        this._syncDebounceTimer = setTimeout(() => {
-            Sync.send(LayerSystem.getState());
-            this._syncDebounceTimer = null;
-        }, 150);
     },
 };
