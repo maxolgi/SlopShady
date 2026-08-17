@@ -1446,3 +1446,15 @@ CURRENT SHADER CODE:
 \`\`\`
 
 Explain what this shader does, how it uses the available uniforms (voices, audio, layer params, code dials), its mathematical concepts, visual effects, and suggest optimizations or variations. If the shader could benefit from voice reactivity, audio reactivity, or modulation, explain how.`;
+
+// =============== FEEDBACK PARAMS ===============
+export const FEEDBACK_PARAMS = [
+    { param: 'feedbackAmount', label: 'Amt', min: 0, max: 1, def: 0.5, fill: 50, tip: 'LAYER_FB_AMOUNT' },
+    { param: 'feedbackDecay', label: 'Dcy', min: 0, max: 1, def: 0.9, fill: 90, tip: 'LAYER_FB_DECAY' },
+    { param: 'feedbackZoom', label: 'Zm', min: 0.5, max: 2, def: 1.0, fill: 25, tip: 'LAYER_FB_ZOOM' },
+    { param: 'feedbackRotate', label: 'Rot', min: -3.14, max: 3.14, def: 0, fill: 50, tip: 'LAYER_FB_ROTATE' },
+    { param: 'feedbackOffsetX', label: 'OX', min: -0.5, max: 0.5, def: 0, fill: 50, tip: 'LAYER_FB_OX' },
+    { param: 'feedbackOffsetY', label: 'OY', min: -0.5, max: 0.5, def: 0, fill: 50, tip: 'LAYER_FB_OY' },
+    { param: 'feedbackSaturation', label: 'Sat', min: 0, max: 3, def: 1.0, fill: 33, tip: 'LAYER_FB_SAT' },
+    { param: 'feedbackBrightness', label: 'Brt', min: 0, max: 3, def: 1.0, fill: 33, tip: 'LAYER_FB_BRT' },
+];

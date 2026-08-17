@@ -4,7 +4,7 @@
  */
 
 import { state, getEl } from '../state.js';
-import { BLEND_MODE_OPTIONS, DEFAULT_MEDIA_VIDEO_SHADER, DEFAULT_MEDIA_IMAGE_SHADER, DEFAULT_MEDIA_SRT_SHADER } from '../config.js';
+import { BLEND_MODE_OPTIONS, DEFAULT_MEDIA_VIDEO_SHADER, DEFAULT_MEDIA_IMAGE_SHADER, DEFAULT_MEDIA_SRT_SHADER, FEEDBACK_PARAMS } from '../config.js';
 import { LayerSystem } from '../webgl/layers.js';
 import { Sync } from '../features/sync.js';
 import { escapeHtml } from '../utils.js';
@@ -55,16 +55,7 @@ const FB_BLEND_OPTIONS = [
     { value: '8', label: 'Dif' },
 ];
 
-const FB_SLIDERS = [
-    { param: 'feedbackAmount', label: 'Amt', min: 0, max: 1, def: 0.5, fill: 50, tip: 'LAYER_FB_AMOUNT' },
-    { param: 'feedbackDecay', label: 'Dcy', min: 0, max: 1, def: 0.9, fill: 90, tip: 'LAYER_FB_DECAY' },
-    { param: 'feedbackZoom', label: 'Zm', min: 0.5, max: 2, def: 1.0, fill: 25, tip: 'LAYER_FB_ZOOM' },
-    { param: 'feedbackRotate', label: 'Rot', min: -3.14, max: 3.14, def: 0, fill: 50, tip: 'LAYER_FB_ROTATE' },
-    { param: 'feedbackOffsetX', label: 'OX', min: -0.5, max: 0.5, def: 0, fill: 50, tip: 'LAYER_FB_OX' },
-    { param: 'feedbackOffsetY', label: 'OY', min: -0.5, max: 0.5, def: 0, fill: 50, tip: 'LAYER_FB_OY' },
-    { param: 'feedbackSaturation', label: 'Sat', min: 0, max: 3, def: 1.0, fill: 33, tip: 'LAYER_FB_SAT' },
-    { param: 'feedbackBrightness', label: 'Brt', min: 0, max: 3, def: 1.0, fill: 33, tip: 'LAYER_FB_BRT' },
-];
+const FB_SLIDERS = FEEDBACK_PARAMS;
 
 const CONTROLS_SLIDERS = [
     { param: 'brightness', label: 'Brt', min: 0, max: 3, def: 1.0, tip: 'LAYER_BRIGHTNESS' },
@@ -780,6 +771,7 @@ export const LayerMixer = {
 
         this._syncShaderDropdownDisplay(layerIndex);
         this.updateUI();
+        this.sendUpdate();
     },
 
     _readSliderValue(id, min, max) {
@@ -1366,6 +1358,7 @@ export const LayerMixer = {
                 this._isCrossfading = false;
                 this._crossfadeRaf = null;
                 if (switchBtn) switchBtn.classList.remove('active');
+                this.updateUI();
                 this.sendUpdate();
             }
         };
@@ -1500,7 +1493,7 @@ export const LayerMixer = {
         }
         
         this.updateLayerEditorIndicator();
-        this._rebuildShaderDropdowns();
+        if (!this._isCrossfading) this._rebuildShaderDropdowns();
     },
 
     updateModulatedSliders() {

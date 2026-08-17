@@ -3,19 +3,9 @@ import { LayerSystem } from '../webgl/layers.js';
 import { FramebufferManager } from '../webgl/framebuffers.js';
 import { Sync } from '../features/sync.js';
 import { initSlider } from './slider.js';
+import { FEEDBACK_PARAMS } from '../config.js';
 
 const BLEND_LABELS = ['Mix', 'Add', 'Multiply', 'Screen', 'Overlay', 'Lighten', 'Darken', 'Subtract', 'Difference'];
-
-const FEEDBACK_PARAMS = [
-    { param: 'feedbackAmount', def: 0.5 },
-    { param: 'feedbackDecay', def: 0.9 },
-    { param: 'feedbackZoom', def: 1.0 },
-    { param: 'feedbackRotate', def: 0 },
-    { param: 'feedbackOffsetX', def: 0 },
-    { param: 'feedbackOffsetY', def: 0 },
-    { param: 'feedbackSaturation', def: 1.0 },
-    { param: 'feedbackBrightness', def: 1.0 },
-];
 
 const sliderControllers = new Map();
 
