@@ -69,11 +69,7 @@ export const Keyboard = {
             e.preventDefault();
             toggleFullscreen();
         }
-        
-        if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
-            e.preventDefault();
-        }
-        
+
         // Ctrl+Shift+R: Start/Stop recording (WebSRT encoder → .ts)
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
             e.preventDefault();
@@ -96,7 +92,7 @@ export const Keyboard = {
                 const keyNum = parseInt(codeMatch[1]);
                 if (keyNum >= 1 && keyNum <= 8) {
                     e.preventDefault();
-                    const layer = LayerSystem.layers[keyNum];
+                    const layer = LayerSystem.layers[keyNum - 1];
                     if (layer) {
                         layer.enabled = !layer.enabled;
                         LayerMixer.updateUI();
@@ -300,7 +296,7 @@ export const Keyboard = {
             // Delete key switches to previous layer
             if (e.keyCode === 46) {
                 e.preventDefault();
-                LayerMixer.selectLayer(state.previousLayer);
+                if (Number.isInteger(state.previousLayer)) LayerMixer.selectLayer(state.previousLayer);
             }
         }
     },
