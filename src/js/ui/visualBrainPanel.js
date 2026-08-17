@@ -9,6 +9,10 @@ import { initSlider } from './slider.js';
 
 export const VisualBrainPanel = {
     _statTimer: null,
+    _micStream: null,
+    _micSource: null,
+    _micAnalyser: null,
+    _micPending: false,
 
     init() {
         this._wireBlockSizes();
@@ -122,15 +126,21 @@ export const VisualBrainPanel = {
                         state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                     }
                     if (!state.audioAnalyser) {
+                        if (this._micPending) return;
+                        this._micPending = true;
                         navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-                            const src = state.audioContext.createMediaStreamSource(stream);
-                            state.audioAnalyser = state.audioContext.createAnalyser();
-                            state.audioAnalyser.fftSize = 256;
-                            src.connect(state.audioAnalyser);
+                            this._micPending = false;
+                            this._micStream = stream;
+                            this._micSource = state.audioContext.createMediaStreamSource(stream);
+                            this._micAnalyser = state.audioContext.createAnalyser();
+                            this._micAnalyser.fftSize = 256;
+                            this._micSource.connect(this._micAnalyser);
+                            state.audioAnalyser = this._micAnalyser;
                             s.audioEnabled = true;
                             audioBtn.classList.add('active');
                             audioBtn.querySelector('span').textContent = 'Mic On';
                         }).catch(() => {
+                            this._micPending = false;
                         });
                     } else {
                         s.audioEnabled = true;
@@ -139,6 +149,7 @@ export const VisualBrainPanel = {
                     }
                 } else {
                     s.audioEnabled = false;
+                    this._releaseMic();
                     audioBtn.classList.remove('active');
                     audioBtn.querySelector('span').textContent = 'Mic';
                 }
@@ -153,6 +164,22 @@ export const VisualBrainPanel = {
                     state.visualBrain.audioDrive = v / 100;
                 }
             });
+        }
+    },
+
+    _releaseMic() {
+        if (this._micStream) {
+            this._micStream.getTracks().forEach(t => t.stop());
+            this._micStream = null;
+        }
+        if (this._micSource) {
+            this._micSource.disconnect();
+            this._micSource = null;
+        }
+        if (this._micAnalyser) {
+            this._micAnalyser.disconnect();
+            if (state.audioAnalyser === this._micAnalyser) state.audioAnalyser = null;
+            this._micAnalyser = null;
         }
     },
 

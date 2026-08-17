@@ -107,10 +107,10 @@ export const AudioTexture = {
         const len = data.length;
         if (!len) return;
 
-        // Peak: average of all bins
-        let peakSum = 0;
-        for (let i = 0; i < len; i++) peakSum += data[i];
-        state.audioModulators.peak = peakSum / (len * 255);
+        // Peak: max of all bins
+        let peak = 0;
+        for (let i = 0; i < len; i++) peak = Math.max(peak, data[i]);
+        state.audioModulators.peak = peak / 255;
 
         // Bands: split into thirds
         const third = Math.floor(len / 3);

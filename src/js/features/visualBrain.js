@@ -66,7 +66,9 @@ export const VisualBrain = {
     _frameCount: 0,
     _cachedGridW: 0,
     _cachedGridH: 0,
-    _cachedFBOSize: 0,
+    _cachedFBOW: 0,
+    _cachedFBOH: 0,
+    _atlasBlockSize: 0,
 
     locs: { feature: {}, match: {}, render: {} },
 
@@ -113,9 +115,8 @@ export const VisualBrain = {
     },
 
     _ensureTextures(gl, gridW, gridH, canvasW, canvasH) {
-        const bs = state.visualBrain.blockSize;
         const gridChanged = (gridW !== this._cachedGridW || gridH !== this._cachedGridH);
-        const sizeChanged = (canvasW !== this._cachedFBOSize || canvasH !== this._cachedFBOSize);
+        const sizeChanged = (canvasW !== this._cachedFBOW || canvasH !== this._cachedFBOH);
 
         if (!this.featureTex0 || gridChanged) {
             if (this.featureFBO) gl.deleteFramebuffer(this.featureFBO);
@@ -152,7 +153,8 @@ export const VisualBrain = {
                 gl.deleteTexture(this.brainTempFBO.texture);
             }
             this.brainTempFBO = createFBO(gl, canvasW, canvasH);
-            this._cachedFBOSize = canvasW;
+            this._cachedFBOW = canvasW;
+            this._cachedFBOH = canvasH;
         }
 
         if (!this.corpusFeatureTex0) {
@@ -160,8 +162,15 @@ export const VisualBrain = {
             this.corpusFeatureTex1 = createTex(gl, MAX_CORPUS, 1, gl.NEAREST, gl.CLAMP_TO_EDGE);
         }
 
-        if (!this.atlasTex) {
-            this.atlasTex = createTex(gl, ATLAS_GRID * 32, ATLAS_GRID * 32, gl.NEAREST, gl.CLAMP_TO_EDGE);
+        this._ensureAtlasTex(gl);
+    },
+
+    _ensureAtlasTex(gl) {
+        const bs = state.visualBrain.blockSize;
+        if (!this.atlasTex || this._atlasBlockSize !== bs) {
+            if (this.atlasTex) gl.deleteTexture(this.atlasTex);
+            this.atlasTex = createTex(gl, ATLAS_GRID * bs, ATLAS_GRID * bs, gl.NEAREST, gl.CLAMP_TO_EDGE);
+            this._atlasBlockSize = bs;
         }
     },
 
@@ -465,6 +474,7 @@ export const VisualBrain = {
         tmpCanvas.height = bs;
         const tc = tmpCanvas.getContext('2d');
         const gl = state.gl;
+        this._ensureAtlasTex(gl);
 
         for (let i = 0; i < SEED_COUNT && this.corpusCount < MAX_CORPUS; i++) {
             tc.clearRect(0, 0, bs, bs);
@@ -558,9 +568,11 @@ export const VisualBrain = {
 
         if (state.gl && this.atlasTex) {
             const gl = state.gl;
+            const bs = state.visualBrain.blockSize;
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, ATLAS_GRID * 32, ATLAS_GRID * 32, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, ATLAS_GRID * bs, ATLAS_GRID * bs, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            this._atlasBlockSize = bs;
         }
     },
 
