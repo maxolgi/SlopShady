@@ -31,6 +31,7 @@ let _lastRefresh = 0;
 let _wiresVisible = true;
 let _expandedGroups = new Map();
 let _selectedNode = null;
+const _wireToModEntry = new Map();
 
 function nodeToLayer(node, prop, value) {
     if (_syncing) return;
@@ -38,7 +39,7 @@ function nodeToLayer(node, prop, value) {
     const layer = LayerSystem.layers[node.properties.layerIndex];
     if (layer) {
         layer[prop] = value;
-        Sync.send({ layers: LayerSystem.getState() });
+        Sync.send(LayerSystem.getState());
     }
     _syncing = false;
 }
@@ -136,6 +137,7 @@ function registerNodeTypes() {
             ctx.fillText(this.properties.materialType.toUpperCase(), 4, this.size[1] - 4);
         }
     };
+    LayerNode.prototype.onConnectionsChange = handleConnectionChange;
     LiteGraph.registerNodeType("node/layer", LayerNode);
 
     function VoiceNode() {
@@ -459,7 +461,7 @@ function registerNodeTypes() {
             layer.feedbackDecay = node.properties.decay;
             layer.feedbackZoom = node.properties.zoom;
             layer.feedbackRotate = node.properties.rotate;
-            Sync.send({ layers: LayerSystem.getState() });
+            Sync.send(LayerSystem.getState());
         }
         _syncing = false;
     }
@@ -535,6 +537,8 @@ function createNode(type, pos) {
 function buildGraphFromLayers() {
     if (!graph) return;
     graph.clear();
+    _wireToModEntry.clear();
+    _syncing = true;
 
     const layers = LayerSystem.layers || [];
     const sourceX = 50;
@@ -714,6 +718,7 @@ function buildGraphFromLayers() {
     }
 
     graph.setDirtyCanvas(true);
+    _syncing = false;
 }
 
 function autoLayout() {
@@ -1002,60 +1007,78 @@ function refreshNodeStates() {
     _syncing = false;
 }
 
-function handleConnectionChange(type, link) {
+function handleConnectionChange(inputOrOutput, slot, connected, link) {
     if (_syncing || !link) return;
+    if (inputOrOutput !== LiteGraph.INPUT || slot !== 1) return;
 
-    if (type === 'connect') {
-        const originNode = graph.getNodeById(link.origin_id);
-        const targetNode = graph.getNodeById(link.target_id);
-        if (!originNode || !targetNode) return;
+    const originNode = graph.getNodeById(link.origin_id);
+    const targetNode = graph.getNodeById(link.target_id);
+    if (!originNode || !targetNode) return;
 
-        if (targetNode.type !== 'node/layer' || link.target_slot !== 1) return;
+    if (targetNode.type !== 'node/layer') return;
 
-        const layerIndex = targetNode.properties.layerIndex;
-        const layer = LayerSystem.layers[layerIndex];
-        if (!layer) return;
+    const layerIndex = targetNode.properties.layerIndex;
+    const layer = LayerSystem.layers[layerIndex];
+    if (!layer) return;
 
-        let source = '';
-        let sourceConfig = {};
-
-        if (originNode.type === 'node/lfo') {
-            source = 'lfo' + (originNode.properties.lfoIndex + 1);
-        } else if (originNode.type === 'node/audio') {
-            const slotMap = ['audio_peak', 'audio_band_low', 'audio_band_mid', 'audio_band_high'];
-            source = slotMap[link.origin_slot] || 'audio_peak';
-        } else if (originNode.type === 'node/midi') {
-            const slotMap = ['note', 'velocity', 'cc', 'aftertouch', 'pitchbend'];
-            source = slotMap[link.origin_slot] || 'cc';
-            if (source === 'cc') sourceConfig = { cc: originNode.properties.ccNumber || 1 };
-        } else if (originNode.type === 'node/macro') {
-            source = 'macro' + (originNode.properties.macroIndex + 1);
-        } else if (originNode.type === 'node/keyboard') {
-            source = 'kbd';
+    if (!connected) {
+        const entryId = _wireToModEntry.get(link.id);
+        if (entryId === undefined) return;
+        _wireToModEntry.delete(link.id);
+        const stateMatrix = state.layerModulationMatrices[layerIndex];
+        if (Array.isArray(stateMatrix)) {
+            const si = stateMatrix.findIndex(entry => entry.id === entryId);
+            if (si !== -1) stateMatrix.splice(si, 1);
         }
-
-        if (!source) return;
-
-        const matrix = state.layerModulationMatrices[layerIndex];
-        if (!matrix) return;
-
-        const newEntry = {
-            id: Date.now(),
-            source: source,
-            sourceConfig: sourceConfig,
-            destination: 'u_brightness',
-            amount: 1.0,
-            curve: 'linear',
-            enabled: true
-        };
-        matrix.push(newEntry);
-
-        if (layer.modulationMatrix) {
-            layer.modulationMatrix.push(newEntry);
+        if (Array.isArray(layer.modulationMatrix)) {
+            const li = layer.modulationMatrix.findIndex(entry => entry.id === entryId);
+            if (li !== -1) layer.modulationMatrix.splice(li, 1);
         }
-
-        Sync.send({ layerModulationMatrices: state.layerModulationMatrices });
+        Sync.send(LayerSystem.getState());
+        return;
     }
+
+    let source = '';
+    let sourceConfig = {};
+
+    if (originNode.type === 'node/lfo') {
+        source = 'lfo' + (originNode.properties.lfoIndex + 1);
+    } else if (originNode.type === 'node/audio') {
+        const slotMap = ['audio_peak', 'audio_band_low', 'audio_band_mid', 'audio_band_high'];
+        source = slotMap[link.origin_slot] || 'audio_peak';
+    } else if (originNode.type === 'node/midi') {
+        const slotMap = ['note', 'velocity', 'cc', 'aftertouch', 'pitchbend'];
+        source = slotMap[link.origin_slot] || 'cc';
+        if (source === 'cc') sourceConfig = { cc: originNode.properties.ccNumber || 1 };
+    } else if (originNode.type === 'node/macro') {
+        source = 'macro' + (originNode.properties.macroIndex + 1);
+    } else if (originNode.type === 'node/keyboard') {
+        source = 'kbd';
+    }
+
+    if (!source) return;
+
+    const matrix = state.layerModulationMatrices[layerIndex];
+    if (!matrix) return;
+
+    const newEntry = {
+        id: Date.now(),
+        source: source,
+        sourceConfig: sourceConfig,
+        destination: 'u_brightness',
+        amount: 1.0,
+        curve: 'linear',
+        enabled: true
+    };
+    matrix.push(newEntry);
+
+    if (layer.modulationMatrix) {
+        layer.modulationMatrix.push(newEntry);
+    }
+
+    _wireToModEntry.set(link.id, newEntry.id);
+
+    Sync.send({ layerModulationMatrices: state.layerModulationMatrices });
 }
 
 function saveLayout() {
@@ -1072,9 +1095,12 @@ function loadLayout() {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return false;
         const data = JSON.parse(raw);
+        _syncing = true;
         graph.configure(data);
+        _syncing = false;
         return true;
     } catch (e) {
+        _syncing = false;
         return false;
     }
 }
@@ -1171,8 +1197,6 @@ export const NodeGraph = {
         lgraphcanvas.onNodeDeselected = function() {
             showInspector(null);
         };
-
-        lgraphcanvas.onConnectionChange = handleConnectionChange;
 
         lgraphcanvas.onDrawLink = function(ctx, link) {
             if (!link || !graph) return false;
