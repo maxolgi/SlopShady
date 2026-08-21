@@ -215,6 +215,7 @@ function registerNodeTypes() {
             eg.decay = node.properties.decay;
             eg.sustain = node.properties.sustain;
             eg.release = node.properties.release;
+            layer.markEGsDirty();
         }
         _syncing = false;
     }
