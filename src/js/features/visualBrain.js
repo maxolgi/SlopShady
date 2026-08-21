@@ -69,6 +69,14 @@ export const VisualBrain = {
     _cachedFBOW: 0,
     _cachedFBOH: 0,
     _atlasBlockSize: 0,
+    _recF0: null,
+    _recF1: null,
+    _recFrame: null,
+    _recReadFBO: null,
+    _blockCanvas: null,
+    _blockCtx: null,
+    _blockImageData: null,
+    _blockCanvasSize: 0,
 
     locs: { feature: {}, match: {}, render: {} },
 
@@ -367,20 +375,28 @@ export const VisualBrain = {
 
     _recordBlocks(gl, inputTex, gridW, gridH, bs, canvasW, canvasH) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.featureFBO);
-        const fdata0 = new Uint8Array(gridW * gridH * 4);
-        const fdata1 = new Uint8Array(gridW * gridH * 4);
+        const gridLen = gridW * gridH * 4;
+        if (!this._recF0 || this._recF0.length !== gridLen) {
+            this._recF0 = new Uint8Array(gridLen);
+            this._recF1 = new Uint8Array(gridLen);
+        }
+        const fdata0 = this._recF0;
+        const fdata1 = this._recF1;
         gl.readBuffer(gl.COLOR_ATTACHMENT0);
         gl.readPixels(0, 0, gridW, gridH, gl.RGBA, gl.UNSIGNED_BYTE, fdata0);
         gl.readBuffer(gl.COLOR_ATTACHMENT1);
         gl.readPixels(0, 0, gridW, gridH, gl.RGBA, gl.UNSIGNED_BYTE, fdata1);
 
-        const frameBuffer = new Uint8Array(canvasW * canvasH * 4);
-        const tmpFBO = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, tmpFBO);
+        const frameLen = canvasW * canvasH * 4;
+        if (!this._recFrame || this._recFrame.length !== frameLen) {
+            this._recFrame = new Uint8Array(frameLen);
+        }
+        const frameBuffer = this._recFrame;
+        if (!this._recReadFBO) this._recReadFBO = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._recReadFBO);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, inputTex, 0);
         gl.readPixels(0, 0, canvasW, canvasH, gl.RGBA, gl.UNSIGNED_BYTE, frameBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.deleteFramebuffer(tmpFBO);
 
         for (let by = 0; by < gridH; by += 2) {
             for (let bx = 0; bx < gridW; bx += 2) {
@@ -415,11 +431,15 @@ export const VisualBrain = {
         const ax = (corpusIdx % ATLAS_GRID) * bs;
         const ay = Math.floor(corpusIdx / ATLAS_GRID) * bs;
 
-        const tmpCanvas = document.createElement('canvas');
-        tmpCanvas.width = bs;
-        tmpCanvas.height = bs;
-        const tc = tmpCanvas.getContext('2d');
-        const blockData = tc.createImageData(bs, bs);
+        if (!this._blockCtx || this._blockCanvasSize !== bs) {
+            this._blockCanvas = document.createElement('canvas');
+            this._blockCanvas.width = bs;
+            this._blockCanvas.height = bs;
+            this._blockCtx = this._blockCanvas.getContext('2d');
+            this._blockImageData = this._blockCtx.createImageData(bs, bs);
+            this._blockCanvasSize = bs;
+        }
+        const blockData = this._blockImageData;
         for (let dy = 0; dy < bs; dy++) {
             for (let dx = 0; dx < bs; dx++) {
                 const si = ((sy + dy) * srcW + (sx + dx)) * 4;
@@ -430,11 +450,11 @@ export const VisualBrain = {
                 blockData.data[di + 3] = frameBuf[si + 3];
             }
         }
-        tc.putImageData(blockData, 0, 0);
+        this._blockCtx.putImageData(blockData, 0, 0);
 
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
-        gl.texSubImage2D(gl.TEXTURE_2D, 0, ax, ay, bs, bs, gl.RGBA, gl.UNSIGNED_BYTE, tmpCanvas);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, ax, ay, bs, bs, gl.RGBA, gl.UNSIGNED_BYTE, this._blockCanvas);
     },
 
     _uploadCorpusFeatures(gl) {
