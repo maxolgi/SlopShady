@@ -112,15 +112,16 @@ pub async fn chat_completions(
         match client.post(&url).headers(headers).json(&payload).send().await {
             Ok(resp) => {
                 let mut buffer = String::new();
+                let mut consumed = 0usize;
                 let mut byte_stream = resp.bytes_stream();
 
                 while let Some(chunk) = byte_stream.next().await {
                     match chunk {
                         Ok(bytes) => {
                             buffer.push_str(&String::from_utf8_lossy(&bytes));
-                            while let Some(pos) = buffer.find('\n') {
-                                let line = buffer[..pos].trim_end().to_string();
-                                buffer = buffer[pos + 1..].to_string();
+                            while let Some(pos) = buffer[consumed..].find('\n') {
+                                let line = buffer[consumed..consumed + pos].trim_end().to_string();
+                                consumed += pos + 1;
                                 if line.is_empty() {
                                     continue;
                                 }
@@ -130,6 +131,8 @@ pub async fn chat_completions(
                                     yield Ok::<_, std::io::Error>(Bytes::from(format!("data: {line}\n\n")));
                                 }
                             }
+                            buffer.drain(..consumed);
+                            consumed = 0;
                         }
                         Err(e) => {
                             let msg = format!("event: status\ndata: {}\n\n", json!({"message": format!("Stream error: {e}"), "type": "error"}));

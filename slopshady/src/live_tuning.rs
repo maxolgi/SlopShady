@@ -115,6 +115,7 @@ async fn stream_llm_call(
     let mut tool_calls: Vec<ToolCall> = Vec::new();
 
     let mut buffer = String::new();
+    let mut consumed = 0usize;
     let mut stream = resp.bytes_stream();
     use futures::StreamExt;
 
@@ -122,9 +123,9 @@ async fn stream_llm_call(
         let chunk = chunk.map_err(|e| format!("Stream error: {}", e))?;
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-        while let Some(pos) = buffer.find('\n') {
-            let line = buffer[..pos].trim_end().to_string();
-            buffer = buffer[pos + 1..].to_string();
+        while let Some(pos) = buffer[consumed..].find('\n') {
+            let line = buffer[consumed..consumed + pos].trim_end().to_string();
+            consumed += pos + 1;
 
             if !line.starts_with("data: ") {
                 continue;
@@ -170,6 +171,8 @@ async fn stream_llm_call(
                 }
             }
         }
+        buffer.drain(..consumed);
+        consumed = 0;
     }
 
     Ok((accumulated_content, tool_calls))
