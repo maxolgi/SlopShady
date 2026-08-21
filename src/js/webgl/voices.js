@@ -19,6 +19,8 @@ export class VoiceManager {
         this.voiceMode = 'poly';
         this.glideTime = 0.1;
         this._activeVoiceCount = 0;
+        this._uniformArrays = null;
+        this._syncedEgVersion = -1;
 
         this.voices = [];
         for (let i = 0; i < maxVoices; i++) {
@@ -189,9 +191,11 @@ export class VoiceManager {
     }
 
     process(deltaTime = 0.016) {
+        const egDirty = !!this.layer && this.layer._egParamsVersion !== this._syncedEgVersion;
+        if (egDirty) this._syncedEgVersion = this.layer._egParamsVersion;
         for (const voice of this.voices) {
             if (voice.active || voice.releasing) {
-                this._syncEGParams(voice);
+                if (egDirty) this._syncEGParams(voice);
                 for (const eg of voice.egs) {
                     EGSystem.processEG(eg, deltaTime);
                 }
@@ -231,46 +235,40 @@ export class VoiceManager {
     }
 
     getUniforms() {
-        const active = new Float32Array(this.maxVoices);
-        const note = new Float32Array(this.maxVoices);
-        const velocity = new Float32Array(this.maxVoices);
-        const posX = new Float32Array(this.maxVoices);
-        const posY = new Float32Array(this.maxVoices);
-        const scale = new Float32Array(this.maxVoices);
-        const rotation = new Float32Array(this.maxVoices);
-        const usePos = new Float32Array(this.maxVoices);
-        const useScale = new Float32Array(this.maxVoices);
-        const useRot = new Float32Array(this.maxVoices);
-        const eg = new Float32Array(this.maxVoices);
+        // Arrays are reused across calls — callers must not retain or mutate them
+        if (!this._uniformArrays) {
+            this._uniformArrays = {
+                u_voiceActive: new Float32Array(this.maxVoices),
+                u_voiceNote: new Float32Array(this.maxVoices),
+                u_voiceVelocity: new Float32Array(this.maxVoices),
+                u_voicePosX: new Float32Array(this.maxVoices),
+                u_voicePosY: new Float32Array(this.maxVoices),
+                u_voiceScale: new Float32Array(this.maxVoices),
+                u_voiceRotation: new Float32Array(this.maxVoices),
+                u_voiceUsePos: new Float32Array(this.maxVoices),
+                u_voiceUseScale: new Float32Array(this.maxVoices),
+                u_voiceUseRot: new Float32Array(this.maxVoices),
+                u_voiceEG: new Float32Array(this.maxVoices)
+            };
+        }
+        const u = this._uniformArrays;
 
         for (let i = 0; i < this.maxVoices; i++) {
             const v = this.voices[i];
-            active[i] = v.active ? 1.0 : 0.0;
-            note[i] = this._getEffectiveNote(v);
-            velocity[i] = v.velocity / 127;
-            posX[i] = v.position.x;
-            posY[i] = v.position.y;
-            scale[i] = v.scale;
-            rotation[i] = v.rotation;
-            usePos[i] = v.usePos ? 1.0 : 0.0;
-            useScale[i] = v.useScale ? 1.0 : 0.0;
-            useRot[i] = v.useRotate ? 1.0 : 0.0;
-            eg[i] = (v.egs && v.egs[0]) ? v.egs[0].value : 0;
+            u.u_voiceActive[i] = v.active ? 1.0 : 0.0;
+            u.u_voiceNote[i] = this._getEffectiveNote(v);
+            u.u_voiceVelocity[i] = v.velocity / 127;
+            u.u_voicePosX[i] = v.position.x;
+            u.u_voicePosY[i] = v.position.y;
+            u.u_voiceScale[i] = v.scale;
+            u.u_voiceRotation[i] = v.rotation;
+            u.u_voiceUsePos[i] = v.usePos ? 1.0 : 0.0;
+            u.u_voiceUseScale[i] = v.useScale ? 1.0 : 0.0;
+            u.u_voiceUseRot[i] = v.useRotate ? 1.0 : 0.0;
+            u.u_voiceEG[i] = (v.egs && v.egs[0]) ? v.egs[0].value : 0;
         }
 
-        return {
-            u_voiceActive: active,
-            u_voiceNote: note,
-            u_voiceVelocity: velocity,
-            u_voicePosX: posX,
-            u_voicePosY: posY,
-            u_voiceScale: scale,
-            u_voiceRotation: rotation,
-            u_voiceUsePos: usePos,
-            u_voiceUseScale: useScale,
-            u_voiceUseRot: useRot,
-            u_voiceEG: eg
-        };
+        return u;
     }
 
     setVoiceMode(mode) {

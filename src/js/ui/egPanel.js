@@ -134,6 +134,7 @@ function attachEventListeners() {
                 const layer = getSelectedLayer();
                 if (layer && layer.egs && layer.egs[egIndex]) {
                     EGSystem.setEGParams(layer.egs[egIndex], { [param]: val });
+                    layer.markEGsDirty();
                     drawEGCurve(egIndex, layer.egs[egIndex]);
                 }
                 notifyChange(egIndex, param, val);
@@ -151,6 +152,7 @@ function attachEventListeners() {
                 const layer = getSelectedLayer();
                 if (layer && layer.egs && layer.egs[i]) {
                     EGSystem.setEGParams(layer.egs[i], { [setting]: e.detail.value });
+                    layer.markEGsDirty();
                     drawEGCurve(i, layer.egs[i]);
                 }
             });
@@ -485,6 +487,7 @@ function setEGValue(egIndex, param, value) {
     const layer = getSelectedLayer();
     if (layer && layer.egs && layer.egs[egIndex]) {
         EGSystem.setEGParams(layer.egs[egIndex], { [param]: clampedValue });
+        layer.markEGsDirty();
     }
 
     const slider = document.querySelector(`#section-eg-${egIndex}a .slider[data-eg="${egIndex}"][data-param="${param}"]`);
@@ -546,6 +549,7 @@ function resetEG(egIndex) {
     const layer = getSelectedLayer();
     if (layer && layer.egs && layer.egs[egIndex]) {
         EGSystem.resetEG(layer.egs[egIndex]);
+        layer.markEGsDirty();
         const eg = layer.egs[egIndex];
         for (const param of SLIDER_ORDER) {
             setEGValue(egIndex, param, eg[param]);

@@ -18,6 +18,8 @@ import { VisualBrain } from '../features/visualBrain.js';
 import { StreamingInputUI } from '../ui/streaming-input.js';
 import { compileUtilityProgram, hexToRgb } from '../utils.js';
 
+const ZERO_VOICE_ACTIVE = new Float32Array(MAX_VOICES);
+
 export class Layer {
     constructor(index, config) {
         config = config || {};
@@ -69,6 +71,7 @@ export class Layer {
         this.voiceManager.setVoiceMode(this.voiceMode);
 
         // Per-layer envelope generators (4 per layer)
+        this._egParamsVersion = 0;
         this.egs = Array.from({ length: 4 }, () => EGSystem.createEG());
         if (config.egs && Array.isArray(config.egs)) {
             for (let i = 0; i < 4; i++) {
@@ -77,11 +80,13 @@ export class Layer {
                 }
             }
         }
+        this.markEGsDirty();
         
         // Runtime GL state (not synced)
         this.program = null;
         this.voiceAware = false; // Set during compilation based on voiceMode
         this.voiceUniformLocs = null; // Cached voice uniform locations
+        this._voiceUploadScratch = null; // Per-layer scratch arrays for modulated voice uniform uploads
         this._modulationUniformLocs = new Map();
         this.posLoc = -1;
         this.shaderParams = [];
@@ -101,6 +106,10 @@ export class Layer {
         for (const eg of this.egs) {
             EGSystem.processEG(eg, deltaTime);
         }
+    }
+
+    markEGsDirty() {
+        this._egParamsVersion++;
     }
     
     /**
@@ -693,21 +702,33 @@ export const LayerSystem = {
             const locs = layer.voiceUniformLocs;
 
             if (locs) {
-                for (let i = 0; i < MAX_VOICES; i++) {
-                    const isActive = layer.voiceMode === 'off' ? 0.0 : voiceUniforms.u_voiceActive[i];
-                    const vOff = (_modVoiceUniforms && _modVoiceUniforms[i]) || {};
-                    if (locs.active[i]) gl.uniform1f(locs.active[i], isActive);
-                    if (locs.note[i]) gl.uniform1f(locs.note[i], voiceUniforms.u_voiceNote[i]);
-                    if (locs.velocity[i]) gl.uniform1f(locs.velocity[i], voiceUniforms.u_voiceVelocity[i]);
-                    if (locs.eg[i]) gl.uniform1f(locs.eg[i], voiceUniforms.u_voiceEG[i]);
-                    if (locs.posX[i]) gl.uniform1f(locs.posX[i], voiceUniforms.u_voicePosX[i] + (vOff.posX || 0));
-                    if (locs.posY[i]) gl.uniform1f(locs.posY[i], voiceUniforms.u_voicePosY[i] + (vOff.posY || 0));
-                    if (locs.scale[i]) gl.uniform1f(locs.scale[i], voiceUniforms.u_voiceScale[i] + (vOff.scale || 0));
-                    if (locs.rotation[i]) gl.uniform1f(locs.rotation[i], voiceUniforms.u_voiceRotation[i] + (vOff.rotation || 0));
-                    if (locs.usePos[i]) gl.uniform1f(locs.usePos[i], voiceUniforms.u_voiceUsePos[i]);
-                    if (locs.useScale[i]) gl.uniform1f(locs.useScale[i], voiceUniforms.u_voiceUseScale[i]);
-                    if (locs.useRot[i]) gl.uniform1f(locs.useRot[i], voiceUniforms.u_voiceUseRot[i]);
+                if (!layer._voiceUploadScratch) {
+                    layer._voiceUploadScratch = {
+                        posX: new Float32Array(MAX_VOICES),
+                        posY: new Float32Array(MAX_VOICES),
+                        scale: new Float32Array(MAX_VOICES),
+                        rotation: new Float32Array(MAX_VOICES)
+                    };
                 }
+                const scratch = layer._voiceUploadScratch;
+                for (let i = 0; i < MAX_VOICES; i++) {
+                    const vOff = (_modVoiceUniforms && _modVoiceUniforms[i]) || {};
+                    scratch.posX[i] = voiceUniforms.u_voicePosX[i] + (vOff.posX || 0);
+                    scratch.posY[i] = voiceUniforms.u_voicePosY[i] + (vOff.posY || 0);
+                    scratch.scale[i] = voiceUniforms.u_voiceScale[i] + (vOff.scale || 0);
+                    scratch.rotation[i] = voiceUniforms.u_voiceRotation[i] + (vOff.rotation || 0);
+                }
+                if (locs.active) gl.uniform1fv(locs.active, layer.voiceMode === 'off' ? ZERO_VOICE_ACTIVE : voiceUniforms.u_voiceActive);
+                if (locs.note) gl.uniform1fv(locs.note, voiceUniforms.u_voiceNote);
+                if (locs.velocity) gl.uniform1fv(locs.velocity, voiceUniforms.u_voiceVelocity);
+                if (locs.eg) gl.uniform1fv(locs.eg, voiceUniforms.u_voiceEG);
+                if (locs.posX) gl.uniform1fv(locs.posX, scratch.posX);
+                if (locs.posY) gl.uniform1fv(locs.posY, scratch.posY);
+                if (locs.scale) gl.uniform1fv(locs.scale, scratch.scale);
+                if (locs.rotation) gl.uniform1fv(locs.rotation, scratch.rotation);
+                if (locs.usePos) gl.uniform1fv(locs.usePos, voiceUniforms.u_voiceUsePos);
+                if (locs.useScale) gl.uniform1fv(locs.useScale, voiceUniforms.u_voiceUseScale);
+                if (locs.useRot) gl.uniform1fv(locs.useRot, voiceUniforms.u_voiceUseRot);
                 // u_eg0-3: aggregate (max) of active voices' per-voice EG values
                 const vm = layer.voiceManager;
                 for (let eg = 0; eg < 4; eg++) {
@@ -1773,6 +1794,7 @@ export const LayerSystem = {
                         for (let i = 0; i < Math.min(layerData.egs.length, 4); i++) {
                             EGSystem.setEGParams(layer.egs[i], layerData.egs[i]);
                         }
+                        layer.markEGsDirty();
                     }
                 }
             }

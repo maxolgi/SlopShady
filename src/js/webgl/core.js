@@ -4,7 +4,7 @@
  */
 
 import { state, getEl } from '../state.js';
-import { VERTEX_SHADER, DEFAULT_SHADER_CODE, LAYER_UNIFORMS_DECL, VOICE_UNIFORMS_DECL, VOICE_SHADER_WRAPPER, MAX_VOICES, SHADER_BUILTINS, COMMON_CONSTANTS } from '../config.js';
+import { VERTEX_SHADER, DEFAULT_SHADER_CODE, LAYER_UNIFORMS_DECL, VOICE_UNIFORMS_DECL, VOICE_SHADER_WRAPPER, SHADER_BUILTINS, COMMON_CONSTANTS } from '../config.js';
 import { Sync } from '../features/sync.js';
 import { Shaders } from '../api/shaders.js';
 import { LayerSystem } from './layers.js';
@@ -325,17 +325,17 @@ out vec4 fragColor;
         if (!gl || !program) return null;
         
         const locs = {
-            active: [],
-            note: [],
-            velocity: [],
-            posX: [],
-            posY: [],
-            scale: [],
-            rotation: [],
-            usePos: [],
-            useScale: [],
-            useRot: [],
-            eg: [],
+            active: gl.getUniformLocation(program, 'u_voiceActive'),
+            note: gl.getUniformLocation(program, 'u_voiceNote'),
+            velocity: gl.getUniformLocation(program, 'u_voiceVelocity'),
+            posX: gl.getUniformLocation(program, 'u_voicePosX'),
+            posY: gl.getUniformLocation(program, 'u_voicePosY'),
+            scale: gl.getUniformLocation(program, 'u_voiceScale'),
+            rotation: gl.getUniformLocation(program, 'u_voiceRotation'),
+            usePos: gl.getUniformLocation(program, 'u_voiceUsePos'),
+            useScale: gl.getUniformLocation(program, 'u_voiceUseScale'),
+            useRot: gl.getUniformLocation(program, 'u_voiceUseRot'),
+            eg: gl.getUniformLocation(program, 'u_voiceEG'),
             eg0: gl.getUniformLocation(program, 'u_eg0'),
             eg1: gl.getUniformLocation(program, 'u_eg1'),
             eg2: gl.getUniformLocation(program, 'u_eg2'),
@@ -344,21 +344,7 @@ out vec4 fragColor;
             channelPressure: gl.getUniformLocation(program, 'u_channelPressure'),
             kbdNote: gl.getUniformLocation(program, 'u_kbdNote')
         };
-        
-        for (let i = 0; i < MAX_VOICES; i++) {
-            locs.active.push(gl.getUniformLocation(program, `u_voiceActive[${i}]`));
-            locs.note.push(gl.getUniformLocation(program, `u_voiceNote[${i}]`));
-            locs.velocity.push(gl.getUniformLocation(program, `u_voiceVelocity[${i}]`));
-            locs.eg.push(gl.getUniformLocation(program, `u_voiceEG[${i}]`));
-            locs.posX.push(gl.getUniformLocation(program, `u_voicePosX[${i}]`));
-            locs.posY.push(gl.getUniformLocation(program, `u_voicePosY[${i}]`));
-            locs.scale.push(gl.getUniformLocation(program, `u_voiceScale[${i}]`));
-            locs.rotation.push(gl.getUniformLocation(program, `u_voiceRotation[${i}]`));
-            locs.usePos.push(gl.getUniformLocation(program, `u_voiceUsePos[${i}]`));
-            locs.useScale.push(gl.getUniformLocation(program, `u_voiceUseScale[${i}]`));
-            locs.useRot.push(gl.getUniformLocation(program, `u_voiceUseRot[${i}]`));
-        }
-        
+
         // Layer parameter uniform locations
         locs.layerParams = {
             brightness: gl.getUniformLocation(program, 'u_brightness'),
