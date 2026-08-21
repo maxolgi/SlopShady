@@ -1,13 +1,16 @@
 use axum::body::Body;
 use axum::extract::{Query, State};
 use axum::http::header;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
+use bytes::Bytes;
 use mime_guess::from_path;
 use rust_embed::Embed;
 use serde_json::Value;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::state::AppState;
@@ -16,27 +19,84 @@ use crate::state::AppState;
 #[folder = "../static/"]
 struct Asset;
 
-async fn serve_index() -> Response {
+fn embed_bytes(data: std::borrow::Cow<'static, [u8]>) -> Bytes {
+    match data {
+        std::borrow::Cow::Borrowed(b) => Bytes::from_static(b),
+        std::borrow::Cow::Owned(b) => Bytes::from(b),
+    }
+}
+
+fn etag_for(path: &str, data: &[u8]) -> String {
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    data.hash(&mut hasher);
+    format!("\"{:x}\"", hasher.finish())
+}
+
+/// `Cache-Control: no-cache` (revalidate every time, never serve stale) plus
+/// ETag revalidation — required because the binary re-embeds assets on
+/// rebuild under the same URLs.
+fn if_none_match(headers: &HeaderMap, etag: &str) -> bool {
+    headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        == Some(etag)
+}
+
+async fn serve_index(headers: HeaderMap) -> Response {
     match Asset::get("slopshady.html") {
-        Some(content) => (
-            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-            content.data.to_vec(),
-        )
-            .into_response(),
+        Some(content) => {
+            let body = embed_bytes(content.data);
+            let etag = etag_for("slopshady.html", &body);
+            if if_none_match(&headers, &etag) {
+                return (
+                    StatusCode::NOT_MODIFIED,
+                    [
+                        (header::ETAG, etag),
+                        (header::CACHE_CONTROL, "no-cache".to_string()),
+                    ],
+                )
+                    .into_response();
+            }
+            (
+                [
+                    (header::CONTENT_TYPE, "text/html; charset=utf-8".to_string()),
+                    (header::ETAG, etag),
+                    (header::CACHE_CONTROL, "no-cache".to_string()),
+                ],
+                body,
+            )
+                .into_response()
+        }
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
-async fn serve_static_file(uri: axum::http::Uri) -> Response {
+async fn serve_static_file(uri: axum::http::Uri, headers: HeaderMap) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = path.strip_prefix("static/").unwrap_or(path);
 
     match Asset::get(path) {
         Some(content) => {
+            let etag = etag_for(path, &content.data);
+            if if_none_match(&headers, &etag) {
+                return (
+                    StatusCode::NOT_MODIFIED,
+                    [
+                        (header::ETAG, etag),
+                        (header::CACHE_CONTROL, "no-cache".to_string()),
+                    ],
+                )
+                    .into_response();
+            }
             let mime = from_path(path).first_or_octet_stream();
             (
-                [(header::CONTENT_TYPE, mime.as_ref())],
-                content.data.to_vec(),
+                [
+                    (header::CONTENT_TYPE, mime.as_ref().to_string()),
+                    (header::ETAG, etag),
+                    (header::CACHE_CONTROL, "no-cache".to_string()),
+                ],
+                embed_bytes(content.data),
             )
                 .into_response()
         }
