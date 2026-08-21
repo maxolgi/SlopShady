@@ -28,11 +28,25 @@ export const ModulationMatrix = {
             const amount = Number.isFinite(entry.amount) ? entry.amount : 1.0;
             const isPerVoice = PER_VOICE_SOURCES.has(entry.source);
 
+            let d = entry._dest;
+            if (!d || d.raw !== entry.destination) {
+                const raw = entry.destination;
+                const idxMatch = raw.match(VOICE_DEST_INDEXED);
+                if (idxMatch) {
+                    d = { raw, kind: 'indexed', param: VOICE_PARAM_KEY[idxMatch[1].toLowerCase()], index: parseInt(idxMatch[2], 10) };
+                } else {
+                    const allMatch = raw.match(VOICE_DEST_ALL);
+                    d = allMatch
+                        ? { raw, kind: 'all', param: VOICE_PARAM_KEY[allMatch[1].toLowerCase()], index: -1 }
+                        : { raw, kind: 'layer', param: null, index: -1 };
+                }
+                entry._dest = d;
+            }
+
             // Indexed voice destination: u_voicePosX[0]
-            const idxMatch = entry.destination.match(VOICE_DEST_INDEXED);
-            if (idxMatch) {
-                const paramKey = VOICE_PARAM_KEY[idxMatch[1].toLowerCase()];
-                const vi = parseInt(idxMatch[2], 10);
+            if (d.kind === 'indexed') {
+                const paramKey = d.param;
+                const vi = d.index;
                 if (vi < 0 || vi >= MAX_VOICES) continue;
                 if (!vm || !vm.voices) continue;
                 const voice = vm.voices[vi];
@@ -55,9 +69,8 @@ export const ModulationMatrix = {
             }
 
             // Unindexed voice destination: u_voicePosX (all voices)
-            const allMatch = entry.destination.match(VOICE_DEST_ALL);
-            if (allMatch) {
-                const paramKey = VOICE_PARAM_KEY[allMatch[1].toLowerCase()];
+            if (d.kind === 'all') {
+                const paramKey = d.param;
 
                 if (isPerVoice) {
                     if (!vm || !vm.voices) continue;
