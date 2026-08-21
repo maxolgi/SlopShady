@@ -1,15 +1,24 @@
 use serde_json::{json, Map, Value};
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 
 pub type SharedState = Map<String, Value>;
 
 pub struct AppState {
     pub data: Arc<RwLock<SharedState>>,
     pub persist_path: std::path::PathBuf,
-    pub broadcast_tx: broadcast::Sender<String>,
+    /// Carries the originating connection id; 0 is reserved for
+    /// server-originated messages (OSC) so receivers can skip echoes
+    /// of their own updates. Client ids come from `next_client_id`.
+    pub broadcast_tx: broadcast::Sender<(u64, String)>,
+    pub next_client_id: AtomicU64,
+    pub persist_tx: mpsc::Sender<()>,
+    /// Taken (once) by `spawn_persist_worker`; capacity-1 channel
+    /// coalesces persist requests into a single trailing write.
+    pub persist_rx: std::sync::Mutex<Option<mpsc::Receiver<()>>>,
     pub tuning: crate::live_tuning::TuningState,
     /// Native OSC UDP bridge supervisor. Hot-swappable via the WS handler when
     /// oscPort/oscBind change. Initialized empty; spawned from main().
@@ -397,8 +406,28 @@ pub fn load_state(persist_path: &Path) -> SharedState {
     base
 }
 
+/// Trailing debounce for persistence: after the first tick, wait out a 250ms
+/// quiet period, drain coalesced ticks, then snapshot and write once.
+/// No-op if a worker already owns the receiver.
+pub fn spawn_persist_worker(state: Arc<AppState>) {
+    let Some(mut rx) = state.persist_rx.lock().unwrap().take() else {
+        return;
+    };
+    tokio::spawn(async move {
+        loop {
+            if rx.recv().await.is_none() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            while rx.try_recv().is_ok() {}
+            let shared = state.data.read().await;
+            persist_state(&shared, &state.persist_path).await;
+        }
+    });
+}
+
 pub async fn persist_state(state: &SharedState, path: &Path) {
-    match serde_json::to_string_pretty(state) {
+    match serde_json::to_string(state) {
         Ok(json_str) => {
             if let Err(e) = tokio::fs::write(path, json_str).await {
                 tracing::error!("Failed to persist state: {}", e);

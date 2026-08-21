@@ -16,8 +16,9 @@ mod ws;
 use clap::Parser;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 
 #[derive(Parser, Clone)]
 #[command(name = "slopshady", about = "SlopShady — Real-time GLSL shader editor")]
@@ -49,11 +50,15 @@ pub(crate) fn create_app_state(data_dir: &std::path::Path) -> Arc<state::AppStat
     let persist_path = data_dir.join("shaders.json");
     let shared_state = state::load_state(&persist_path);
     let (broadcast_tx, _) = broadcast::channel(256);
+    let (persist_tx, persist_rx) = mpsc::channel(1);
 
     Arc::new(state::AppState {
         data: Arc::new(RwLock::new(shared_state)),
         persist_path,
         broadcast_tx,
+        next_client_id: AtomicU64::new(1),
+        persist_tx,
+        persist_rx: std::sync::Mutex::new(Some(persist_rx)),
         tuning: live_tuning::TuningState::new(),
         osc: std::sync::Mutex::new(osc::OscBridge::default()),
     })
@@ -82,6 +87,7 @@ pub(crate) async fn run_https_server(
     key_path: PathBuf,
     handle: axum_server::Handle,
 ) {
+    state::spawn_persist_worker(app_state.clone());
     let app = server::build_router(app_state);
     let bind_addr: std::net::IpAddr = bind
         .parse()

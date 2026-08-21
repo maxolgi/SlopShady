@@ -55,9 +55,13 @@ pub async fn ws_handler(
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let (mut sender, mut receiver) = socket.split();
 
+    let client_id = state
+        .next_client_id
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
     let init_data = {
         let data = state.data.read().await;
-        json!({"type": "init", "data": data.clone()})
+        json!({"type": "init", "clientId": client_id, "data": data.clone()})
     };
     if sender
         .send(Message::Text(init_data.to_string().into()))
@@ -89,6 +93,11 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                 continue;
             }
 
+            let sender_id = parsed
+                .get("clientId")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+
             let incoming_data = match parsed.get("data").and_then(|v| v.as_object()) {
                 Some(obj) => obj,
                 None => continue,
@@ -103,17 +112,21 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
             {
                 let mut shared = state_for_write.data.write().await;
 
-                for (key, mut value) in incoming_data.clone().into_iter() {
+                for (key, value) in incoming_data.iter() {
                     if !ALLOWED_KEYS.contains(&key.as_str()) {
                         continue;
                     }
 
-                    if key == "layerModulationMatrices" {
-                        crate::state::sanitize_layer_modulation_matrices(&mut value);
-                    }
+                    let sanitized_value = if key == "layerModulationMatrices" {
+                        let mut v = value.clone();
+                        crate::state::sanitize_layer_modulation_matrices(&mut v);
+                        v
+                    } else {
+                        value.clone()
+                    };
 
-                    shared.insert(key.clone(), value.clone());
-                    sanitized_data.insert(key.clone(), value);
+                    shared.insert(key.clone(), sanitized_value.clone());
+                    sanitized_data.insert(key.clone(), sanitized_value);
 
                     if key == "savedShaders" {
                         persist_always = true;
@@ -147,12 +160,11 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
             }
 
             if persist_always || has_shader_code || should_persist {
-                let shared = state_for_write.data.read().await;
-                crate::state::persist_state(&shared, &state_for_write.persist_path).await;
+                let _ = state_for_write.persist_tx.try_send(());
             }
 
             let broadcast_msg = json!({"type": "update", "data": sanitized_data}).to_string();
-            let _ = state_for_write.broadcast_tx.send(broadcast_msg);
+            let _ = state_for_write.broadcast_tx.send((sender_id, broadcast_msg));
 
             // Hot-swap the OSC UDP bridge when oscPort/oscBind change.
             // Runs on a blocking thread because restart joins the old listener
@@ -182,7 +194,10 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     });
 
     let send_task = tokio::spawn(async move {
-        while let Ok(msg) = broadcast_rx.recv().await {
+        while let Ok((sender_id, msg)) = broadcast_rx.recv().await {
+            if sender_id == client_id {
+                continue;
+            }
             if sender.send(Message::Text(msg.into())).await.is_err() {
                 break;
             }

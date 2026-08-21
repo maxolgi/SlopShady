@@ -31,6 +31,7 @@ export const Sync = {
     enabled: false,
     ws: null,
     _applyingRemote: false,
+    _clientId: null,
     _reconnectDelay: 1000,
     _maxReconnectDelay: 15000,
     _dialDebounceTimer: null,
@@ -70,6 +71,7 @@ export const Sync = {
             try {
                 const msg = JSON.parse(event.data);
                 if (msg.type === 'init') {
+                    this._clientId = msg.clientId;
                     this._applyFullState(msg.data);
                 } else if (msg.type === 'update') {
                     this._applyUpdate(msg.data);
@@ -92,7 +94,7 @@ export const Sync = {
         if (!this.enabled) return;
         if (this._applyingRemote) return;
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ type: 'update', data }));
+            this.ws.send(JSON.stringify({ type: 'update', clientId: this._clientId, data }));
         }
     },
 

@@ -138,7 +138,7 @@ fn forward_packet(app_state: &Arc<AppState>, packet: &OscPacket) {
                 "address": msg.addr,
                 "args": args,
             });
-            let _ = app_state.broadcast_tx.send(payload.to_string());
+            let _ = app_state.broadcast_tx.send((0, payload.to_string()));
         }
         OscPacket::Bundle(bundle) => {
             tracing::info!("OSC bundle unpacked ({} elements)", bundle.content.len());
