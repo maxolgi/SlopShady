@@ -203,6 +203,15 @@ impl ControlPanel {
         }
         if let Some(app_state) = self.app_state.take() {
             app_state.osc.lock().unwrap().stop();
+            // Flush any state changed inside the persistence debounce window
+            // before the runtime is torn down. The GUI thread is outside the
+            // tokio runtime, so block_on is safe here.
+            if let Some(rt) = &self.rt {
+                let state = app_state.clone();
+                rt.block_on(async move {
+                    crate::state::flush_persist(&state).await;
+                });
+            }
         }
         if self.running {
             println!("SlopShady server stopped");

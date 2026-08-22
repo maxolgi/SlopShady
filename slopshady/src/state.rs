@@ -426,6 +426,13 @@ pub fn spawn_persist_worker(state: Arc<AppState>) {
     });
 }
 
+/// Immediate one-shot persistence — used on shutdown so a change made inside
+/// the debounce window (<250ms before exit) is not lost.
+pub async fn flush_persist(state: &Arc<AppState>) {
+    let shared = state.data.read().await;
+    persist_state(&shared, &state.persist_path).await;
+}
+
 pub async fn persist_state(state: &SharedState, path: &Path) {
     match serde_json::to_string(state) {
         Ok(json_str) => {

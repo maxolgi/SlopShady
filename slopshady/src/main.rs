@@ -142,13 +142,39 @@ async fn run_headless(cli: Cli) {
         .unwrap()
         .spawn(app_state.clone(), cli.osc_bind.clone(), cli.osc_port);
 
-    run_https_server(
-        app_state,
-        cli.bind,
-        cli.port,
-        cert_path,
-        key_path,
-        axum_server::Handle::new(),
-    )
-    .await;
+    tokio::select! {
+        _ = run_https_server(
+            app_state.clone(),
+            cli.bind,
+            cli.port,
+            cert_path,
+            key_path,
+            axum_server::Handle::new(),
+        ) => {},
+        _ = shutdown_signal() => {
+            println!("Shutting down — flushing state...");
+            state::flush_persist(&app_state).await;
+        }
+    }
+}
+
+/// Resolves on Ctrl-C (all platforms) or SIGTERM (unix).
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }
