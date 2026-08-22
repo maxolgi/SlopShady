@@ -99,7 +99,15 @@ export class Layer {
     }
     
     getBlendModeIndex() {
-        return Math.max(0, BLEND_MODES.indexOf(this.blendMode));
+        // blendMode is assigned directly from several call sites, so the index
+        // is cached on LayerSystem keyed by the string — any assignment stays
+        // correct without notification.
+        let idx = LayerSystem._blendIndexCache.get(this.blendMode);
+        if (idx === undefined) {
+            idx = Math.max(0, BLEND_MODES.indexOf(this.blendMode));
+            LayerSystem._blendIndexCache.set(this.blendMode, idx);
+        }
+        return idx;
     }
 
     processEGs(deltaTime) {
@@ -150,6 +158,16 @@ export const LayerSystem = {
     
     // Video cache: { sourceUrl -> { video, texture, loading, error, ready } }
     videoCache: new Map(),
+
+    // Text rasterization cache: { raster-inputs key -> { texture } }. FIFO,
+    // capped at 9 so every possible text consumer (8 layers + background)
+    // can stay resident without thrash.
+    _textCache: new Map(),
+
+    // Reused render-loop state — avoids per-frame allocations in the hot path
+    _renderableScratch: [],
+    _frameStamp: 0,
+    _blendIndexCache: new Map(),
     
     init(layerConfigs, bgState, masterState) {
         this.layers = [];
@@ -183,7 +201,10 @@ export const LayerSystem = {
     },
     
     hasSolo() {
-        return this.layers.some(l => l.solo && l.enabled);
+        for (let i = 0; i < this.layers.length; i++) {
+            if (this.layers[i].solo && this.layers[i].enabled) return true;
+        }
+        return false;
     },
     
     compileUtilityPrograms() {
@@ -305,7 +326,9 @@ export const LayerSystem = {
     render(currentTime, deltaTime = 0.016) {
         const gl = state.gl;
         if (!gl) return;
-        
+
+        this._frameStamp++;
+
         VideoTexture.update();
         ScreenCapture.update();
         AudioTexture.update();
@@ -333,20 +356,28 @@ export const LayerSystem = {
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         }
         
-        // Determine which layers to render
+        // Determine which layers to render (reused scratch array — no per-frame alloc)
         const soloActive = this.hasSolo();
-        const renderableLayers = this.layers.filter(layer => {
-            if (!layer.enabled) return false;
-            if (soloActive) return layer.solo;
-            // _modulatedOpacity is only refreshed while the layer renders, so
-            // gate on the max of base + last modulated: otherwise a layer that
-            // hits 0 in one of them can never come back (stale 0 locks it out).
-            const effOpacity = Math.max(layer.opacity, layer._modulatedOpacity ?? 0);
-            if (effOpacity < 0.004) return false;
-            return true;
-        });
+        const renderableLayers = this._renderableScratch;
+        renderableLayers.length = 0;
+        let milkdropActive = false;
+        for (let i = 0; i < this.layers.length; i++) {
+            const layer = this.layers[i];
+            if (!layer.enabled) continue;
+            if (soloActive) {
+                if (!layer.solo) continue;
+            } else {
+                // _modulatedOpacity is only refreshed while the layer renders, so
+                // gate on the max of base + last modulated: otherwise a layer that
+                // hits 0 in one of them can never come back (stale 0 locks it out).
+                const effOpacity = Math.max(layer.opacity, layer._modulatedOpacity ?? 0);
+                if (effOpacity < 0.004) continue;
+            }
+            if (layer.material?.type === 'milkdrop') milkdropActive = true;
+            renderableLayers.push(layer);
+        }
 
-        state.milkdropEnabled = renderableLayers.some(l => l.material?.type === 'milkdrop');
+        state.milkdropEnabled = milkdropActive;
         
         // 2. For each renderable layer: render shader → composite
         for (const layer of renderableLayers) {
@@ -853,10 +884,7 @@ export const LayerSystem = {
             const vd = this._ensureVideoTexture(url, params);
             if (!vd?.texture) return;
             if (vd.ready && vd.video && !vd.video.paused && vd.video.currentTime > 0) {
-                gl.bindTexture(gl.TEXTURE_2D, vd.texture);
-                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, vd.video);
-                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+                this._uploadVideoFrame(vd, vd.video);
             }
             gl.activeTexture(gl.TEXTURE0 + LAYER_VIDEO_TEXTURE_UNIT);
             gl.bindTexture(gl.TEXTURE_2D, vd.texture);
@@ -924,6 +952,29 @@ export const LayerSystem = {
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
         }
         return entry;
+    },
+
+    /**
+     * Upload the current frame of a cached video element into its GL texture.
+     * Reallocates via texImage2D only when the video dimensions changed;
+     * texSubImage2D otherwise. Stamped against the render frame counter so
+     * the plain-video and shader-mode paths sharing one videoCache entry
+     * never upload the same video twice in a frame.
+     */
+    _uploadVideoFrame(vd, video) {
+        const gl = state.gl;
+        if (vd.lastUploadFrame === this._frameStamp) return;
+        gl.bindTexture(gl.TEXTURE_2D, vd.texture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        if (video.videoWidth !== vd.uploadW || video.videoHeight !== vd.uploadH || vd.uploadW === 0) {
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+            vd.uploadW = video.videoWidth;
+            vd.uploadH = video.videoHeight;
+        } else {
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
+        }
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        vd.lastUploadFrame = this._frameStamp;
     },
 
     /**
@@ -1045,56 +1096,75 @@ export const LayerSystem = {
             this.textCanvas.width = layerFBO.width;
             this.textCanvas.height = layerFBO.height;
         }
-        
-        const ctx = this.textCtx;
-        const canvas = this.textCanvas;
-        
-        // Clear canvas with background color
-        ctx.fillStyle = backgroundColor;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Set text properties
-        ctx.font = font;
-        ctx.fillStyle = color;
-        ctx.textAlign = align;
-        ctx.textBaseline = 'middle';
-        
-        // Calculate text position based on alignment
-        let x = canvas.width / 2;
-        const y = canvas.height / 2;
-        
-        if (align === 'left') {
-            x = 20;
-        } else if (align === 'right') {
-            x = canvas.width - 20;
+
+        // Rasterizing + uploading text is expensive for static content — cache
+        // the uploaded texture keyed on every rasterization input ('\u0000'
+        // can't appear in any of these values).
+        const key = [text, font, color, backgroundColor, align, layerFBO.width, layerFBO.height].join('\u0000');
+        let entry = this._textCache.get(key);
+
+        if (!entry) {
+            const ctx = this.textCtx;
+            const canvas = this.textCanvas;
+
+            // Clear canvas with background color
+            ctx.fillStyle = backgroundColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Set text properties
+            ctx.font = font;
+            ctx.fillStyle = color;
+            ctx.textAlign = align;
+            ctx.textBaseline = 'middle';
+
+            // Calculate text position based on alignment
+            let x = canvas.width / 2;
+            const y = canvas.height / 2;
+
+            if (align === 'left') {
+                x = 20;
+            } else if (align === 'right') {
+                x = canvas.width - 20;
+            }
+
+            // Draw text
+            ctx.fillText(text, x, y);
+
+            // Create texture and upload raster
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.bindTexture(gl.TEXTURE_2D, null);
+
+            entry = { texture };
+            this._textCache.set(key, entry);
+
+            // Enforce cache size limit
+            if (this._textCache.size > 9) {
+                const oldestKey = this._textCache.keys().next().value;
+                const oldEntry = this._textCache.get(oldestKey);
+                if (oldEntry && oldEntry.texture) {
+                    gl.deleteTexture(oldEntry.texture);
+                }
+                this._textCache.delete(oldestKey);
+            }
         }
-        
-        // Draw text
-        ctx.fillText(text, x, y);
-        
-        // Create or update texture
-        if (!this.textTexture) {
-            this.textTexture = gl.createTexture();
-        }
-        
-        gl.bindTexture(gl.TEXTURE_2D, this.textTexture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        
+
         // Render texture to framebuffer using passthrough shader
         if (this.passthroughProgram) {
             gl.bindFramebuffer(gl.FRAMEBUFFER, layerFBO.fbo);
             gl.viewport(0, 0, layerFBO.width, layerFBO.height);
-            
+
             gl.useProgram(this.passthroughProgram);
 
             gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, this.textTexture);
+            gl.bindTexture(gl.TEXTURE_2D, entry.texture);
             if (this.passthroughTexLoc) gl.uniform1i(this.passthroughTexLoc, 0);
 
             this._drawQuad(this.passthroughPosLoc);
@@ -1360,7 +1430,10 @@ export const LayerSystem = {
             height: 0,
             loading: true,
             error: null,
-            ready: false
+            ready: false,
+            uploadW: 0,
+            uploadH: 0,
+            lastUploadFrame: 0
         };
         let resolveLoad;
         cacheEntry._loadPromise = new Promise(r => { resolveLoad = r; });
@@ -1456,9 +1529,7 @@ export const LayerSystem = {
 
         // Update texture from video frame if video is ready and playing
         if (videoData.ready && !video.paused && video.currentTime > 0) {
-            gl.bindTexture(gl.TEXTURE_2D, videoData.texture);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+            this._uploadVideoFrame(videoData, video);
         }
         
         // Map fit mode to integer
