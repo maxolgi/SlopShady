@@ -168,6 +168,10 @@ export const LayerSystem = {
     _renderableScratch: [],
     _frameStamp: 0,
     _blendIndexCache: new Map(),
+    // FBO holding the frame's final image for the screen blit: compositeFBO,
+    // or the post-swap feedbackFBO when master feedback ran (compositeFBO is
+    // NOT the final image in that case).
+    _finalOutputFBO: null,
     
     init(layerConfigs, bgState, masterState) {
         this.layers = [];
@@ -487,6 +491,7 @@ export const LayerSystem = {
         }
         
         // 3. Apply feedback effect after all layers are composited
+        this._finalOutputFBO = FramebufferManager.compositeFBO;
         if (this.masterState.feedbackEnabled && this.feedbackProgram && FramebufferManager.feedbackFBO && FramebufferManager.feedbackFBO2) {
             // Use dedicated feedback FBOs to avoid feedback loop with composite FBOs
             const currentFBO = FramebufferManager.compositeFBO;  // Source: current frame
@@ -526,22 +531,15 @@ export const LayerSystem = {
             let tempFBO = FramebufferManager.feedbackFBO;
             FramebufferManager.feedbackFBO = FramebufferManager.feedbackFBO2;
             FramebufferManager.feedbackFBO2 = tempFBO;
-            
-            // Copy feedback result to compositeFBO for final output
-            gl.bindFramebuffer(gl.FRAMEBUFFER, FramebufferManager.compositeFBO.fbo);
-            gl.viewport(0, 0, FramebufferManager.compositeFBO.width, FramebufferManager.compositeFBO.height);
-            
-            gl.useProgram(this.passthroughProgram);
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, FramebufferManager.feedbackFBO.texture);
-            if (this.passthroughTexLoc) gl.uniform1i(this.passthroughTexLoc, 0);
-            
-            this._drawQuad(this.passthroughPosLoc);
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+            // The swapped-in feedbackFBO holds the final composited+feedback
+            // image; step 4 samples it directly. No copy-back into
+            // compositeFBO — next frame's background fully rewrites it.
+            this._finalOutputFBO = FramebufferManager.feedbackFBO;
         }
         
         // 4. Final output
-        const finalFBO = FramebufferManager.compositeFBO;
+        const finalFBO = this._finalOutputFBO;
         if (finalFBO && this.passthroughProgram) {
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
             gl.viewport(0, 0, cw, ch);
