@@ -620,6 +620,7 @@ export const LayerSystem = {
         if (layer.material && layer.material.type === 'text') {
             // Skip if no text content
             if (!layer.material.source || layer.material.source.trim() === '') {
+                this._clearLayerFBO(layerFBO);
                 return;
             }
             this.renderText(layer, layerFBO);
@@ -630,6 +631,7 @@ export const LayerSystem = {
         if (layer.material && layer.material.type === 'image' && !layer.material.params?.shaderMode) {
             // Skip if no image source
             if (!layer.material.source || layer.material.source.trim() === '') {
+                this._clearLayerFBO(layerFBO);
                 return;
             }
             this.renderImage(layer, layerFBO);
@@ -640,6 +642,7 @@ export const LayerSystem = {
         if (layer.material && layer.material.type === 'video' && !layer.material.params?.shaderMode) {
             // Skip if no video source
             if (!layer.material.source || layer.material.source.trim() === '') {
+                this._clearLayerFBO(layerFBO);
                 return;
             }
             // Validate that source looks like a URL (starts with http, https, blob, or is a relative path)
@@ -650,6 +653,7 @@ export const LayerSystem = {
                                source.startsWith('data:') ||
                                (!source.includes('\n') && !source.includes('{'));
             if (!isValidUrl) {
+                this._clearLayerFBO(layerFBO);
                 return;
             }
             this.renderVideo(layer, layerFBO);
@@ -660,6 +664,7 @@ export const LayerSystem = {
         if (layer.material && layer.material.type === 'webcam') {
             // Check if webcam is enabled and texture exists
             if (!state.videoEnabled || !state.videoTexture || !state.videoElement) {
+                this._clearLayerFBO(layerFBO);
                 return;
             }
             this.renderWebcam(layer, layerFBO);
@@ -670,6 +675,7 @@ export const LayerSystem = {
         if (layer.material && layer.material.type === 'screen') {
             // Check if screen capture is enabled and texture exists
             if (!state.screenEnabled || !state.screenTexture || !state.screenElement) {
+                this._clearLayerFBO(layerFBO);
                 return;
             }
             this.renderScreen(layer, layerFBO);
@@ -686,13 +692,18 @@ export const LayerSystem = {
                     AudioTexture.enable();
                 }
                 this._renderVisualizer(layer, layerFBO, vizConfig, vizType);
+            } else {
+                this._clearLayerFBO(layerFBO);
             }
             return;
         }
 
         // Handle milkdrop material type
         if (layer.material && layer.material.type === 'milkdrop') {
-            if (!state.milkdropTexture) return;
+            if (!state.milkdropTexture) {
+                this._clearLayerFBO(layerFBO);
+                return;
+            }
             this.renderMilkdrop(layer, layerFBO);
             return;
         }
@@ -1312,7 +1323,10 @@ export const LayerSystem = {
         const params = material.params || {};
         const fitMode = params.fit || 'cover';
 
-        if (!source) return;
+        if (!source) {
+            this._clearLayerFBO(layerFBO);
+            return;
+        }
         // Ensure the texture is loading (fire-and-forget). Render only once the
         // image has decoded — until then clear the FBO so no stale frame shows.
         const imageData = this._ensureImageTexture(source);
@@ -1513,7 +1527,10 @@ export const LayerSystem = {
         const params = material.params || {};
         const fitMode = params.fit || 'cover';
 
-        if (!source) return;
+        if (!source) {
+            this._clearLayerFBO(layerFBO);
+            return;
+        }
 
         // Ensure the video texture is loading (fire-and-forget). Render only
         // once metadata has loaded and a texture exists.
@@ -1578,7 +1595,10 @@ export const LayerSystem = {
         if (!gl || !this.imageProgram) return;
 
         // Check if webcam is enabled and texture exists
-        if (!state.videoEnabled || !state.videoTexture || !state.videoElement) return;
+        if (!state.videoEnabled || !state.videoTexture || !state.videoElement) {
+            this._clearLayerFBO(layerFBO);
+            return;
+        }
         
         const params = layer.material.params || {};
         const fitMode = params.fit || 'cover';
@@ -1635,7 +1655,10 @@ export const LayerSystem = {
         if (!gl || !this.imageProgram) return;
 
         // Check if screen capture is enabled and texture exists
-        if (!state.screenEnabled || !state.screenTexture || !state.screenElement) return;
+        if (!state.screenEnabled || !state.screenTexture || !state.screenElement) {
+            this._clearLayerFBO(layerFBO);
+            return;
+        }
 
         const params = layer.material.params || {};
         const fitMode = params.fit || 'cover';
