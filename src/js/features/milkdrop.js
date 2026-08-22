@@ -10,6 +10,8 @@ export const MilkdropFeature = {
     _analyser: null,
     _blendTime: 2.0,
     _resolution: 'canvas',
+    _texW: 0,
+    _texH: 0,
 
     RESOLUTIONS: {
         'canvas': null,
@@ -144,7 +146,15 @@ export const MilkdropFeature = {
         if (!gl || !state.milkdropTexture) return;
 
         gl.bindTexture(gl.TEXTURE_2D, state.milkdropTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this._canvas);
+        const w = this._canvas.width;
+        const h = this._canvas.height;
+        if (w !== this._texW || h !== this._texH) {
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this._canvas);
+            this._texW = w;
+            this._texH = h;
+        } else {
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, this._canvas);
+        }
     },
 
     nextPreset() {

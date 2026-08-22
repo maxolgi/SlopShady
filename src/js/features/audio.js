@@ -6,6 +6,11 @@
 import { state } from '../state.js';
 import { AUDIO_FFT_SIZE } from '../config.js';
 
+let waveformTex = null;
+let waveformTexW = 0;
+let spectrumTex = null;
+let spectrumTexW = 0;
+
 function setupTextureParams(gl, texture) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -85,12 +90,24 @@ export const AudioTexture = {
         if (state.audioWaveformTexture) {
             analyser.getByteTimeDomainData(state.audioWaveformData);
             gl.bindTexture(gl.TEXTURE_2D, state.audioWaveformTexture);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, fftSize, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, state.audioWaveformData);
+            if (state.audioWaveformTexture !== waveformTex || waveformTexW !== fftSize) {
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, fftSize, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, state.audioWaveformData);
+                waveformTex = state.audioWaveformTexture;
+                waveformTexW = fftSize;
+            } else {
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, fftSize, 1, gl.LUMINANCE, gl.UNSIGNED_BYTE, state.audioWaveformData);
+            }
         }
         if (state.audioSpectrumTexture) {
             analyser.getByteFrequencyData(state.audioSpectrumData);
             gl.bindTexture(gl.TEXTURE_2D, state.audioSpectrumTexture);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, binCount, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, state.audioSpectrumData);
+            if (state.audioSpectrumTexture !== spectrumTex || spectrumTexW !== binCount) {
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, binCount, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, state.audioSpectrumData);
+                spectrumTex = state.audioSpectrumTexture;
+                spectrumTexW = binCount;
+            } else {
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, binCount, 1, gl.LUMINANCE, gl.UNSIGNED_BYTE, state.audioSpectrumData);
+            }
         }
 
         this.computeAudioModulators();
