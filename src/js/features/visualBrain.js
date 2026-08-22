@@ -182,13 +182,6 @@ export const VisualBrain = {
         }
     },
 
-    _bindQuad(gl) {
-        const buf = state.quadBuffer;
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-        gl.enableVertexAttribArray(0);
-        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-    },
-
     _drawQuad(gl) {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     },
@@ -203,6 +196,7 @@ export const VisualBrain = {
     processLayer(layer, layerFBO, currentTime) {
         const gl = state.gl;
         if (!gl || !this.initialized) return;
+        gl.bindVertexArray(state.quadVAO);
         if (this.corpusCount === 0) return;
 
         const bs = state.visualBrain.blockSize;
@@ -241,7 +235,6 @@ export const VisualBrain = {
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.useProgram(this.featureProgram);
-        this._bindQuad(gl);
 
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, inputTex);
@@ -261,7 +254,6 @@ export const VisualBrain = {
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.useProgram(this.matchProgram);
-        this._bindQuad(gl);
 
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.featureTex0);
@@ -292,7 +284,6 @@ export const VisualBrain = {
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.useProgram(this.renderProgram);
-        this._bindQuad(gl);
 
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, inputTex);

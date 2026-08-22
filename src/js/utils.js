@@ -188,6 +188,7 @@ export function compileUtilityProgram(gl, fsSource, vsSource) {
     const program = gl.createProgram();
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
+    gl.bindAttribLocation(program, 0, 'position');
     gl.linkProgram(program);
     gl.deleteShader(vs);
     gl.deleteShader(fs);

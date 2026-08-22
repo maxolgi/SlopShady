@@ -115,10 +115,17 @@ export const WebGL = {
     },
     
     setupQuad() {
+        const gl = state.gl;
         const positions = new Float32Array([-1,-1, 1,-1, -1,1, 1,1]);
-        state.quadBuffer = state.gl.createBuffer();
-        state.gl.bindBuffer(state.gl.ARRAY_BUFFER, state.quadBuffer);
-        state.gl.bufferData(state.gl.ARRAY_BUFFER, positions, state.gl.STATIC_DRAW);
+        state.quadBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, state.quadBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+        state.quadVAO = gl.createVertexArray();
+        gl.bindVertexArray(state.quadVAO);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        gl.bindVertexArray(null);
+        gl.bindBuffer(gl.ARRAY_BUFFER, null);
     },
     
     createShader(type, source) {
@@ -311,6 +318,7 @@ out vec4 fragColor;
         const prog = state.gl.createProgram();
         state.gl.attachShader(prog, vs);
         state.gl.attachShader(prog, fs);
+        state.gl.bindAttribLocation(prog, 0, 'position');
         state.gl.linkProgram(prog);
 
         if (!state.gl.getProgramParameter(prog, state.gl.LINK_STATUS)) {

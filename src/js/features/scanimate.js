@@ -129,9 +129,6 @@ export const ScanimateEngine = {
     _drawQuad(posLoc) {
         const gl = state.gl;
         if (!gl || posLoc < 0) return;
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.quadBuffer);
-        gl.enableVertexAttribArray(posLoc);
-        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     },
 
@@ -301,6 +298,7 @@ export const ScanimateEngine = {
     renderLayer(layer, layerFBO, currentTime) {
         const gl = state.gl;
         if (!gl || !this.initialized) return;
+        gl.bindVertexArray(state.quadVAO);
 
         const sc = state.scanimate;
 

@@ -327,6 +327,10 @@ export const LayerSystem = {
         const gl = state.gl;
         if (!gl) return;
 
+        // One shared VAO serves every quad draw this frame (setupQuad pins
+        // 'position' to attrib 0 in every program via bindAttribLocation).
+        gl.bindVertexArray(state.quadVAO);
+
         this._frameStamp++;
 
         VideoTexture.update();
@@ -856,10 +860,6 @@ export const LayerSystem = {
     _drawQuad(posLoc) {
         const gl = state.gl;
         if (!gl || posLoc < 0) return;
-        
-        gl.bindBuffer(gl.ARRAY_BUFFER, state.quadBuffer);
-        gl.enableVertexAttribArray(posLoc);
-        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     },
 
