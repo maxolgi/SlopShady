@@ -143,6 +143,8 @@ export const FramebufferManager = {
         // Create dedicated feedback ping-pong pair (separate from composite)
         this.feedbackFBO = this._createFBO(width, height);
         this.feedbackFBO2 = this._createFBO(width, height);
+        this._clearFBO(this.feedbackFBO);
+        this._clearFBO(this.feedbackFBO2);
 
         // Create per-layer feedback ping-pong pairs (lazy — null until needed)
         this.layerFeedbackFBOs = new Array(8).fill(null);
@@ -194,6 +196,8 @@ export const FramebufferManager = {
         const h = this.currentHeight || 1;
         this.layerFeedbackFBOs[index] = this._createFBO(w, h);
         this.layerFeedbackFBOs2[index] = this._createFBO(w, h);
+        this._clearFBO(this.layerFeedbackFBOs[index]);
+        this._clearFBO(this.layerFeedbackFBOs2[index]);
     },
 
     destroyLayerFeedbackFBOs(index) {

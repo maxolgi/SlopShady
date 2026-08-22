@@ -433,7 +433,7 @@ vec3 adjustSaturation(vec3 color, float sat) {
 void main() {
     vec2 uv = vUv;
     vec2 centered = uv - 0.5;
-    centered /= u_zoom;
+    centered /= max(u_zoom, 0.001);
     float angle = u_rotate;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
     centered = rot * centered;
