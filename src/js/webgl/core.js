@@ -116,117 +116,110 @@ export const WebGL = {
         const params = [];
         const normalizedCode = code.replace(/\r\n/g, '\n');
         const lines = normalizedCode.split('\n');
+        const numRe = /-?\d+(\.\d+)?([eE][-+]?\d+)?/g;
         let globalPos = 0;
         let idx = 0;
 
         for (const line of lines) {
             const trimmedLine = line.trim();
-            
-            if (trimmedLine.startsWith('#')) {
+
+            if (trimmedLine.startsWith('#') || trimmedLine.startsWith('const ')) {
                 globalPos += line.length + 1;
                 continue;
             }
-            
-            if (trimmedLine.startsWith('const ')) {
-                globalPos += line.length + 1;
-                continue;
-            }
-            
+
+            const commentAt = line.indexOf('//');
+            const scan = commentAt === -1 ? line : line.slice(0, commentAt);
             const isForLoop = trimmedLine.startsWith('for') || line.includes('for(');
-            let inForLoopExpr = false;
+
+            const forSpans = [];
+            const arrSpans = [];
             let parenDepth = 0;
-            let inArrayBrackets = false;
+            let inForLoopExpr = false;
+            let forSpanStart = -1;
             let bracketDepth = 0;
+            let inArrayBrackets = false;
             let sawIdentifierBeforeBracket = false;
-            let i = 0;
-            
-            while (i < line.length) {
-                if (line[i] === '/' && line[i+1] === '/') {
-                    break;
-                }
-                
-                if (line.trim().length === 0) {
-                    i++;
-                    continue;
-                }
-                
+            let arrSpanStart = -1;
+
+            for (let j = 0; j < scan.length; j++) {
+                const c = scan[j];
                 if (isForLoop) {
-                    if (line[i] === '(') {
+                    if (c === '(') {
                         parenDepth++;
                         inForLoopExpr = true;
-                    }
-                    if (line[i] === ')') {
+                        if (forSpanStart === -1) forSpanStart = j;
+                    } else if (c === ')') {
                         parenDepth--;
                         if (parenDepth <= 0) {
+                            if (inForLoopExpr) forSpans.push([forSpanStart, j]);
                             inForLoopExpr = false;
+                            forSpanStart = -1;
                         }
                     }
                 }
-                
-                if (line[i] === '[') {
+                if (c === '[') {
                     bracketDepth++;
-                    const before = line.substring(0, i);
-                    sawIdentifierBeforeBracket = /[a-zA-Z_]\w*\s*$/.test(before);
+                    sawIdentifierBeforeBracket = /[a-zA-Z_]\w*\s*$/.test(scan.substring(0, j));
                     inArrayBrackets = true;
-                }
-                if (line[i] === ']') {
+                } else if (c === ']') {
                     bracketDepth--;
                     if (bracketDepth <= 0) {
                         inArrayBrackets = false;
                         sawIdentifierBeforeBracket = false;
                     }
                 }
-                
-                if (inForLoopExpr) {
-                    i++;
-                    continue;
-                }
-                
                 if (inArrayBrackets && bracketDepth === 1 && sawIdentifierBeforeBracket) {
-                    const before = line.substring(0, i).toLowerCase();
-                    const isDeclaration = /\b(vec|mat|int|float|uint|bool|sampler)\d*\s+[a-zA-Z_]/.test(before);
-                    if (isDeclaration) {
-                        i++;
-                        continue;
-                    }
+                    if (arrSpanStart === -1) arrSpanStart = j;
+                } else if (arrSpanStart !== -1) {
+                    arrSpans.push([arrSpanStart, j]);
+                    arrSpanStart = -1;
                 }
-                
-                if (i > 0 && /[a-zA-Z_]/.test(line[i-1])) {
-                    i++;
+            }
+            if (forSpanStart !== -1) forSpans.push([forSpanStart, scan.length]);
+            if (arrSpanStart !== -1) arrSpans.push([arrSpanStart, scan.length]);
+
+            let declSeen = false;
+            let fi = 0;
+            let ai = 0;
+            let m;
+            numRe.lastIndex = 0;
+
+            while ((m = numRe.exec(scan)) !== null) {
+                const s = m.index;
+                const numStr = m[0];
+                while (fi < forSpans.length && forSpans[fi][1] <= s) fi++;
+                while (ai < arrSpans.length && arrSpans[ai][1] <= s) ai++;
+                const inForSpan = fi < forSpans.length && forSpans[fi][0] <= s;
+                const inArrSpan = ai < arrSpans.length && arrSpans[ai][0] <= s;
+                const prev = s > 0 ? scan.charCodeAt(s - 1) : 0;
+                if (inForSpan || prev === 95 || (prev >= 65 && prev <= 90) || (prev >= 97 && prev <= 122)) {
+                    numRe.lastIndex = s + 1;
                     continue;
                 }
-                
-                const numMatch = line.substring(i).match(/^(-?\d+(\.\d+)?([eE][-+]?\d+)?)/);
-                if (numMatch) {
-                    const numStr = numMatch[0];
-                    const num = parseFloat(numStr);
-                    const nextChar = line[i + numStr.length];
-                    
-                    if (numStr.endsWith('.')) {
-                        i++;
-                        continue;
+                if (inArrSpan) {
+                    if (!declSeen) {
+                        declSeen = /\b(vec|mat|int|float|uint|bool|sampler)\d*\s+[a-zA-Z_]/.test(scan.substring(0, s).toLowerCase());
                     }
-                    
-                    if (!isNaN(num) && numStr.length > 0 && 
-                        !SHADER_BUILTINS.has(numStr) && 
-                        !COMMON_CONSTANTS.has(numStr) &&
-                        !(nextChar && /[a-zA-Z_]/.test(nextChar))) {
-                        params.push({
-                            key: 'cd' + idx,
-                            originalValue: num,
-                            currentValue: num,
-                            pos: globalPos + i,
-                            str: numStr
-                        });
-                        idx++;
-                        i += numStr.length;
-                        continue;
-                    } else {
-                        i += numStr.length;
+                    if (declSeen) {
+                        numRe.lastIndex = s + 1;
                         continue;
                     }
                 }
-                i++;
+                const next = scan.charCodeAt(s + numStr.length);
+                const num = parseFloat(numStr);
+                if (!SHADER_BUILTINS.has(numStr) &&
+                    !COMMON_CONSTANTS.has(numStr) &&
+                    !(next === 95 || (next >= 65 && next <= 90) || (next >= 97 && next <= 122))) {
+                    params.push({
+                        key: 'cd' + idx,
+                        originalValue: num,
+                        currentValue: num,
+                        pos: globalPos + s,
+                        str: numStr
+                    });
+                    idx++;
+                }
             }
             globalPos += line.length + 1;
         }
