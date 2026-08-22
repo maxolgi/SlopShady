@@ -20,8 +20,12 @@ import { NodeGraph } from '../ui/nodeGraph.js';
 import { StreamingUI } from '../ui/streaming.js';
 
 let lastFrameTime = performance.now();
+let lastTimeSliderVal = -1;
+let lastTimeDisplay = '';
 
 export const WebGL = {
+    _resizeTimer: null,
+
     init() {
         state.canvas = getEl('canvas');
         state.gl = state.canvas.getContext('webgl2', { preserveDrawingBuffer: false });
@@ -91,7 +95,23 @@ export const WebGL = {
             state.canvas.height = Math.round(window.innerHeight * scale);
         }
         state.gl.viewport(0, 0, state.canvas.width, state.canvas.height);
-        FramebufferManager.resize(state.canvas.width, state.canvas.height);
+        // Canvas + viewport update immediately; the ~14-FBO reallocation is
+        // trailing-debounced so resize-event bursts don't churn FramebufferManager.
+        // Until the timer fires, all offscreen passes stay at the old dims —
+        // only the final passthrough to the canvas stretches.
+        if (state.canvas.width === FramebufferManager.currentWidth &&
+            state.canvas.height === FramebufferManager.currentHeight) {
+            if (this._resizeTimer !== null) {
+                clearTimeout(this._resizeTimer);
+                this._resizeTimer = null;
+            }
+            return;
+        }
+        if (this._resizeTimer !== null) clearTimeout(this._resizeTimer);
+        this._resizeTimer = setTimeout(() => {
+            this._resizeTimer = null;
+            FramebufferManager.resize(state.canvas.width, state.canvas.height);
+        }, 120);
     },
     
     setupQuad() {
@@ -551,31 +571,46 @@ out vec4 fragColor;
         for (const layer of LayerSystem.layers) {
             layer.processEGs(deltaTime);
         }
-        if (state.frameCount % 6 === 0) {
-            const sel = LayerSystem.layers[state.selectedLayer];
-            if (sel) {
-                for (let i = 0; i < 4; i++) {
-                    let eg = sel.egs[i];
-                    if (sel.voiceManager && sel.voiceManager.voices) {
-                        const activeVoice = sel.voiceManager.voices.find(v => v.active && v.egs && v.egs[i]);
-                        if (activeVoice) eg = activeVoice.egs[i];
+        if (state.frameCount % 6 === 0 && !document.hidden) {
+            const panelEl = getEl('bottom-panel');
+            if (panelEl && !panelEl.classList.contains('hidden')) {
+                const sel = LayerSystem.layers[state.selectedLayer];
+                if (sel) {
+                    for (let i = 0; i < 4; i++) {
+                        let eg = sel.egs[i];
+                        if (sel.voiceManager && sel.voiceManager.voices) {
+                            const activeVoice = sel.voiceManager.voices.find(v => v.active && v.egs && v.egs[i]);
+                            if (activeVoice) eg = activeVoice.egs[i];
+                        }
+                        updateEGVisualization(i, eg);
                     }
-                    updateEGVisualization(i, eg);
                 }
+                modulationMatrixUI.updateVisualizer();
+                LayerMixer.updateModulatedSliders();
             }
-            modulationMatrixUI.updateVisualizer();
-            LayerMixer.updateModulatedSliders();
             CodeDials.updateModArc();
-            NodeGraph.refresh();
+            // #graph-canvas lives outside #bottom-panel — its overlay visibility
+            // is the body.nodes-view class, not the panel's hidden class.
+            if (document.body.classList.contains('nodes-view')) {
+                NodeGraph.refresh();
+            }
         }
 
         if (state.frameCount % 6 === 0 && !state.isPaused) {
             const elapsed = (Date.now() - state.startTime) / 1000;
             const pct = ((elapsed % state.loopSeconds) / state.loopSeconds);
-            getEl('timeSlider').value = Math.floor(pct * 1000);
-            const fill = getEl('timeSliderWrap')?.querySelector('.slider__fill');
-            if (fill) fill.style.setProperty('--fill-width', (pct * 100) + '%');
-            getEl('timeDisplay').textContent = Math.round(pct * 100) + '%';
+            const sliderVal = Math.floor(pct * 1000);
+            if (sliderVal !== lastTimeSliderVal) {
+                lastTimeSliderVal = sliderVal;
+                getEl('timeSlider').value = sliderVal;
+                const fill = getEl('timeSliderWrap')?.querySelector('.slider__fill');
+                if (fill) fill.style.setProperty('--fill-width', (pct * 100) + '%');
+            }
+            const displayVal = Math.round(pct * 100) + '%';
+            if (displayVal !== lastTimeDisplay) {
+                lastTimeDisplay = displayVal;
+                getEl('timeDisplay').textContent = displayVal;
+            }
         }
 
         if (LayerSystem.compositeProgram && LayerSystem.layers.length > 0) {
