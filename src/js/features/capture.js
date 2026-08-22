@@ -13,10 +13,10 @@ function captureNextFrame() {
 }
 
 export const Capture = {
-    async canvas() {
-        const scale = parseFloat(getEl('captureResolution').value);
-        const format = getEl('captureFormat').value;
-        const quality = (state.captureQuality || 80) / 100;
+    async canvas(opts = {}) {
+        const scale = opts.scale !== undefined ? opts.scale : parseFloat(getEl('captureResolution').value);
+        const format = opts.format || getEl('captureFormat').value;
+        const quality = opts.quality !== undefined ? opts.quality : (state.captureQuality || 80) / 100;
 
         const dataUrl = await captureNextFrame();
 
@@ -29,6 +29,9 @@ export const Capture = {
         temp.height = Math.max(1, Math.floor(state.canvas.height * scale));
         temp.getContext('2d').drawImage(state.canvas, 0, 0, temp.width, temp.height);
 
+        if (format === 'image/jpeg') {
+            return temp.toDataURL('image/jpeg', quality);
+        }
         if (format === 'webp') {
             const webp = temp.toDataURL('image/webp', quality);
             if (webp.length > 1000) return webp;

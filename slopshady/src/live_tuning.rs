@@ -281,7 +281,7 @@ pub async fn live_tuning_start(
             "role": "user",
             "content": [
                 {"type": "text", "text": goal},
-                {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{initial_screenshot}")}},
+                {"type": "image_url", "image_url": {"url": format!("data:image/jpeg;base64,{initial_screenshot}")}},
             ],
         }),
     ];
@@ -461,7 +461,7 @@ pub async fn live_tuning_start(
                             messages.push(json!({
                                 "role": "tool",
                                 "tool_call_id": tc.id,
-                                "content": json!({"success": true, "screenshot_data": screenshot, "format": "png"}).to_string(),
+                                "content": json!({"success": true, "screenshot_data": screenshot, "format": "jpeg"}).to_string(),
                             }));
 
                             let mut screenshot_text = "Screenshot captured. Here's the current state:".to_string();
@@ -476,7 +476,7 @@ pub async fn live_tuning_start(
                                 "role": "user",
                                 "content": [
                                     {"type": "text", "text": screenshot_text},
-                                    {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{screenshot}")}},
+                                    {"type": "image_url", "image_url": {"url": format!("data:image/jpeg;base64,{screenshot}")}},
                                 ],
                             }));
                             yield Ok::<_, std::io::Error>(bytes::Bytes::from(format_sse("status", &json!({"message": "Screenshot sent to model", "type": "result"}))));

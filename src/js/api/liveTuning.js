@@ -28,7 +28,7 @@ export const LiveTuning = {
         getEl('response').innerHTML = '';
         getEl('status').textContent = 'Starting tuning session...';
 
-        const screenshot = await Capture.canvas();
+        const screenshot = await Capture.canvas({ format: 'image/jpeg', quality: 0.8 });
         const shaderCode = getEl('shaderCode').value;
         const lmUrl = getEl('apiUrl').value.trim();
         const bearerKey = getEl('bearerKey').value.trim();
@@ -134,7 +134,7 @@ export const LiveTuning = {
                 }
                 break;
             case 'request_screenshot':
-                const screenshot = (await Capture.canvas()).split(',')[1];
+                const screenshot = (await Capture.canvas({ format: 'image/jpeg', quality: 0.8 })).split(',')[1];
                 await fetch('/api/live-tuning/screenshot', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
