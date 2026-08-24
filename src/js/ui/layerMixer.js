@@ -607,6 +607,32 @@ export const LayerMixer = {
         });
     },
 
+    /** Sync FX-button display/active state and shader-dropdown visibility for
+     *  one layer. Must run whenever material.type or params.shaderMode changes
+     *  — _rebuildShaderDropdowns() alone only rebuilds menu items, leaving the
+     *  wrapper visibility and FX button stale (e.g. shader dropdown stays
+     *  visible after switching a layer to websrt with FX off). */
+    _syncLayerTypeUi(i) {
+        const layer = LayerSystem.layers[i];
+        if (!layer) return;
+        // FX button: only visible for video/image/websrt types
+        const fxBtn = getEl(`mix-fx-${i}`);
+        if (fxBtn) {
+            const supported = ['video', 'image', 'websrt'];
+            const isSupported = supported.includes(layer.material?.type);
+            fxBtn.style.display = isSupported ? '' : 'none';
+            fxBtn.classList.toggle('active', !!layer.material?.params?.shaderMode);
+        }
+        // Shader dropdown: only visible for shader, milkdrop, or FX-enabled layers
+        const shaderBtn = getEl(`mix-shader-dropdown-${i}`);
+        if (shaderBtn) {
+            const wrapper = shaderBtn.closest('.dropdown') || shaderBtn;
+            const matType = layer.material?.type;
+            const showShader = matType === 'shader' || matType === 'milkdrop' || !!layer.material?.params?.shaderMode;
+            wrapper.style.visibility = showShader ? '' : 'hidden';
+        }
+    },
+
     _buildShaderMenuItems() {
         let html = '<div class="dropdown__item" data-value="none">--</div>';
 
@@ -1148,6 +1174,8 @@ export const LayerMixer = {
 
         // Rebuild the second dropdown to show appropriate items for the new type
         this._rebuildShaderDropdowns();
+        // Sync FX-button display + shader-dropdown visibility for the new type
+        this._syncLayerTypeUi(layerIndex);
 
         // Sync
         this.sendUpdate();
@@ -1277,6 +1305,7 @@ export const LayerMixer = {
         const btn = getEl(`mix-fx-${index}`);
         if (btn) btn.classList.toggle('active', !!params.shaderMode);
         this._rebuildShaderDropdowns();
+        this._syncLayerTypeUi(index);
         this.sendUpdate();
     },
 
@@ -1398,22 +1427,7 @@ export const LayerMixer = {
                 mixShowBtn.classList.toggle('active', !layer.enabled);
             }
             if (mixAudioMuteBtn) mixAudioMuteBtn.classList.toggle('active', !!layer.audioMuted);
-            // FX button: only visible for video/image/websrt types
-            const fxBtn = getEl(`mix-fx-${i}`);
-            if (fxBtn) {
-                const supported = ['video', 'image', 'websrt'];
-                const isSupported = supported.includes(layer.material?.type);
-                fxBtn.style.display = isSupported ? '' : 'none';
-                fxBtn.classList.toggle('active', !!layer.material?.params?.shaderMode);
-            }
-            // Shader dropdown: only visible for shader, milkdrop, or FX-enabled layers
-            const shaderBtn = getEl(`mix-shader-dropdown-${i}`);
-            if (shaderBtn) {
-                const wrapper = shaderBtn.closest('.dropdown') || shaderBtn;
-                const matType = layer.material?.type;
-                const showShader = matType === 'shader' || matType === 'milkdrop' || !!layer.material?.params?.shaderMode;
-                wrapper.style.visibility = showShader ? '' : 'hidden';
-            }
+            this._syncLayerTypeUi(i);
             if (mixBlendSelected) {
                 const blend = layer.blendMode || 'normal';
                 mixBlendSelected.textContent = blend.charAt(0).toUpperCase() + blend.slice(1);
