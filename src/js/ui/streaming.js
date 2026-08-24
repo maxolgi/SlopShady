@@ -434,10 +434,12 @@ export const StreamingUI = {
             hash = j.hash ?? null;
             wtPort = j.wtPort ?? null;
         } catch (e) {
-            this._setStatus('Cert hash fetch failed: ' + (e && e.message || e));
-            this.isStreaming = false;
-            this._scheduleReconnect();
-            return;
+            // Discovery is best-effort: with a real (PKI) cert the gateway needs
+            // no pinning, so fall back to defaults (no hash, port 4433) instead
+            // of aborting. Only self-signed gateways actually require the hash.
+            console.warn('cert-hash discovery failed, connecting with PKI validation:', e && e.message || e);
+            hash = null;
+            wtPort = null;
         }
         const wtUrl = `https://${webHost}:${wtPort || 4433}/wt?publish=${encodeURIComponent(this.streamName)}`;
         const wtOpts = hash ? { serverCertificateHashes: [{ algorithm: 'sha-256', value: this._hexToBytes(hash) }] } : undefined;

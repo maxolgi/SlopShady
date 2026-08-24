@@ -444,8 +444,12 @@ export const StreamingInputUI = {
             hash = j.hash ?? null;
             wtPort = j.wtPort ?? null;
         } catch (e) {
-            this._setStatus(inputIndex, 'Cert hash fetch failed');
-            return;
+            // Discovery is best-effort: with a real (PKI) cert the gateway needs
+            // no pinning, so fall back to defaults (no hash, port 4433) instead
+            // of aborting. Only self-signed gateways actually require the hash.
+            console.warn('cert-hash discovery failed, connecting with PKI validation:', e && (e as Error).message || e);
+            hash = null;
+            wtPort = null;
         }
 
         entry.handle = mountPlayer(null, {
