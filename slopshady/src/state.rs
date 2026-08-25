@@ -436,8 +436,13 @@ pub async fn flush_persist(state: &Arc<AppState>) {
 pub async fn persist_state(state: &SharedState, path: &Path) {
     match serde_json::to_string(state) {
         Ok(json_str) => {
-            if let Err(e) = tokio::fs::write(path, json_str).await {
-                tracing::error!("Failed to persist state: {}", e);
+            let tmp = path.with_extension("json.tmp");
+            if let Err(e) = tokio::fs::write(&tmp, json_str).await {
+                tracing::error!("Failed to write state temp file: {}", e);
+                return;
+            }
+            if let Err(e) = tokio::fs::rename(&tmp, path).await {
+                tracing::error!("Failed to replace state file: {}", e);
             }
         }
         Err(e) => {
