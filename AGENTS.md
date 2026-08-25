@@ -228,6 +228,7 @@ either, that side never arises.
 - Code dials: numeric literals extracted into `u_param_cd0`..`u_param_cd25` (max 26). **Common constants** (`0`, `1`, `2`, `π`, `2π`, etc., per `COMMON_CONSTANTS` in `config.js`) **are NOT extracted**; nor are `const` values, loop bounds, array sizes, preprocessor lines, or GLSL keywords/built-in function names.
 - WebGL2 context uses `preserveDrawingBuffer: false`; screenshots use a deferred-capture pattern (`state.capturePending`) inside the render loop, not the drawing buffer.
 - **Layer 0 = "Main".** On `shaderCode` updates the value is mirrored into `layers[0].material.source` in `ws.rs` — keep in sync if you touch layer 0. There are 8 layers (indices 0–7).
+- New per-layer state fields must be added both to `LAYER_DEFAULTS` in `src/js/webgl/layers.js` and to `default_layers`/`normalize_layer` in `slopshady/src/state.rs`.
 
 ## Security constraints
 

@@ -20,6 +20,42 @@ import { compileUtilityProgram, hexToRgb } from '../utils.js';
 
 const ZERO_VOICE_ACTIVE = new Float32Array(MAX_VOICES);
 
+// Single source of truth for plain per-layer defaults. Index-dependent fields
+// (enabled, opacity, id, name) and object/function-of-config defaults
+// (material, modulationMatrix, voiceMode, input) are handled separately in the
+// Layer constructor. Keep in sync with default_layers()/normalize_layer() in
+// slopshady/src/state.rs.
+const LAYER_DEFAULTS = {
+    solo: false,
+    volume: 1.0,
+    audioMuted: false,
+    blendMode: 'normal',
+    brightness: 1.0,
+    speed: 1.0,
+    posX: 0.0,
+    posY: 0.0,
+    scale: 1.0,
+    amount: 1.0,
+    rotation: 0.0,
+    stretch: 0.0,
+    radius: 0.5,
+    maskPosX: 0.0,
+    maskPosY: 0.0,
+    maskSoftness: 0.01,
+    // Per-layer feedback state
+    feedbackEnabled: false,
+    feedbackAmount: 0.5,
+    feedbackDecay: 0.9,
+    feedbackZoom: 1.0,
+    feedbackRotate: 0.0,
+    feedbackOffsetX: 0.0,
+    feedbackOffsetY: 0.0,
+    feedbackSaturation: 1.0,
+    feedbackBrightness: 1.0,
+    feedbackBlendMode: 0,
+    brainEnabled: false,
+};
+
 export class Layer {
     constructor(index, config) {
         config = config || {};
@@ -27,45 +63,17 @@ export class Layer {
         this.id = config.id || `layer_${index}`;
         this.name = config.name || (index === 0 ? 'Main' : `Layer ${index}`);
         this.enabled = config.enabled !== undefined ? config.enabled : (index === 0);
-        this.solo = config.solo !== undefined ? config.solo : false;
         this.opacity = config.opacity !== undefined ? config.opacity : (index === 0 ? 1.0 : 0.0);
-        this.volume = config.volume !== undefined ? config.volume : 1.0;
-        this.audioMuted = config.audioMuted !== undefined ? config.audioMuted : false;
-        this.blendMode = config.blendMode || 'normal';
         this.material = config.material || { type: 'shader', source: '', params: {}, shaderRef: null };
         if (this.material.shaderRef === undefined) this.material.shaderRef = null;
         this.modulationMatrix = config.modulationMatrix || null;
         this.voiceMode = config.voiceMode || 'poly';
         this.input = config.input || {}; // MIDI input config: { channels: [], noteRange: [min, max] }
 
-        // Per-layer feedback state
-        this.feedbackEnabled = config.feedbackEnabled || false;
-        this.feedbackAmount = config.feedbackAmount !== undefined ? config.feedbackAmount : 0.5;
-        this.feedbackDecay = config.feedbackDecay !== undefined ? config.feedbackDecay : 0.9;
-        this.feedbackZoom = config.feedbackZoom !== undefined ? config.feedbackZoom : 1.0;
-        this.feedbackRotate = config.feedbackRotate !== undefined ? config.feedbackRotate : 0.0;
-        this.feedbackOffsetX = config.feedbackOffsetX !== undefined ? config.feedbackOffsetX : 0.0;
-        this.feedbackOffsetY = config.feedbackOffsetY !== undefined ? config.feedbackOffsetY : 0.0;
-        this.feedbackSaturation = config.feedbackSaturation !== undefined ? config.feedbackSaturation : 1.0;
-        this.feedbackBrightness = config.feedbackBrightness !== undefined ? config.feedbackBrightness : 1.0;
-        this.feedbackBlendMode = config.feedbackBlendMode !== undefined ? config.feedbackBlendMode : 0;
-        
-        this.brainEnabled = config.brainEnabled || false;
-        
-        // VS 2 standard visual parameters
-        this.brightness = config.brightness !== undefined ? config.brightness : 1.0;
-        this.speed = config.speed !== undefined ? config.speed : 1.0;
-        this.posX = config.posX !== undefined ? config.posX : 0.0;
-        this.posY = config.posY !== undefined ? config.posY : 0.0;
-        this.scale = config.scale !== undefined ? config.scale : 1.0;
-        this.radius = config.radius !== undefined ? config.radius : 0.5;
-        this.amount = config.amount !== undefined ? config.amount : 1.0;
-        this.rotation = config.rotation !== undefined ? config.rotation : 0.0;
-        this.stretch = config.stretch !== undefined ? config.stretch : 0.0;
-        this.maskPosX = config.maskPosX !== undefined ? config.maskPosX : 0.0;
-        this.maskPosY = config.maskPosY !== undefined ? config.maskPosY : 0.0;
-        this.maskSoftness = config.maskSoftness !== undefined ? config.maskSoftness : 0.01;
-        
+        for (const [k, v] of Object.entries(LAYER_DEFAULTS)) {
+            this[k] = config[k] !== undefined ? config[k] : v;
+        }
+
         // Voice Manager instance — each layer gets its own
         this.voiceManager = new VoiceManager(MAX_VOICES, this);
         this.voiceManager.setVoiceMode(this.voiceMode);

@@ -57,6 +57,9 @@ pub fn default_layers(shader_source: &str) -> Vec<Value> {
             "modulationMatrix": [],
             "voiceMode": voice_mode,
             "glideTime": 0.1,
+            "feedbackSaturation": 1.0,
+            "feedbackBrightness": 1.0,
+            "feedbackBlendMode": 0,
         }));
     }
     layers
@@ -83,6 +86,9 @@ pub fn normalize_layer(layer: &mut Value, index: usize) {
         "modulationMatrix": [],
         "voiceMode": voice_mode,
         "glideTime": 0.1,
+        "feedbackSaturation": 1.0,
+        "feedbackBrightness": 1.0,
+        "feedbackBlendMode": 0,
     });
 
     if !layer.is_object() {
