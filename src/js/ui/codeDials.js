@@ -4,13 +4,14 @@
  */
 
 import { state, getEl } from '../state.js';
-import { SHADER_BUILTINS, DIAL_KEY_MAP } from '../config.js';
+import { DIAL_KEY_MAP } from '../config.js';
 import { escapeHtml } from '../utils.js';
 import { ti, escapeAttr } from './tooltips.js';
 import { Sync } from '../features/sync.js';
 import { LayerSystem } from '../webgl/layers.js';
 import { ModulationMatrix } from '../features/modulationMatrix.js';
 import { modulationMatrixUI } from './modulationMatrixUI.js';
+import { extractDials } from '../utils/dialExtraction.js';
 
 export const CodeDials = {
     init() {
@@ -27,104 +28,73 @@ export const CodeDials = {
     render() {
         const container = getEl('codeDialsContainer');
         const code = getEl('shaderCode').value;
-        
+
         state.codeDialValues = {};
         state.codeDialOriginals = {};
-        
+
         const normalizedCode = code.replace(/\r\n/g, '\n');
         const lines = normalizedCode.split('\n');
+        const dials = extractDials(normalizedCode);
         let html = '';
         let globalPos = 0;
         let dialIndex = 0;
-        
+
         for (const line of lines) {
             let rendered = '';
             const trimmedLine = line.trim();
-            
+
             if (trimmedLine.startsWith('#')) {
                 rendered = `<span class="code-comment">${escapeHtml(line)}</span>`;
                 globalPos += line.length + 1;
                 html += `<div>${rendered}</div>`;
                 continue;
             }
-            
-            const isForLoop = trimmedLine.startsWith('for') || line.includes('for(');
-            let inForLoopExpr = false;
-            let parenDepth = 0;
+
             let i = 0;
-            
+
             while (i < line.length) {
                 if (line[i] === '/' && line[i+1] === '/') {
                     rendered += `<span class="code-remaining">${escapeHtml(line.substring(i))}</span>`;
                     break;
                 }
-                
-                if (isForLoop) {
-                    if (line[i] === '(') {
-                        parenDepth++;
-                        inForLoopExpr = true;
+
+                const absPos = globalPos + i;
+                const dial = dialIndex < dials.length ? dials[dialIndex] : null;
+
+                if (dial && dial.pos === absPos) {
+                    const key = dial.key;
+
+                    const param = LayerSystem.layers[state.selectedLayer ?? 0]?.shaderParams?.find(p => p.key === key);
+                    const currentValue = param ? param.currentValue : dial.originalValue;
+
+                    let displayValue;
+                    if (Number.isInteger(currentValue)) {
+                        displayValue = currentValue.toString();
+                    } else {
+                        displayValue = currentValue.toFixed(4).replace(/\.?0+$/, '');
                     }
-                    if (line[i] === ')') {
-                        parenDepth--;
-                        if (parenDepth <= 0) {
-                            inForLoopExpr = false;
-                        }
-                    }
-                }
-                
-                if (inForLoopExpr) {
-                    rendered += escapeHtml(line[i]);
-                    i++;
+
+                    state.codeDialValues[key] = currentValue;
+                    state.codeDialOriginals[key] = dial.originalValue;
+                    state.codeDialOriginals[key + '_str'] = dial.str;
+
+                    const keyLabel = DIAL_KEY_MAP[dialIndex] || '';
+                    const keyHint = keyLabel ? `<span class="code-key-hint">${keyLabel}</span>` : '';
+
+                    const dialTooltip = escapeAttr(ti('CODE_DIAL', { n: dialIndex, layer: (state.selectedLayer ?? 0) + 1 }));
+                    rendered += `<span class="code-num" data-key="${key}" data-val="${currentValue}" data-str="${displayValue}" data-pos="${absPos}" data-tooltip="${dialTooltip}">${keyHint}${displayValue}</span>`;
+                    i += dial.str.length;
+                    dialIndex++;
                     continue;
                 }
-                
-                if (i > 0 && /[a-zA-Z_]/.test(line[i-1])) {
-                    rendered += escapeHtml(line[i]);
-                    i++;
-                    continue;
-                }
-                
-                const numMatch = line.substring(i).match(/^(-?\d+\.?\d*([eE][-+]?\d+)?)/);
-                if (numMatch) {
-                    const numStr = numMatch[0];
-                    const num = parseFloat(numStr);
-                    const nextChar = line[i + numStr.length];
-                    if (!isNaN(num) && numStr.length > 0 && !SHADER_BUILTINS.has(numStr) &&
-                        !(nextChar && /[a-zA-Z_]/.test(nextChar))) {
-                        const absPos = globalPos + i;
-                        const key = 'cd' + dialIndex;
-                        
-                        const param = LayerSystem.layers[state.selectedLayer ?? 0]?.shaderParams?.find(p => p.key === key);
-                        const currentValue = param ? param.currentValue : num;
-                        
-                        let displayValue;
-                        if (Number.isInteger(currentValue)) {
-                            displayValue = currentValue.toString();
-                        } else {
-                            displayValue = currentValue.toFixed(4).replace(/\.?0+$/, '');
-                        }
-                        
-                        state.codeDialValues[key] = currentValue;
-                        state.codeDialOriginals[key] = num;
-                        state.codeDialOriginals[key + '_str'] = numStr;
-                        
-                        const keyLabel = DIAL_KEY_MAP[dialIndex] || '';
-                        const keyHint = keyLabel ? `<span class="code-key-hint">${keyLabel}</span>` : '';
-                        
-                        const dialTooltip = escapeAttr(ti('CODE_DIAL', { n: dialIndex, layer: (state.selectedLayer ?? 0) + 1 }));
-                        rendered += `<span class="code-num" data-key="${key}" data-val="${currentValue}" data-str="${displayValue}" data-pos="${absPos}" data-tooltip="${dialTooltip}">${keyHint}${displayValue}</span>`;
-                        i += numStr.length;
-                        dialIndex++;
-                        continue;
-                    }
-                }
+
                 rendered += escapeHtml(line[i]);
                 i++;
             }
             globalPos += line.length + 1;
             html += `<div>${rendered}</div>`;
         }
-        
+
         container.innerHTML = html;
         container.querySelectorAll('.code-num').forEach(span => {
             span.addEventListener('click', (e) => {
