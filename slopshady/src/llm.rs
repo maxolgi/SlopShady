@@ -9,7 +9,9 @@ use std::sync::Arc;
 use crate::state::AppState;
 
 /// Validate that an LLM endpoint URL uses an acceptable scheme.
-/// Blocks non-http schemes (file://, ftp://, etc.) that could be abused via SSRF.
+/// Scheme allowlist (http/https only) — blocks non-web schemes like file://;
+/// NOT SSRF protection. Internal/LAN hosts remain reachable by design under
+/// the single-user LAN trust model (no auth, binds 0.0.0.0).
 pub fn validate_lm_url(url: &str) -> Result<(), String> {
     let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {e}"))?;
     match parsed.scheme() {

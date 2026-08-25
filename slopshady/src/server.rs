@@ -198,6 +198,12 @@ async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Jso
             )
         }
     };
+    // The proxy only accepts web schemes for gateway discovery.
+    if parsed.scheme() != "https" && parsed.scheme() != "http" {
+        return axum::Json(
+            serde_json::json!({ "hash": null, "wtPort": null, "error": "unsupported url scheme" }),
+        );
+    }
     // cert-hash.js is served same-origin on the gateway's web server. The
     // input side passes a web URL (port in the URL itself); the legacy
     // `web_port` param (publish side, which still passes a WT URL) overrides.
