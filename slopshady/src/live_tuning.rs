@@ -32,9 +32,11 @@ impl TuningState {
         }
     }
 
-    pub fn reset(&self) {
+    pub async fn reset(&self) {
         self.active.store(true, Ordering::SeqCst);
         self.stop_requested.store(false, Ordering::SeqCst);
+        while self.screenshot_rx.lock().await.try_recv().is_ok() {}
+        while self.result_rx.lock().await.try_recv().is_ok() {}
     }
 
     pub fn send_screenshot(&self, screenshot: String) -> bool {
@@ -231,7 +233,7 @@ pub async fn live_tuning_start(
         .unwrap_or("")
         .to_string();
 
-    state.tuning.reset();
+    state.tuning.reset().await;
 
     let tools: Vec<Value> = serde_json::from_str(LIVE_TUNING_TOOLS).unwrap_or_default();
 
