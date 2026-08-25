@@ -78,6 +78,7 @@ struct ControlPanel {
     running: bool,
     app_state: Option<Arc<crate::state::AppState>>,
     handle: Option<axum_server::Handle>,
+    server_error_rx: Option<std::sync::mpsc::Receiver<String>>,
     url: String,
     error: Option<String>,
 }
@@ -107,6 +108,7 @@ impl ControlPanel {
             running: false,
             app_state: None,
             handle: None,
+            server_error_rx: None,
             url: String::new(),
             error: None,
         };
@@ -172,8 +174,9 @@ impl ControlPanel {
         let server_cert = cert_path.clone();
         let server_key = key_path.clone();
         let server_bind = self.bind.clone();
+        let (err_tx, err_rx) = std::sync::mpsc::channel::<String>();
         self.rt.as_ref().expect("runtime").spawn(async move {
-            crate::run_https_server(
+            if let Err(e) = crate::run_https_server(
                 server_state,
                 server_bind,
                 port,
@@ -181,8 +184,12 @@ impl ControlPanel {
                 server_key,
                 server_handle,
             )
-            .await;
+            .await
+            {
+                let _ = err_tx.send(e);
+            }
         });
+        self.server_error_rx = Some(err_rx);
 
         let display_ip = if self.bind == "0.0.0.0" || self.bind.is_empty() {
             lan_ip().unwrap_or_else(|| "localhost".to_string())
@@ -240,6 +247,17 @@ impl Drop for ControlPanel {
 
 impl eframe::App for ControlPanel {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Poll for async server startup failures (TLS load / bind race that
+        // slipped past the pre-bind TcpListener probe).
+        if let Some(rx) = &self.server_error_rx {
+            if let Ok(msg) = rx.try_recv() {
+                // stop_server flips running/url and flushes state; set the
+                // error afterwards so it isn't clobbered.
+                self.stop_server();
+                self.error = Some(msg);
+            }
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("SlopShady");
             ui.separator();

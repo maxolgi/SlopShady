@@ -86,7 +86,7 @@ pub(crate) async fn run_https_server(
     cert_path: PathBuf,
     key_path: PathBuf,
     handle: axum_server::Handle,
-) {
+) -> Result<(), String> {
     state::spawn_persist_worker(app_state.clone());
     let app = server::build_router(app_state);
     let bind_addr: std::net::IpAddr = bind
@@ -96,21 +96,17 @@ pub(crate) async fn run_https_server(
 
     let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert_path, &key_path)
         .await
-        .unwrap_or_else(|e| {
-            eprintln!("Error: failed to load TLS certificate: {e}");
-            std::process::exit(1);
-        });
+        .map_err(|e| format!("failed to load TLS certificate: {e}"))?;
 
     axum_server::bind_rustls(addr, tls_config)
         .handle(handle)
         .serve(app.into_make_service())
         .await
-        .unwrap_or_else(|e| {
-            eprintln!("Error: could not bind to {addr}: {e}");
-            eprintln!("       Another SlopShady instance may already be running.");
-            eprintln!("       Use --port <port> to use a different port.");
-            std::process::exit(1);
-        });
+        .map_err(|e| {
+            format!(
+                "could not bind to {addr}: {e}\n       Another SlopShady instance may already be running.\n       Use --port <port> to use a different port."
+            )
+        })
 }
 
 fn main() {
@@ -143,14 +139,17 @@ async fn run_headless(cli: Cli) {
         .spawn(app_state.clone(), cli.osc_bind.clone(), cli.osc_port);
 
     tokio::select! {
-        _ = run_https_server(
+        res = run_https_server(
             app_state.clone(),
             cli.bind,
             cli.port,
             cert_path,
             key_path,
             axum_server::Handle::new(),
-        ) => {},
+        ) => match res {
+            Ok(()) => {},
+            Err(e) => { eprintln!("{e}"); std::process::exit(1); }
+        },
         _ = shutdown_signal() => {
             println!("Shutting down — flushing state...");
             state::flush_persist(&app_state).await;

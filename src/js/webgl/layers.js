@@ -571,8 +571,6 @@ export const LayerSystem = {
 
         layer._modulatedOpacity = undefined;
 
-        const vm = layer.voiceManager;
-
         let _mpBrightness = layer.brightness;
         let _mpSpeed = layer.speed;
         let _mpPosX = layer.posX;

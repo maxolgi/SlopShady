@@ -18,6 +18,12 @@ const FDIM = 6;
 const ATLAS_GRID = 64;
 const SEED_COUNT = 600;
 
+// How often (in frames) _recordBlocks samples the canvas via readPixels
+// while recording. Every read forces a GPU->CPU sync (~a few ms stall);
+// 8 balances corpus growth rate against visible frame hitches. Raising
+// this trades slower corpus capture for smoother playback.
+const RECORD_SAMPLE_INTERVAL = 8;
+
 function createTex(gl, w, h, filter, wrap) {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
@@ -214,7 +220,7 @@ export const VisualBrain = {
 
         this._passBlockMatching(gl, gridW, gridH);
 
-        if (state.visualBrain.isRecording && this._frameCount % 8 === 0) {
+        if (state.visualBrain.isRecording && this._frameCount % RECORD_SAMPLE_INTERVAL === 0) {
             this._recordBlocks(gl, layerFBO.texture, gridW, gridH, bs, cw, ch);
         }
 

@@ -280,21 +280,21 @@ export const Keyboard = {
             
             // Number keys 1-8 select layers
             if (!e.shiftKey && !e.altKey) {
-                const keyCode = e.keyCode;
-                if (keyCode >= 49 && keyCode <= 56) {
+                const codeMatch = e.code?.match(/^Digit([1-8])$/);
+                if (codeMatch) {
                     e.preventDefault();
-                    LayerMixer.selectLayer(keyCode - 49);
+                    LayerMixer.selectLayer(parseInt(codeMatch[1], 10) - 1);
                 }
             }
 
             // Insert key triggers switch (crossfade)
-            if (e.keyCode === 45) {
+            if (e.code === 'Insert') {
                 e.preventDefault();
                 LayerMixer.crossfadeToSelected();
             }
 
             // Delete key switches to previous layer
-            if (e.keyCode === 46) {
+            if (e.code === 'Delete') {
                 e.preventDefault();
                 if (Number.isInteger(state.previousLayer)) LayerMixer.selectLayer(state.previousLayer);
             }
