@@ -7,7 +7,7 @@ import { state, getEl } from '../state.js';
 import { BLEND_MODE_OPTIONS, DEFAULT_MEDIA_VIDEO_SHADER, DEFAULT_MEDIA_IMAGE_SHADER, DEFAULT_MEDIA_SRT_SHADER, FEEDBACK_PARAMS } from '../config.js';
 import { LayerSystem } from '../webgl/layers.js';
 import { Sync } from '../features/sync.js';
-import { escapeHtml } from '../utils.js';
+import { escapeHtml, createDebouncedSync } from '../utils.js';
 import { MilkdropFeature } from '../features/milkdrop.js';
 import { CodeDials } from './codeDials.js';
 import { ContentBrowser } from './contentBrowser.js';
@@ -42,6 +42,9 @@ const BLEND_OPTIONS = [
 ];
 
 const sliderControllers = new Map();
+
+// Debounced full-state sync for continuous slider drags
+const scheduleSync = createDebouncedSync(() => Sync.send(LayerSystem.getState()));
 
 const FB_BLEND_OPTIONS = [
     { value: '0', label: 'Mix' },
@@ -270,6 +273,7 @@ export const LayerMixer = {
                     min: 0, max: 1, step: 0.01, defaultValue: i === 0 ? 1 : 0,
                     format: v => Math.round(v * 100) + '%',
                     onChange: (val) => { this.setLayerOpacity(idx, val); },
+                    onCommit: () => this.sendUpdate(),
                 });
                 if (ctrl) sliderControllers.set(slider, ctrl);
             }
@@ -281,6 +285,7 @@ export const LayerMixer = {
                     min: 0, max: 1, step: 0.01, defaultValue: 1,
                     format: v => Math.round(v * 100) + '%',
                     onChange: (val) => { this.setLayerVolume(idx, val); },
+                    onCommit: () => this.sendUpdate(),
                 });
                 if (ctrl) sliderControllers.set(volSlider, ctrl);
             }
@@ -296,9 +301,10 @@ export const LayerMixer = {
                             const layer = LayerSystem.layers[idx];
                             if (layer) {
                                 layer[s.param] = val;
-                                this.sendUpdate();
+                                scheduleSync();
                             }
                         },
+                        onCommit: () => this.sendUpdate(),
                     });
                     if (pCtrl) sliderControllers.set(pSlider, pCtrl);
                 }
@@ -1184,7 +1190,7 @@ export const LayerMixer = {
     setLayerOpacity(index, value) {
         if (LayerSystem.layers[index]) {
             LayerSystem.layers[index].opacity = parseFloat(value);
-            this.sendUpdate();
+            scheduleSync();
         }
     },
     
@@ -1220,7 +1226,7 @@ export const LayerMixer = {
         if (inputIndex >= 0) {
             StreamingInputUI.setLayerVolume(inputIndex, index, layer.volume);
         }
-        this.sendUpdate();
+        scheduleSync();
     },
 
     toggleAudioMute(index) {
