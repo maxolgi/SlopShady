@@ -220,6 +220,8 @@ either, that side never arises.
 - **All CSS lives in `static/css/`. No inline styles.** Move any inline styles you find.
 - **Reuse existing UI patterns** — do not invent new classes/wrappers: `.dropdown`, `.tool-btn` / `.tool-grid` / `.tool-group`, `.panel-section` + `.content-title`, `.slider`, `.knob-group` + `.knob`, `.toggle-group` + `.toggle`.
 - **Every interactive UI element MUST have a tooltip — no exceptions.** Add a key to `T` in `static/js/ui/tooltips.js`; for static HTML also add to `STATIC_MAP`; for dynamic markup use `ti('KEY', {n})`. Parameterized tooltips use `{n}` for the layer/control index.
+- Cycles between webgl/core.js ↔ api|ui singletons and layers.js ↔ features/scanimate.js are broken via `window.*` globals set in `main.js` (`window.WebGL`, `window.LayerSystem`) — do not convert these to static imports.
+- Everything else uses setter injection (`setSyncDependencies` in `sync.js`, `setDependencies` on MIDISystem/PlaylistSystem); prefer static imports when no cycle exists.
 
 ## Shader / uniform constraints
 

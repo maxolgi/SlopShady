@@ -5,6 +5,8 @@
 
 import { state, getEl } from '../state.js';
 import { escapeHtml } from '../utils.js';
+import { CodeDials } from './codeDials.js';
+import { Conversation } from '../api/conversation.js';
 
 export const ContentBrowser = {
     _manifest: null,
@@ -58,8 +60,8 @@ export const ContentBrowser = {
             getEl('shaderCode').value = code;
             state.currentShaderId = null;
             if (window.WebGL) window.WebGL.initShader();
-            if (window.CodeDials) window.CodeDials.render();
-            if (window.Conversation) window.Conversation.updateTokenCount();
+            CodeDials.render();
+            Conversation.updateTokenCount();
 
             const status = getEl('status');
             if (status) status.textContent = `Loaded: ${entry.name}`;

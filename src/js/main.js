@@ -90,9 +90,6 @@ PlaylistSystem.setDependencies({
 // Expose modules as globals to break circular dependencies with core.js
 // (core.js imports Shaders, Conversation, LayerMixer → they can't import core.js back)
 window.WebGL = WebGL;
-window.CodeDials = CodeDials;
-window.Conversation = Conversation;
-window.ScanimateEngine = ScanimateEngine;
 
 // Main application object
 const SlopShady = {

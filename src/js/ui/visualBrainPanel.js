@@ -5,6 +5,7 @@
 
 import { state, getEl } from '../state.js';
 import { VisualBrain } from '../features/visualBrain.js';
+import { LayerSystem } from '../webgl/layers.js';
 import { initSlider } from './slider.js';
 
 export const VisualBrainPanel = {
@@ -201,10 +202,8 @@ export const VisualBrainPanel = {
         }
 
         if (layersEl) {
-            if (typeof window.LayerSystem !== 'undefined') {
-                const active = window.LayerSystem.layers.filter(l => l.brainEnabled);
-                layersEl.textContent = active.length + '/8 layers';
-            }
+            const active = LayerSystem.layers.filter(l => l.brainEnabled);
+            layersEl.textContent = active.length + '/8 layers';
         }
     }
 };
