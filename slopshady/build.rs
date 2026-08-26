@@ -404,12 +404,14 @@ fn main() {
         .join("web")
         .join("src");
 
-    // Stage mpeg2ts-wasm and srt-wasm .d.ts files where tsc expects them.
-    // demux.ts imports `../wasm/mpeg2ts-wasm/mpeg2ts_wasm.js` and worker.ts
-    // imports `../wasm/srt-wasm/srt_wasm.js` — both relative specifiers that
+    // Stage mpeg2ts-wasm, srt-wasm, and ts-muxer-wasm .d.ts files where tsc
+    // expects them. demux.ts imports `../wasm/mpeg2ts-wasm/mpeg2ts_wasm.js`,
+    // worker.ts imports `../wasm/srt-wasm/srt_wasm.js`, and stream-worker.ts
+    // imports `../wasm/ts-muxer-wasm/ts_muxer_wasm.js` (reachable since
+    // upstream added shared/publish.ts) — all relative specifiers that
     // tsc paths mappings don't resolve, so the same staging pattern applies
-    // to both crates.
-    for crate_name in ["mpeg2ts-wasm", "srt-wasm"] {
+    // to all three crates.
+    for crate_name in ["mpeg2ts-wasm", "srt-wasm", "ts-muxer-wasm"] {
         let stage_dir = repo_root
             .join("vendor")
             .join("WebSRT")
