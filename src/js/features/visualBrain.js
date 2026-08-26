@@ -18,10 +18,11 @@ const FDIM = 6;
 const ATLAS_GRID = 64;
 const SEED_COUNT = 600;
 
-// How often (in frames) _recordBlocks samples the canvas via readPixels
-// while recording. Every read forces a GPU->CPU sync (~a few ms stall);
-// 8 balances corpus growth rate against visible frame hitches. Raising
-// this trades slower corpus capture for smoother playback.
+// How often (in frames) _recordBlocks samples features into the corpus
+// while recording. Every sample forces a GPU->CPU sync on the small feature
+// attachments (~a few ms stall); 8 balances corpus growth rate against
+// visible frame hitches. Raising this trades slower corpus capture for
+// smoother playback.
 const RECORD_SAMPLE_INTERVAL = 8;
 
 function createTex(gl, w, h, filter, wrap) {
@@ -64,6 +65,7 @@ export const VisualBrain = {
     corpusFeatureTex0: null,
     corpusFeatureTex1: null,
     atlasTex: null,
+    atlasFBO: null,
 
     corpusFeatures: null,
     corpusCount: 0,
@@ -77,12 +79,6 @@ export const VisualBrain = {
     _atlasBlockSize: 0,
     _recF0: null,
     _recF1: null,
-    _recFrame: null,
-    _recReadFBO: null,
-    _blockCanvas: null,
-    _blockCtx: null,
-    _blockImageData: null,
-    _blockCanvasSize: 0,
 
     locs: { feature: {}, match: {}, render: {} },
 
@@ -182,8 +178,18 @@ export const VisualBrain = {
     _ensureAtlasTex(gl) {
         const bs = state.visualBrain.blockSize;
         if (!this.atlasTex || this._atlasBlockSize !== bs) {
+            if (this.atlasFBO) {
+                gl.deleteFramebuffer(this.atlasFBO);
+                this.atlasFBO = null;
+            }
             if (this.atlasTex) gl.deleteTexture(this.atlasTex);
             this.atlasTex = createTex(gl, ATLAS_GRID * bs, ATLAS_GRID * bs, gl.NEAREST, gl.CLAMP_TO_EDGE);
+
+            this.atlasFBO = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, this.atlasFBO);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.atlasTex, 0);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
             this._atlasBlockSize = bs;
         }
     },
@@ -221,7 +227,7 @@ export const VisualBrain = {
         this._passBlockMatching(gl, gridW, gridH);
 
         if (state.visualBrain.isRecording && this._frameCount % RECORD_SAMPLE_INTERVAL === 0) {
-            this._recordBlocks(gl, layerFBO.texture, gridW, gridH, bs, cw, ch);
+            this._recordBlocks(gl, layerFBO, gridW, gridH, bs, cw, ch);
         }
 
         this._passRender(gl, this.brainTempFBO, layerFBO.texture, gridW, gridH, bs, cw, ch, currentTime, layer.brightness || 1.0);
@@ -370,7 +376,13 @@ export const VisualBrain = {
         ];
     },
 
-    _recordBlocks(gl, inputTex, gridW, gridH, bs, canvasW, canvasH) {
+    /**
+     * Sample blocks from the layer FBO while recording. Reads the two small
+     * feature attachments for the dedup check, then copies accepted blocks
+     * into the atlas entirely on GPU via blitFramebuffer (no full-canvas
+     * readPixels stall).
+     */
+    _recordBlocks(gl, layerFBO, gridW, gridH, bs, canvasW, canvasH) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.featureFBO);
         const gridLen = gridW * gridH * 4;
         if (!this._recF0 || this._recF0.length !== gridLen) {
@@ -383,21 +395,14 @@ export const VisualBrain = {
         gl.readPixels(0, 0, gridW, gridH, gl.RGBA, gl.UNSIGNED_BYTE, fdata0);
         gl.readBuffer(gl.COLOR_ATTACHMENT1);
         gl.readPixels(0, 0, gridW, gridH, gl.RGBA, gl.UNSIGNED_BYTE, fdata1);
-
-        const frameLen = canvasW * canvasH * 4;
-        if (!this._recFrame || this._recFrame.length !== frameLen) {
-            this._recFrame = new Uint8Array(frameLen);
-        }
-        const frameBuffer = this._recFrame;
-        if (!this._recReadFBO) this._recReadFBO = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this._recReadFBO);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, inputTex, 0);
-        gl.readPixels(0, 0, canvasW, canvasH, gl.RGBA, gl.UNSIGNED_BYTE, frameBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
+        if (!this.atlasFBO) return;
+
+        let blitPending = false;
         for (let by = 0; by < gridH; by += 2) {
             for (let bx = 0; bx < gridW; bx += 2) {
-                if (this.corpusCount >= MAX_CORPUS) return;
+                if (this.corpusCount >= MAX_CORPUS) break;
                 const ci = by * gridW + bx;
                 const f0r = fdata0[ci * 4] / 255, f0g = fdata0[ci * 4 + 1] / 255;
                 const f0b = fdata0[ci * 4 + 2] / 255, f0a = fdata0[ci * 4 + 3] / 255;
@@ -416,42 +421,26 @@ export const VisualBrain = {
                 if (tooSimilar) continue;
 
                 this.corpusFeatures.set(features, this.corpusCount * FDIM);
-                this._blitBlockToAtlas(gl, frameBuffer, canvasW, canvasH, bx * bs, by * bs, bs, this.corpusCount);
+
+                const ax = (this.corpusCount % ATLAS_GRID) * bs;
+                const ay = Math.floor(this.corpusCount / ATLAS_GRID) * bs;
+                gl.bindFramebuffer(gl.READ_FRAMEBUFFER, layerFBO.fbo);
+                gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.atlasFBO);
+                gl.blitFramebuffer(
+                    bx * bs, by * bs, (bx + 1) * bs, (by + 1) * bs,
+                    ax, ay, ax + bs, ay + bs,
+                    gl.COLOR_BUFFER_BIT, gl.NEAREST);
+                blitPending = true;
+
                 this.corpusCount++;
             }
         }
+        if (blitPending) {
+            gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+            gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+        }
         this.corpusFeaturesDirty = true;
         state.visualBrain.corpusCount = this.corpusCount;
-    },
-
-    _blitBlockToAtlas(gl, frameBuf, srcW, srcH, sx, sy, bs, corpusIdx) {
-        const ax = (corpusIdx % ATLAS_GRID) * bs;
-        const ay = Math.floor(corpusIdx / ATLAS_GRID) * bs;
-
-        if (!this._blockCtx || this._blockCanvasSize !== bs) {
-            this._blockCanvas = document.createElement('canvas');
-            this._blockCanvas.width = bs;
-            this._blockCanvas.height = bs;
-            this._blockCtx = this._blockCanvas.getContext('2d');
-            this._blockImageData = this._blockCtx.createImageData(bs, bs);
-            this._blockCanvasSize = bs;
-        }
-        const blockData = this._blockImageData;
-        for (let dy = 0; dy < bs; dy++) {
-            for (let dx = 0; dx < bs; dx++) {
-                const si = ((sy + dy) * srcW + (sx + dx)) * 4;
-                const di = (dy * bs + dx) * 4;
-                blockData.data[di] = frameBuf[si];
-                blockData.data[di + 1] = frameBuf[si + 1];
-                blockData.data[di + 2] = frameBuf[si + 2];
-                blockData.data[di + 3] = frameBuf[si + 3];
-            }
-        }
-        this._blockCtx.putImageData(blockData, 0, 0);
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
-        gl.texSubImage2D(gl.TEXTURE_2D, 0, ax, ay, bs, bs, gl.RGBA, gl.UNSIGNED_BYTE, this._blockCanvas);
     },
 
     _uploadCorpusFeatures(gl) {
@@ -589,6 +578,11 @@ export const VisualBrain = {
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, ATLAS_GRID * bs, ATLAS_GRID * bs, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            if (this.atlasFBO) {
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.atlasFBO);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.atlasTex, 0);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            }
             this._atlasBlockSize = bs;
         }
     },
