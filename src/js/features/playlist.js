@@ -5,6 +5,7 @@
  */
 
 import { state, getEl } from '../state.js';
+import { showError } from '../utils.js';
 import { Sync } from './sync.js';
 
 // Forward declarations — set by main.js via setDependencies()
@@ -173,7 +174,12 @@ export const PlaylistSystem = {
         // Set shader source and compile — same pattern as sync.js _applyFullState
         if (entry.shaderCode) {
             layer.material.source = entry.shaderCode;
-            WebGL.compileForLayer(layerIdx);
+            const result = WebGL.compileForLayer(layerIdx);
+            // Surface compile failures — first log line for toast, full log to console
+            if (result?.error) {
+                showError(`Playlist "${entry.name}": ${result.error.split('\n')[0]}`);
+                console.warn(`Playlist entry "${entry.name}" failed to compile:`, result.error);
+            }
         }
 
         // Enable the layer
