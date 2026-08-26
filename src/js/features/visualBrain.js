@@ -25,6 +25,12 @@ const SEED_COUNT = 600;
 // smoother playback.
 const RECORD_SAMPLE_INTERVAL = 8;
 
+// FBO formats whose color buffers are blit-compatible with the UNSIGNED_BYTE
+// RGBA atlas texture. WebGL2 blitFramebuffer requires compatible formats;
+// float/half-float/packed read buffers raise INVALID_OPERATION and silently
+// skip the copy, so block capture is gated to these.
+const BLIT_SAFE_FORMATS = new Set(['rgba8', 'srgb8a8']);
+
 function createTex(gl, w, h, filter, wrap) {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
@@ -79,6 +85,7 @@ export const VisualBrain = {
     _atlasBlockSize: 0,
     _recF0: null,
     _recF1: null,
+    _blitFormatWarned: false,
 
     locs: { feature: {}, match: {}, render: {} },
 
@@ -380,7 +387,8 @@ export const VisualBrain = {
      * Sample blocks from the layer FBO while recording. Reads the two small
      * feature attachments for the dedup check, then copies accepted blocks
      * into the atlas entirely on GPU via blitFramebuffer (no full-canvas
-     * readPixels stall).
+     * readPixels stall). Requires an RGBA8-class layer FBO format — blit
+     * to the UNSIGNED_BYTE atlas is invalid against float/packed formats.
      */
     _recordBlocks(gl, layerFBO, gridW, gridH, bs, canvasW, canvasH) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.featureFBO);
@@ -396,6 +404,14 @@ export const VisualBrain = {
         gl.readBuffer(gl.COLOR_ATTACHMENT1);
         gl.readPixels(0, 0, gridW, gridH, gl.RGBA, gl.UNSIGNED_BYTE, fdata1);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        if (!BLIT_SAFE_FORMATS.has(state.fboFormat)) {
+            if (!this._blitFormatWarned) {
+                this._blitFormatWarned = true;
+                console.warn('VisualBrain recording: block capture requires RGBA8 framebuffer precision (Settings → Precision). Skipping block capture.');
+            }
+            return;
+        }
 
         if (!this.atlasFBO) return;
 
