@@ -229,6 +229,7 @@ either, that side never arises.
 - WebGL2 context uses `preserveDrawingBuffer: false`; screenshots use a deferred-capture pattern (`state.capturePending`) inside the render loop, not the drawing buffer.
 - **Layer 0 = "Main".** On `shaderCode` updates the value is mirrored into `layers[0].material.source` in `ws.rs` — keep in sync if you touch layer 0. There are 8 layers (indices 0–7).
 - New per-layer state fields must be added both to `LAYER_DEFAULTS` in `src/js/webgl/layers.js` and to `default_layers`/`normalize_layer` in `slopshady/src/state.rs`.
+- Same rule for scanimate and LFO/modulation-source defaults: they exist in `state.js` (`state.scanimate`, `state.lfos`, `state.macros`) AND as json! defaults in `load_state()` in `slopshady/src/state.rs` — add new fields to both sides.
 
 ## Security constraints
 

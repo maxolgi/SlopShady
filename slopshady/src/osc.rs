@@ -110,7 +110,7 @@ fn run_loop(app_state: Arc<AppState>, shutdown: Receiver<()>, bind: String, port
                     continue;
                 }
                 match rosc::decoder::decode_udp(&buf[..len]) {
-                    Ok((_rest, packet)) => forward_packet(&app_state, &packet),
+                    Ok((_rest, packet)) => forward_packet(&app_state, &packet, 0),
                     Err(e) => {
                         tracing::warn!("OSC decode error from {} ({} bytes): {}", src, len, e);
                     }
@@ -129,7 +129,11 @@ fn run_loop(app_state: Arc<AppState>, shutdown: Receiver<()>, bind: String, port
     }
 }
 
-fn forward_packet(app_state: &Arc<AppState>, packet: &OscPacket) {
+fn forward_packet(app_state: &Arc<AppState>, packet: &OscPacket, depth: usize) {
+    if depth > 8 {
+        tracing::warn!("OSC: packet nesting deeper than 8 — dropping");
+        return;
+    }
     match packet {
         OscPacket::Message(msg) => {
             let args: Vec<Value> = msg.args.iter().map(osc_arg_to_json).collect();
@@ -143,7 +147,7 @@ fn forward_packet(app_state: &Arc<AppState>, packet: &OscPacket) {
         OscPacket::Bundle(bundle) => {
             tracing::info!("OSC bundle unpacked ({} elements)", bundle.content.len());
             for inner in &bundle.content {
-                forward_packet(app_state, inner);
+                forward_packet(app_state, inner, depth + 1);
             }
         }
     }
