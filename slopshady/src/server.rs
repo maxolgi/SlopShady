@@ -178,15 +178,49 @@ async fn api_live_tuning_stop(state: State<Arc<AppState>>) -> axum::Json<Value> 
 /// fetch tells the caller everything needed to build the WT URL and pin the
 /// cert. See vendor/WebSRT/docs/embedding.md.
 ///
-/// `danger_accept_invalid_certs(true)` is acceptable here because the real
-/// trust anchor is the WebTransport `serverCertificateHashes` pinning done
-/// client-side from the hash this proxy returns — TLS is just a transport for
-/// the hash bytes, not the trust root.
+/// TLS policy: self-signed gateways are a closed-network convenience. Only
+/// loopback/private/link-local hosts (or dotless/`.local`-style names) are
+/// fetched with `danger_accept_invalid_certs(true)`; public hosts must present
+/// a certificate a normal client already trusts — no unsafe allowance online.
+/// When the fetched `cert-hash.js` yields a non-null hash, the real trust
+/// anchor is still the client-side WebTransport `serverCertificateHashes`
+/// pinning built from that hash.
 #[derive(serde::Deserialize)]
 struct CertHashParams {
     url: String,
     #[serde(default)]
     web_port: Option<u16>,
+}
+
+/// Whether a gateway host is on a closed network: loopback/private/link-local
+/// IP literal, `localhost`, a dotless hostname, or a `.local`/`.lan`/
+/// `.internal` name. Only these may be fetched with self-signed cert
+/// validation; public hosts require a PKI-valid certificate.
+fn closed_network_host(host: &str) -> bool {
+    let h = host
+        .trim_end_matches('.')
+        .trim_start_matches('[')
+        .trim_end_matches(']');
+    if h.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    if let Ok(ip) = h.parse::<std::net::IpAddr>() {
+        return match ip {
+            std::net::IpAddr::V4(v4) => {
+                v4.is_loopback() || v4.is_private() || v4.is_link_local()
+            }
+            std::net::IpAddr::V6(v6) => {
+                let s = v6.segments();
+                v6.is_loopback()
+                    || (s[0] & 0xfe00) == 0xfc00 // unique local fc00::/7
+                    || (s[0] & 0xffc0) == 0xfe80 // link local fe80::/10
+            }
+        };
+    }
+    !h.contains('.')
+        || h.ends_with(".local")
+        || h.ends_with(".lan")
+        || h.ends_with(".internal")
 }
 
 async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Json<Value> {
@@ -214,7 +248,7 @@ async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Jso
     };
     let cert_url = format!("https://{}:{}/cert-hash.js", host, port);
     let client = match reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_certs(closed_network_host(host))
         .timeout(std::time::Duration::from_secs(4))
         .build()
     {
