@@ -238,6 +238,7 @@ either, that side never arises.
 - `bearerKey` (LLM API credential) is forwarded to the upstream OpenAI-compatible endpoint and **included in plaintext in full-state JSON exports** (`Ctrl+S` / "Save to JSON"). It is NOT written to `shaders.json` (not in `PERSIST_KEYS`) and never committed. Shaders-only exports omit it.
 - HTTPS server binds `0.0.0.0:8100`, OSC binds `0.0.0.0:8101` — reachable on the LAN, **no auth** (single-user local by design). Self-signed cert generated into `--data-dir` on first run; the GUI launches the web app in the system browser, which shows the usual self-signed cert warning (no TLS bypass — accept it once).
 - LLM endpoint URL is validated to reject non-`http`/`https` schemes (`validate_lm_url` in `llm.rs`) — preserve this if you touch the proxy.
+- The cert-hash proxy (`/api/stream/cert-hash` in `server.rs`) gates `danger_accept_invalid_certs` with `closed_network_host()` — self-signed acceptance only for loopback/private/link-local IPs, dotless hostnames, and `.local`/`.lan`/`.internal` names; public hosts require PKI-valid certs. Preserve this if you touch the proxy.
 
 ## Submitting changes
 

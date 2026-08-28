@@ -224,7 +224,7 @@ SlopShady consists of two components:
 | `POST /api/live-tuning/shader-result` | POST | Receives shader compilation results during tuning |
 | `POST /api/live-tuning/stop` | POST | Aborts active tuning session |
 | `GET /api/shaders/download` | GET | Downloads the `shaders.json` file |
-| `GET /api/stream/cert-hash?url=<gateway>` | GET | Proxies the WebSRT gateway's `cert-hash.js` so the browser can pin it for WebTransport (same-origin; avoids CORS + self-signed trust prompts) |
+| `GET /api/stream/cert-hash?url=<gateway>` | GET | Proxies the WebSRT gateway's `cert-hash.js` so the browser can pin it for WebTransport (same-origin; avoids CORS). Self-signed certs are accepted only for closed-network hosts (private/loopback IPs, `.local`-style names); public gateways must present a PKI-valid certificate |
 
 ---
 

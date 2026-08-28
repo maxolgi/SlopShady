@@ -35,6 +35,10 @@ The LLM proxy in `slopshady/src/llm.rs` forwards the `bearerKey` you enter in th
 
 The backend rejects non-`http`/`https` URL schemes (`file://`, `ftp://`, etc.) in the configured LLM endpoint to prevent SSRF-style abuse via `lm_studio_url`. See `validate_lm_url` in `slopshady/src/llm.rs`.
 
+### Cert-hash proxy TLS policy
+
+The `/api/stream/cert-hash` endpoint fetches a remote WebSRT gateway's `cert-hash.js` server-side (the browser cannot fetch it cross-origin). Because many gateways run self-signed on closed networks, the fetch may disable certificate verification — but **only for closed-network targets**: loopback/private/link-local IPs, `localhost`, dotless hostnames, and `.local`/`.lan`/`.internal` names. Public hostnames are fetched with strict PKI validation and rejected if their certificate does not chain to a trusted CA. This keeps the closed-network workflow (self-signed gateways, hash pinning) working while ensuring internet-facing deployments never accept an invalid certificate through this proxy. See `closed_network_host` in `slopshady/src/server.rs`.
+
 ### Attack surface
 
 SlopShady binds its HTTPS server to `0.0.0.0:8100` by default and the OSC UDP bridge to `0.0.0.0:8101`. Both are reachable by anything on your local network. If that is not desired, run behind a firewall or restrict binding. The WebSocket and HTTP APIs perform no authentication — they are designed for single-user local use.
