@@ -123,20 +123,26 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let router = Router::new()
         .route("/", get(serve_index))
         .route("/ws", get(crate::ws::ws_handler))
-        .route("/api/models", post(api_models))
-        .route("/api/chat/completions", post(api_chat_completions))
-        .route("/api/live-tuning/start", post(api_live_tuning_start))
-        .route(
-            "/api/live-tuning/screenshot",
-            post(api_live_tuning_screenshot),
-        )
-        .route(
-            "/api/live-tuning/shader-result",
-            post(api_live_tuning_shader_result),
-        )
-        .route("/api/live-tuning/stop", post(api_live_tuning_stop))
         .route("/api/shaders/download", get(download_shaders))
         .route("/api/stream/cert-hash", get(api_stream_cert_hash));
+
+    let router = if state.llm_relay_disabled.load(std::sync::atomic::Ordering::SeqCst) {
+        router
+    } else {
+        router
+            .route("/api/models", post(api_models))
+            .route("/api/chat/completions", post(api_chat_completions))
+            .route("/api/live-tuning/start", post(api_live_tuning_start))
+            .route(
+                "/api/live-tuning/screenshot",
+                post(api_live_tuning_screenshot),
+            )
+            .route(
+                "/api/live-tuning/shader-result",
+                post(api_live_tuning_shader_result),
+            )
+            .route("/api/live-tuning/stop", post(api_live_tuning_stop))
+    };
 
     router.fallback(serve_static_file).with_state(state)
 }

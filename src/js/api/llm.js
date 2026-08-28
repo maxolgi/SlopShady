@@ -6,6 +6,7 @@
 import { state, getEl } from '../state.js';
 import { AI_SHADER_BASE_PROMPT, AI_SYSTEM_PROMPT_ROLE, AI_CHAT_PROMPT_ROLE } from '../config.js';
 import { Conversation } from './conversation.js';
+import { getConnection, apiBase, authHeaders, directConnectionHint } from './connection.js';
 import { ContentParser } from '../utils/contentParser.js';
 import { Capture } from '../features/capture.js';
 import { Templates } from '../utils/templates.js';
@@ -151,21 +152,38 @@ export const LLM = {
         let assistantIndex = state.conversationHistory.length;
         const bearerKey = getEl('bearerKey').value.trim();
         
+        const payload = {
+            model: model,
+            messages: messages,
+            temperature: 0.7,
+            max_tokens: 100000,
+            stream: true
+        };
+
         try {
-            const res = await fetch('/api/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    lm_studio_url: apiUrl,
-                    bearer_key: bearerKey,
-                    model: model,
-                    messages: messages,
-                    temperature: 0.7,
-                    max_tokens: 100000,
-                    stream: true
-                }),
-                signal: this.abortController.signal
-            });
+            let res;
+            if (getConnection() === 'relay') {
+                res = await fetch('/api/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        lm_studio_url: apiUrl,
+                        bearer_key: bearerKey,
+                        ...payload
+                    }),
+                    signal: this.abortController.signal
+                });
+            } else {
+                res = await fetch(apiBase() + '/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                    body: JSON.stringify(payload),
+                    signal: this.abortController.signal
+                }).catch(err => {
+                    if (err.name === 'AbortError') throw err;
+                    throw new Error(directConnectionHint(err));
+                });
+            }
             
             if (!res.ok) {
                 const errorText = await res.text();

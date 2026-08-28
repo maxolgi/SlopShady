@@ -44,6 +44,12 @@ pub(crate) struct Cli {
         help = "Bind address for HTTPS server"
     )]
     pub(crate) bind: String,
+
+    #[arg(
+        long,
+        help = "Disable the server-side LLM relay routes (browser talks to the LLM API directly)"
+    )]
+    pub(crate) no_llm_relay: bool,
 }
 
 pub(crate) fn create_app_state(data_dir: &std::path::Path) -> Arc<state::AppState> {
@@ -60,6 +66,7 @@ pub(crate) fn create_app_state(data_dir: &std::path::Path) -> Arc<state::AppStat
         persist_tx,
         persist_rx: std::sync::Mutex::new(Some(persist_rx)),
         tuning: live_tuning::TuningState::new(),
+        llm_relay_disabled: std::sync::atomic::AtomicBool::new(false),
         osc: std::sync::Mutex::new(osc::OscBridge::default()),
     })
 }
@@ -128,6 +135,12 @@ async fn run_headless(cli: Cli) {
     let key_path = cli.data_dir.join("key.pem");
 
     let app_state = create_app_state(&cli.data_dir);
+    if cli.no_llm_relay {
+        app_state
+            .llm_relay_disabled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        println!("LLM relay routes disabled (--no-llm-relay)");
+    }
     ensure_cert(&cert_path, &key_path);
 
     println!("Starting HTTPS server on https://localhost:{}", cli.port);

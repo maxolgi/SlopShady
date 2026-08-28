@@ -1,7 +1,7 @@
 use serde_json::{json, Map, Value};
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 
@@ -20,6 +20,10 @@ pub struct AppState {
     /// coalesces persist requests into a single trailing write.
     pub persist_rx: std::sync::Mutex<Option<mpsc::Receiver<()>>>,
     pub tuning: crate::live_tuning::TuningState,
+    /// When true (--no-llm-relay), the server-mediated LLM proxy routes are
+    /// not registered: /api/models, /api/chat/completions and /api/live-tuning/*.
+    /// The browser then talks to the LLM API directly.
+    pub llm_relay_disabled: AtomicBool,
     /// Native OSC UDP bridge supervisor. Hot-swappable via the WS handler when
     /// oscPort/oscBind change. Initialized empty; spawned from main().
     pub osc: std::sync::Mutex<crate::osc::OscBridge>,

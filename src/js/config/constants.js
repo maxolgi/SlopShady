@@ -43,6 +43,7 @@ export const DIAL_KEY_MAP = ['q','w','e','r','t','y','u','i','o','p','a','s','d'
 export const SETTINGS_KEYS = {
     apiUrl: 'slopshady_apiUrl',
     bearerKey: 'slopshady_bearerKey',
+    llmConnection: 'slopshady_llmConnection',
     modelNameImage: 'slopshady_modelNameImage',
     modelNameText: 'slopshady_modelNameText',
     captureResolution: 'slopshady_captureResolution',

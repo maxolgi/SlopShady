@@ -6,6 +6,7 @@
 import { state, getEl } from '../state.js';
 import { loadFromLocalStorage, saveToLocalStorage, setDropdownValue, escapeHtml } from '../utils.js';
 import { SETTINGS_KEYS } from '../config.js';
+import { getConnection, apiBase, authHeaders } from './connection.js';
 
 function _setMenuLabel(menuId, text) {
     const dropdown = getEl(menuId)?.closest('.dropdown');
@@ -37,11 +38,16 @@ export const Models = {
             const lmStudioUrl = getEl('apiUrl').value.trim();
             const bearerKey = getEl('bearerKey').value.trim();
 
-            const res = await fetch('/api/models', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ lm_studio_url: lmStudioUrl, bearer_key: bearerKey })
-            });
+            let res;
+            if (getConnection() === 'relay') {
+                res = await fetch('/api/models', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lm_studio_url: lmStudioUrl, bearer_key: bearerKey })
+                });
+            } else {
+                res = await fetch(apiBase() + '/models', { headers: authHeaders() });
+            }
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
             const data = await res.json();

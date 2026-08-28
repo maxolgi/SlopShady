@@ -1153,6 +1153,15 @@
                 </div>
                 <div class="panel-section">
                     <span class="content-title">Slop</span>
+                    <span class="content-label">Connection</span>
+                    <div class="dropdown" id="llmConnection-dropdown">
+                        <button class="dropdown__selected tool-btn"><span>Direct (browser → API)</span></button>
+                        <div class="dropdown__menu" id="llmConnection-menu">
+                            <div class="dropdown__item active" data-value="direct">Direct (browser → API)</div>
+                            <div class="dropdown__item" data-value="relay">Via server relay</div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="llmConnection" value="direct">
                     <span class="content-label">Server URL</span>
                     <input id="apiUrl" type="text" value="http://localhost:1234/v1/" />
                     <span class="content-label">Bearer Token</span>

@@ -20,6 +20,7 @@ export function saveState() {
     const data = {
         shaderCode: getEl('shaderCode').value,
         apiUrl: getEl('apiUrl').value,
+        llmConnection: getEl('llmConnection').value,
         modelNameImage: getEl('modelNameImage').value,
         modelNameText: getEl('modelNameText').value,
         captureResolution: getEl('captureResolution').value,
@@ -121,6 +122,10 @@ export function loadShadersOnly(data) {
 export function loadState(data) {
     if (data.shaderCode) getEl('shaderCode').value = data.shaderCode;
     if (data.apiUrl) getEl('apiUrl').value = data.apiUrl;
+    if (data.llmConnection) {
+        getEl('llmConnection').value = data.llmConnection;
+        setDropdownValue('llmConnection-menu', data.llmConnection);
+    }
     if (data.bearerKey) getEl('bearerKey').value = data.bearerKey;
     if (data.modelNameImage) {
         getEl('modelNameImage').value = data.modelNameImage;
@@ -247,6 +252,9 @@ export function initSettingsPersistence() {
     // Load saved settings
     getEl('apiUrl').value = loadFromLocalStorage(SETTINGS_KEYS.apiUrl, getEl('apiUrl').value);
     getEl('bearerKey').value = loadFromLocalStorage(SETTINGS_KEYS.bearerKey, '');
+    const savedConn = loadFromLocalStorage(SETTINGS_KEYS.llmConnection, getEl('llmConnection').value);
+    getEl('llmConnection').value = savedConn;
+    setDropdownValue('llmConnection-menu', savedConn);
     getEl('modelNameImage').value = loadFromLocalStorage(SETTINGS_KEYS.modelNameImage, getEl('modelNameImage').value);
     getEl('modelNameText').value = loadFromLocalStorage(SETTINGS_KEYS.modelNameText, getEl('modelNameText').value);
     const savedRes = loadFromLocalStorage(SETTINGS_KEYS.captureResolution, getEl('captureResolution').value);
@@ -272,6 +280,10 @@ export function initSettingsPersistence() {
     // Save on change
     getEl('apiUrl').addEventListener('change', (e) => {
         saveToLocalStorage(SETTINGS_KEYS.apiUrl, e.target.value);
+    });
+    getEl('llmConnection-menu').addEventListener('dropdown-select', (e) => {
+        getEl('llmConnection').value = e.detail.value;
+        saveToLocalStorage(SETTINGS_KEYS.llmConnection, e.detail.value);
     });
     getEl('bearerKey').addEventListener('change', (e) => {
         saveToLocalStorage(SETTINGS_KEYS.bearerKey, e.target.value);

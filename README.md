@@ -207,11 +207,13 @@ SlopShady consists of two components:
 
 ### Why a Server?
 
-- **Browser CORS restriction**: Browsers cannot directly call arbitrary HTTP endpoints from JavaScript. The server proxies all LLM API calls.
-- **Live Tuning orchestration**: The server runs the iterative AI tuning loop, enabling longer-running sessions without browser timeout.
+- **Server relay (optional)**: By default the browser talks to the LLM API directly (Settings → Connection = "Direct"). The "Via server relay" mode routes LLM calls through the backend — useful when the API blocks browser access (CORS) or sits on a plain-http LAN address the HTTPS page would block as mixed content. Start with `--no-llm-relay` to disable the relay routes entirely (public hosting: the backend then cannot be used as an open proxy to the LLM API).
+- **Live Tuning**: The iterative AI tuning loop runs in the browser (screenshot capture + shader compilation are local); LLM calls follow the same Direct/relay setting.
 - **State synchronization**: All connected clients share state via WebSocket (`/ws`). State is persisted server-side to `shaders.json`.
 
 ### API Endpoints
+
+All `/api/models`, `/api/chat/completions` and `/api/live-tuning/*` routes are the optional server relay — not registered when started with `--no-llm-relay`.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
