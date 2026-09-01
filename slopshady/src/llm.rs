@@ -48,7 +48,10 @@ pub async fn get_models(
         }
     }
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap();
     let url = format!("{}/models", lm_url.trim_end_matches('/'));
 
     match client.get(&url).headers(headers).send().await {
@@ -110,53 +113,77 @@ pub async fn chat_completions(
         .build()
         .unwrap();
 
-    let stream = async_stream::stream! {
-        match client.post(&url).headers(headers).json(&payload).send().await {
-            Ok(resp) => {
-                let mut buffer = String::new();
-                let mut consumed = 0usize;
-                let mut byte_stream = resp.bytes_stream();
+    let resp = match client.post(&url).headers(headers).json(&payload).send().await {
+        Ok(resp) => resp,
+        Err(e) => {
+            let error = if e.is_connect() {
+                "Cannot connect to LM Studio".to_string()
+            } else {
+                format!("Connection error: {e}")
+            };
+            return Response::builder()
+                .status(502)
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"error": error}).to_string()))
+                .unwrap();
+        }
+    };
 
-                while let Some(chunk) = byte_stream.next().await {
-                    match chunk {
-                        Ok(bytes) => {
-                            buffer.push_str(&String::from_utf8_lossy(&bytes));
-                            while let Some(pos) = buffer[consumed..].find('\n') {
-                                let line = buffer[consumed..consumed + pos].trim_end().to_string();
-                                consumed += pos + 1;
-                                if line.is_empty() {
-                                    continue;
-                                }
-                                if line.starts_with("data: ") {
-                                    yield Ok::<_, std::io::Error>(Bytes::from(format!("{line}\n\n")));
-                                } else {
-                                    yield Ok::<_, std::io::Error>(Bytes::from(format!("data: {line}\n\n")));
-                                }
-                            }
-                            buffer.drain(..consumed);
-                            consumed = 0;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "application/json".to_string());
+        let mut body = resp.text().await.unwrap_or_default();
+        if body.len() > 4096 {
+            let mut cut = 4096;
+            while !body.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            body.truncate(cut);
+        }
+        return Response::builder()
+            .status(status)
+            .header("content-type", content_type)
+            .body(Body::from(body))
+            .unwrap();
+    }
+
+    let stream = async_stream::stream! {
+        let mut buffer: Vec<u8> = Vec::new();
+        let mut consumed = 0usize;
+        let mut byte_stream = resp.bytes_stream();
+
+        while let Some(chunk) = byte_stream.next().await {
+            match chunk {
+                Ok(bytes) => {
+                    buffer.extend_from_slice(&bytes);
+                    while let Some(pos) = buffer[consumed..].iter().position(|&b| b == b'\n') {
+                        let line = String::from_utf8_lossy(&buffer[consumed..consumed + pos]).trim_end().to_string();
+                        consumed += pos + 1;
+                        if line.is_empty() {
+                            continue;
                         }
-                        Err(e) => {
-                            let msg = format!("event: status\ndata: {}\n\n", json!({"message": format!("Stream error: {e}"), "type": "error"}));
-                            yield Ok(Bytes::from(msg));
-                            break;
+                        if line.starts_with(':') {
+                            continue;
+                        }
+                        if line.starts_with("data: ") {
+                            yield Ok::<_, std::io::Error>(Bytes::from(format!("{line}\n\n")));
+                        } else {
+                            yield Ok::<_, std::io::Error>(Bytes::from(format!("data: {line}\n\n")));
                         }
                     }
+                    buffer.drain(..consumed);
+                    consumed = 0;
                 }
-            }
-            Err(e) => {
-                let msg = if e.is_connect() {
-                    format!(
-                        "event: status\ndata: {}\n\n",
-                        json!({"message": "Cannot connect to LM Studio", "type": "error"})
-                    )
-                } else {
-                    format!(
-                        "event: status\ndata: {}\n\n",
-                        json!({"message": format!("Connection error: {e}"), "type": "error"})
-                    )
-                };
-                yield Ok(Bytes::from(msg));
+                Err(e) => {
+                    let msg = format!("event: status\ndata: {}\n\n", json!({"message": format!("Stream error: {e}"), "type": "error"}));
+                    yield Ok(Bytes::from(msg));
+                    break;
+                }
             }
         }
     };
