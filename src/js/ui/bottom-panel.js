@@ -113,9 +113,21 @@ function updateGLDebugInfo() {
         fboStatusEl.className = 'debug-val warn';
     }
 
-    getEl('dbg-fbo-count').textContent = '12 (8 layer + 2 composite + 2 feedback)';
-
     const fbm = FramebufferManager;
+    const nLayer = fbm.fbos.filter(Boolean).length;
+    const nComposite = (fbm.compositeFBO ? 1 : 0) + (fbm.compositeFBO2 ? 1 : 0);
+    const nFeedback = (fbm.feedbackFBO ? 1 : 0) + (fbm.feedbackFBO2 ? 1 : 0);
+    const nScanimate = (fbm.scanimateTempFBO ? 1 : 0) + (fbm.scanimateTempFBO2 ? 1 : 0)
+        + (fbm.scanimateFeedbackFBO ? 1 : 0) + (fbm.scanimateFeedbackFBO2 ? 1 : 0);
+    const nLayerFb = fbm.layerFeedbackFBOs.filter(Boolean).length + fbm.layerFeedbackFBOs2.filter(Boolean).length;
+    const fboTotal = nLayer + nComposite + nFeedback + nScanimate + nLayerFb;
+    const parts = [];
+    if (nLayer) parts.push(`${nLayer} layer`);
+    if (nComposite) parts.push(`${nComposite} composite`);
+    if (nFeedback) parts.push(`${nFeedback} feedback`);
+    if (nScanimate) parts.push(`${nScanimate} scanimate`);
+    if (nLayerFb) parts.push(`${nLayerFb} layer-fb`);
+    getEl('dbg-fbo-count').textContent = `${fboTotal}${parts.length ? ` (${parts.join(' + ')})` : ''}`;
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
     const dpr = window.devicePixelRatio || 1;
@@ -128,8 +140,8 @@ function updateGLDebugInfo() {
     getEl('dbg-dpr').textContent = `${dpr} (${bufW / cssW}× effective)`;
 
     const bpp = spec ? spec.bpp : 4;
-    const vramMB = (bufW * bufH * bpp * 12 / 1024 / 1024).toFixed(1);
-    getEl('dbg-vram').textContent = `${vramMB} MB (${bpp} bytes/px × 12 FBOs)`;
+    const vramMB = (bufW * bufH * bpp * fboTotal / 1024 / 1024).toFixed(1);
+    getEl('dbg-vram').textContent = `${vramMB} MB (${bpp} bytes/px × ${fboTotal} FBOs)`;
 
     getEl('dbg-max-tex').textContent = param(gl.MAX_TEXTURE_SIZE);
     getEl('dbg-max-rb').textContent = param(gl.MAX_RENDERBUFFER_SIZE);

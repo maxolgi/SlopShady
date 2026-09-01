@@ -27,7 +27,6 @@ export const FramebufferManager = {
     scanimateTempFBO2: null,
     scanimateFeedbackFBO: null,
     scanimateFeedbackFBO2: null,
-    scanimateOutputFBO: null,
     currentWidth: 0,
     currentHeight: 0,
     formatTable: CANDIDATE_FORMATS,
@@ -154,13 +153,11 @@ export const FramebufferManager = {
         this.scanimateTempFBO2 = this._createFBO(width, height);
         this.scanimateFeedbackFBO = this._createFBO(width, height);
         this.scanimateFeedbackFBO2 = this._createFBO(width, height);
-        this.scanimateOutputFBO = this._createFBO(width, height);
 
         this._clearFBO(this.scanimateTempFBO);
         this._clearFBO(this.scanimateTempFBO2);
         this._clearFBO(this.scanimateFeedbackFBO);
         this._clearFBO(this.scanimateFeedbackFBO2);
-        this._clearFBO(this.scanimateOutputFBO);
 
         if (!this.compositeFBO || !this.compositeFBO2) {
             console.warn('FramebufferManager: Composite FBOs not created');
@@ -278,7 +275,7 @@ export const FramebufferManager = {
         this.layerFeedbackFBOs2 = new Array(8).fill(null);
 
         // Clean up scanimate FBOs
-        for (const key of ['scanimateTempFBO', 'scanimateTempFBO2', 'scanimateFeedbackFBO', 'scanimateFeedbackFBO2', 'scanimateOutputFBO']) {
+        for (const key of ['scanimateTempFBO', 'scanimateTempFBO2', 'scanimateFeedbackFBO', 'scanimateFeedbackFBO2']) {
             const fbo = this[key];
             if (fbo) {
                 if (fbo.fbo) gl.deleteFramebuffer(fbo.fbo);
