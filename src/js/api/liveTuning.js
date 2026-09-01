@@ -14,6 +14,7 @@ import { Templates } from '../utils/templates.js';
 import { CodeDials } from '../ui/codeDials.js';
 
 const FENCE = '```';
+const MAX_SCREENSHOTS_IN_HISTORY = 2;
 
 const LIVE_TUNING_TOOLS = [
     {
@@ -74,6 +75,34 @@ export const LiveTuning = {
             `=== ERROR HANDLING ===\n` +
             `If load_shader returns a compilation error, you MUST call load_shader again with the corrected code. Do not respond with text - fix the error and call the tool.\n\n` +
             `Goal: ${goal}`;
+    },
+
+    _redactOldScreenshots(messages) {
+        const shotIndices = [];
+        for (let i = 0; i < messages.length; i++) {
+            const msg = messages[i];
+            if (msg.role !== 'tool' || typeof msg.content !== 'string') continue;
+            let parsed = null;
+            try { parsed = JSON.parse(msg.content); } catch (e) {}
+            if (parsed && parsed.screenshot_data) shotIndices.push(i);
+        }
+        if (shotIndices.length <= MAX_SCREENSHOTS_IN_HISTORY) return;
+
+        const cutoff = shotIndices[shotIndices.length - MAX_SCREENSHOTS_IN_HISTORY];
+
+        for (const idx of shotIndices) {
+            if (idx < cutoff) {
+                messages[idx].content = JSON.stringify({ success: true, message: 'screenshot omitted to save context' });
+            }
+        }
+
+        for (let i = 0; i < cutoff; i++) {
+            const msg = messages[i];
+            if (msg.role !== 'user' || !Array.isArray(msg.content)) continue;
+            if (!msg.content.some(part => part && part.image_url)) continue;
+            const textParts = msg.content.filter(part => part.type === 'text');
+            msg.content = textParts.length ? textParts : '[screenshot omitted]';
+        }
     },
 
     async _llmCall(model, messages, toolChoice) {
@@ -302,6 +331,7 @@ export const LiveTuning = {
                         }
                     } else if (tc.name === 'get_screenshot') {
                         const shot = (await Capture.canvas({ format: 'image/jpeg', quality: 0.8 })).split(',')[1];
+                        this._redactOldScreenshots(messages);
                         messages.push({
                             role: 'tool',
                             tool_call_id: tc.id,
