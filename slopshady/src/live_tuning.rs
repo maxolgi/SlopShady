@@ -116,17 +116,17 @@ async fn stream_llm_call(
     let mut accumulated_content = String::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
 
-    let mut buffer = String::new();
+    let mut buffer: Vec<u8> = Vec::new();
     let mut consumed = 0usize;
     let mut stream = resp.bytes_stream();
     use futures::StreamExt;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("Stream error: {}", e))?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        buffer.extend_from_slice(&chunk);
 
-        while let Some(pos) = buffer[consumed..].find('\n') {
-            let line = buffer[consumed..consumed + pos].trim_end().to_string();
+        while let Some(pos) = buffer[consumed..].iter().position(|&b| b == b'\n') {
+            let line = String::from_utf8_lossy(&buffer[consumed..consumed + pos]).trim_end().to_string();
             consumed += pos + 1;
 
             if !line.starts_with("data: ") {
@@ -448,8 +448,9 @@ pub async fn live_tuning_start(
                             messages.push(json!({
                                 "role": "tool",
                                 "tool_call_id": tc.id,
-                                "content": json!({"success": true, "message": "Shader processed"}).to_string(),
+                                "content": json!({"success": false, "error": "Timed out after 30s waiting for the browser to report a shader result — the client may be disconnected."}).to_string(),
                             }));
+                            yield Ok::<_, std::io::Error>(bytes::Bytes::from(format_sse("status", &json!({"message": "Shader result timeout — no response from browser", "type": "error"}))));
                         }
                     }
                 } else if tc.function_name == "get_screenshot" {
