@@ -229,54 +229,65 @@ export const LLM = {
         this._streamingContentEl = this._streamingEntry.querySelector('.streaming-content');
         getEl('response').appendChild(this._streamingEntry);
         
+        let pending = '';
+        const processLine = (line) => {
+            const trimmed = line.trimEnd();
+            if (!trimmed.startsWith('data: ')) return;
+            const jsonStr = trimmed.slice(6);
+            if (jsonStr === '[DONE]') return;
+
+            try {
+                const json = JSON.parse(jsonStr);
+                const deltaObj = json.choices?.[0]?.delta || {};
+                const contentDelta = deltaObj.content || '';
+                const reasoningDelta = deltaObj.reasoning_content || '';
+
+                if (reasoningDelta) {
+                    reasoningAccumulated += reasoningDelta;
+                    if (!isThinking) {
+                        isThinking = true;
+                        status.textContent = '💭 Watching model think...';
+                    }
+                }
+
+                if (contentDelta) {
+                    accumulated += contentDelta;
+
+                    if (isThinking) {
+                        isThinking = false;
+                        status.textContent = '✍️ Generating response...';
+                    }
+
+                    if (!assistantMessageAdded && accumulated.trim()) {
+                        state.conversationHistory.push({ role: 'assistant', content: accumulated });
+                        assistantMessageAdded = true;
+                    }
+                }
+
+                if (reasoningDelta || contentDelta) {
+                    if (assistantMessageAdded) {
+                        state.conversationHistory[state.conversationHistory.length - 1].content = accumulated;
+                    }
+                    this._streamState = { accumulated, reasoningAccumulated };
+                    this._scheduleStreamFlush();
+                }
+            } catch (e) {}
+        };
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            
-            const lines = decoder.decode(value, { stream: true }).split('\n');
+
+            pending += decoder.decode(value, { stream: true });
+            const lines = pending.split('\n');
+            pending = lines.pop() ?? '';
             for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                const jsonStr = line.slice(6);
-                if (jsonStr === '[DONE]') continue;
-                
-                try {
-                    const json = JSON.parse(jsonStr);
-                    const deltaObj = json.choices?.[0]?.delta || {};
-                    const contentDelta = deltaObj.content || '';
-                    const reasoningDelta = deltaObj.reasoning_content || '';
-                    
-                    if (reasoningDelta) {
-                        reasoningAccumulated += reasoningDelta;
-                        if (!isThinking) {
-                            isThinking = true;
-                            status.textContent = '💭 Watching model think...';
-                        }
-                    }
-                    
-                    if (contentDelta) {
-                        accumulated += contentDelta;
-                        
-                        if (isThinking) {
-                            isThinking = false;
-                            status.textContent = '✍️ Generating response...';
-                        }
-                        
-                        if (!assistantMessageAdded && accumulated.trim()) {
-                            state.conversationHistory.push({ role: 'assistant', content: accumulated });
-                            assistantMessageAdded = true;
-                        }
-                    }
-                    
-                    if (reasoningDelta || contentDelta) {
-                        if (assistantMessageAdded) {
-                            state.conversationHistory[state.conversationHistory.length - 1].content = accumulated;
-                        }
-                        this._streamState = { accumulated, reasoningAccumulated };
-                        this._scheduleStreamFlush();
-                    }
-                } catch (e) {}
+                processLine(line);
             }
         }
+
+        pending += decoder.decode();
+        if (pending.trimEnd()) processLine(pending);
         
         const fullContent = reasoningAccumulated
             ? `<think>${reasoningAccumulated}</think>` + accumulated

@@ -127,6 +127,32 @@ export const LiveTuning = {
         let content = '';
         const toolCalls = [];
 
+        const processLine = (line) => {
+            const trimmed = line.trimEnd();
+            if (!trimmed.startsWith('data: ')) return;
+            const jsonStr = trimmed.slice(6);
+            if (jsonStr === '[DONE]') return;
+
+            try {
+                const json = JSON.parse(jsonStr);
+                const delta = json.choices?.[0]?.delta || {};
+
+                if (delta.content) content += delta.content;
+
+                if (Array.isArray(delta.tool_calls)) {
+                    for (const tc of delta.tool_calls) {
+                        const idx = tc.index || 0;
+                        while (idx >= toolCalls.length) {
+                            toolCalls.push({ id: '', name: '', args: '' });
+                        }
+                        if (tc.id) toolCalls[idx].id += tc.id;
+                        if (tc.function?.name) toolCalls[idx].name += tc.function.name;
+                        if (tc.function?.arguments) toolCalls[idx].args += tc.function.arguments;
+                    }
+                }
+            } catch (e) {}
+        };
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -136,31 +162,12 @@ export const LiveTuning = {
             buffer = lines.pop() || '';
 
             for (const line of lines) {
-                const trimmed = line.trimEnd();
-                if (!trimmed.startsWith('data: ')) continue;
-                const jsonStr = trimmed.slice(6);
-                if (jsonStr === '[DONE]') continue;
-
-                try {
-                    const json = JSON.parse(jsonStr);
-                    const delta = json.choices?.[0]?.delta || {};
-
-                    if (delta.content) content += delta.content;
-
-                    if (Array.isArray(delta.tool_calls)) {
-                        for (const tc of delta.tool_calls) {
-                            const idx = tc.index || 0;
-                            while (idx >= toolCalls.length) {
-                                toolCalls.push({ id: '', name: '', args: '' });
-                            }
-                            if (tc.id) toolCalls[idx].id += tc.id;
-                            if (tc.function?.name) toolCalls[idx].name += tc.function.name;
-                            if (tc.function?.arguments) toolCalls[idx].args += tc.function.arguments;
-                        }
-                    }
-                } catch (e) {}
+                processLine(line);
             }
         }
+
+        buffer += decoder.decode();
+        if (buffer.trimEnd()) processLine(buffer);
 
         return { content, toolCalls };
     },
