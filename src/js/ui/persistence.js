@@ -263,6 +263,8 @@ export function initSettingsPersistence() {
     const savedThinking = loadFromLocalStorage(SETTINGS_KEYS.llmThinking, getEl('llmThinking').value);
     getEl('llmThinking').value = savedThinking;
     setDropdownValue('llmThinking-menu', savedThinking);
+    const savedTextSize = Math.max(8, Math.min(24, parseInt(loadFromLocalStorage(SETTINGS_KEYS.responseTextSize, '11')) || 11));
+    getEl('response').style.fontSize = savedTextSize + 'px';
     getEl('modelNameImage').value = loadFromLocalStorage(SETTINGS_KEYS.modelNameImage, getEl('modelNameImage').value);
     getEl('modelNameText').value = loadFromLocalStorage(SETTINGS_KEYS.modelNameText, getEl('modelNameText').value);
     const savedRes = loadFromLocalStorage(SETTINGS_KEYS.captureResolution, getEl('captureResolution').value);
@@ -297,6 +299,14 @@ export function initSettingsPersistence() {
         getEl('llmThinking').value = e.detail.value;
         saveToLocalStorage(SETTINGS_KEYS.llmThinking, e.detail.value);
     });
+    const adjustResponseTextSize = (delta) => {
+        const current = parseInt(getEl('response').style.fontSize) || 11;
+        const next = Math.max(8, Math.min(24, current + delta));
+        getEl('response').style.fontSize = next + 'px';
+        saveToLocalStorage(SETTINGS_KEYS.responseTextSize, next);
+    };
+    getEl('responseTextMinus').addEventListener('click', () => adjustResponseTextSize(-1));
+    getEl('responseTextPlus').addEventListener('click', () => adjustResponseTextSize(1));
     getEl('bearerKey').addEventListener('change', (e) => {
         saveToLocalStorage(SETTINGS_KEYS.bearerKey, e.target.value);
     });

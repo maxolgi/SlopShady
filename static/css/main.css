@@ -2231,6 +2231,11 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     flex-shrink: 0;
 }
 
+.panel-section--llm-response {
+    flex: 1;
+    min-width: 0;
+}
+
 .panel-section--medium {
     min-width: 260px;
     width: 260px;

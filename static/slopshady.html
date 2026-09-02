@@ -1375,7 +1375,6 @@
         <!-- LLM Panel -->
         <div class="content-panel content-panel--scrollable" data-panel="llm">
             <div class="panel-section panel-section--wide">
-                <span class="content-title">Conversation</span>
                 <div class="flex-row mb-2">
                     <button id="modeShader" class="tool-btn tool-btn--mode active">Shader</button>
                     <button id="modeChat" class="tool-btn tool-btn--mode inactive">Chat</button>
@@ -1392,12 +1391,16 @@
                     <button id="startLiveTuning" class="tool-btn flex-1">Start</button>
                     <button id="stopLiveTuning" class="tool-btn flex-1" disabled>Stop</button>
                 </div>
-                <div id="tokenCount" class="text-right text-small text-muted mt-1"></div>
-            </div>
-            <div class="panel-section" style="width:560px;min-width:560px;flex-shrink:0;">
-                <span class="content-title">Response</span>
-                <div id="response"></div>
+                <div class="flex-row mt-1">
+                    <button id="responseTextMinus" class="tool-btn w-auto">A−</button>
+                    <button id="responseTextPlus" class="tool-btn w-auto">A+</button>
+                    <span class="flex-1"></span>
+                    <span id="tokenCount" class="text-right text-small text-muted"></span>
+                </div>
                 <div id="status" class="status"></div>
+            </div>
+            <div class="panel-section panel-section--llm-response">
+                <div id="response"></div>
             </div>
         </div>
 

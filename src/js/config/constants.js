@@ -45,6 +45,7 @@ export const SETTINGS_KEYS = {
     bearerKey: 'slopshady_bearerKey',
     llmConnection: 'slopshady_llmConnection',
     llmThinking: 'slopshady_llmThinking',
+    responseTextSize: 'slopshady_responseTextSize',
     modelNameImage: 'slopshady_modelNameImage',
     modelNameText: 'slopshady_modelNameText',
     captureResolution: 'slopshady_captureResolution',
