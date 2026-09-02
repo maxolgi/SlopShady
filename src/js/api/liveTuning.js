@@ -112,7 +112,7 @@ export const LiveTuning = {
             tools: LIVE_TUNING_TOOLS,
             tool_choice: toolChoice,
             temperature: 0.7,
-            max_tokens: 4000,
+            max_tokens: 100000,
             stream: true,
             ...thinkingParams()
         };
@@ -332,9 +332,22 @@ export const LiveTuning = {
 
                     let fnArgs = {};
                     try { fnArgs = JSON.parse(tc.args || '{}'); } catch (e) {}
+                    if (Array.isArray(fnArgs)) fnArgs = fnArgs[0] && typeof fnArgs[0] === 'object' ? fnArgs[0] : {};
 
                     if (tc.name === 'load_shader') {
                         const shader = typeof fnArgs.shader_code === 'string' ? fnArgs.shader_code : '';
+                        if (!shader.trim() || !shader.includes('void main')) {
+                            messages.push({
+                                role: 'tool',
+                                tool_call_id: tc.id,
+                                content: JSON.stringify({
+                                    success: false,
+                                    error: 'shader_code was missing, empty, or truncated (no void main found). Send the COMPLETE shader — a single JSON object {"shader_code": "..."} (not an array), ending with the closing brace of main().'
+                                })
+                            });
+                            this.log('⚠️ Model sent an incomplete shader — asking for a full resend', 'error');
+                            continue;
+                        }
                         const compileResult = window.WebGL?.compileProgram(shader, true);
 
                         if (compileResult?.error) {

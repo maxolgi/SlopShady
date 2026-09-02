@@ -327,7 +327,7 @@ pub async fn live_tuning_start(
                 "tools": tools,
                 "tool_choice": tool_choice,
                 "temperature": 0.7,
-                "max_tokens": 4000,
+                "max_tokens": 100000,
                 "stream": true,
             });
 
@@ -398,10 +398,26 @@ pub async fn live_tuning_start(
             let mut last_compile_error: Option<String> = None;
 
             for tc in &tool_calls {
-                let fn_args: Value = serde_json::from_str(&tc.function_arguments).unwrap_or(json!({}));
+                let mut fn_args: Value =
+                    serde_json::from_str(&tc.function_arguments).unwrap_or(json!({}));
+                if fn_args.is_array() {
+                    fn_args = fn_args
+                        .as_array()
+                        .and_then(|a| a.first().cloned())
+                        .unwrap_or(json!({}));
+                }
 
                 if tc.function_name == "load_shader" {
                     let shader = fn_args.get("shader_code").and_then(|v| v.as_str()).unwrap_or("");
+                    if shader.trim().is_empty() || !shader.contains("void main") {
+                        messages.push(json!({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json!({"success": false, "error": "shader_code was missing, empty, or truncated (no void main found). Send the COMPLETE shader — a single JSON object {\"shader_code\": \"...\"} (not an array), ending with the closing brace of main()."}).to_string(),
+                        }));
+                        yield Ok::<_, std::io::Error>(bytes::Bytes::from(format_sse("status", &json!({"message": "Model sent an incomplete shader — asking for a full resend", "type": "error"}))));
+                        continue;
+                    }
                     yield Ok::<_, std::io::Error>(bytes::Bytes::from(format_sse("load_shader", &json!({"shader_code": shader}))));
 
                     match tokio::time::timeout(
