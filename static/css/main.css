@@ -1458,6 +1458,20 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     grid-template-columns: repeat(2, 1fr);
 }
 
+/* Select Grid — 2x2 grid of labeled dropdowns */
+.select-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px;
+}
+
+.select-grid > div {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 4px;
+}
+
 .tool-btn {
     display: inline-flex;
     align-items: center;
