@@ -1458,18 +1458,25 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     grid-template-columns: repeat(2, 1fr);
 }
 
-/* Select Grid — 2x2 grid of labeled dropdowns */
+/* Select Grid — labeled dropdowns in aligned rows */
 .select-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    display: flex;
+    flex-direction: column;
     gap: 4px;
 }
 
-.select-grid > div {
+.select-grid__row {
+    display: flex;
+    gap: 4px;
+    align-items: flex-end;
+}
+
+.select-grid__cell {
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
     gap: 4px;
+    flex: 1;
+    min-width: 0;
 }
 
 .tool-btn {

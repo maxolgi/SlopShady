@@ -1158,49 +1158,51 @@
                     <span class="content-label">Bearer Token</span>
                     <input id="bearerKey" type="password" placeholder="sk-..." />
                     <div class="select-grid">
-                        <div>
-                            <div class="flex-row">
-                                <span class="content-label flex-1">Model (images)</span>
-                                <button id="refreshModels" class="tool-btn">Refresh</button>
-                            </div>
-                            <div class="dropdown" id="modelSelectImage-dropdown">
-                                <button class="dropdown__selected tool-btn"><span>Loading models...</span></button>
-                                <div class="dropdown__menu" id="modelSelectImage-menu"></div>
-                            </div>
-                            <input id="modelNameImage" type="hidden" value="qwen/qwen3.5-9b" />
-                        </div>
-                        <div>
-                            <span class="content-label">Model (text)</span>
-                            <div class="dropdown" id="modelSelectText-dropdown">
-                                <button class="dropdown__selected tool-btn"><span>Loading models...</span></button>
-                                <div class="dropdown__menu" id="modelSelectText-menu"></div>
-                            </div>
-                            <input id="modelNameText" type="hidden" value="" />
-                        </div>
-                        <div>
-                            <span class="content-label">Connection</span>
-                            <div class="dropdown" id="llmConnection-dropdown">
-                                <button class="dropdown__selected tool-btn"><span>Direct (browser → API)</span></button>
-                                <div class="dropdown__menu" id="llmConnection-menu">
-                                    <div class="dropdown__item active" data-value="direct">Direct (browser → API)</div>
-                                    <div class="dropdown__item" data-value="relay">Via server relay</div>
+                        <div class="select-grid__row">
+                            <div class="select-grid__cell">
+                                <span class="content-label">Model (images)</span>
+                                <div class="dropdown" id="modelSelectImage-dropdown">
+                                    <button class="dropdown__selected tool-btn"><span>Loading models...</span></button>
+                                    <div class="dropdown__menu" id="modelSelectImage-menu"></div>
                                 </div>
+                                <input id="modelNameImage" type="hidden" value="qwen/qwen3.5-9b" />
                             </div>
-                            <input type="hidden" id="llmConnection" value="direct">
-                        </div>
-                        <div>
-                            <span class="content-label">Thinking</span>
-                            <div class="dropdown" id="llmThinking-dropdown">
-                                <button class="dropdown__selected tool-btn"><span>Default (provider setting)</span></button>
-                                <div class="dropdown__menu" id="llmThinking-menu">
-                                    <div class="dropdown__item active" data-value="default">Default (provider setting)</div>
-                                    <div class="dropdown__item" data-value="low">Low</div>
-                                    <div class="dropdown__item" data-value="medium">Medium</div>
-                                    <div class="dropdown__item" data-value="high">High</div>
-                                    <div class="dropdown__item" data-value="max">Max</div>
+                            <div class="select-grid__cell">
+                                <span class="content-label">Model (text)</span>
+                                <div class="dropdown" id="modelSelectText-dropdown">
+                                    <button class="dropdown__selected tool-btn"><span>Loading models...</span></button>
+                                    <div class="dropdown__menu" id="modelSelectText-menu"></div>
                                 </div>
+                                <input id="modelNameText" type="hidden" value="" />
                             </div>
-                            <input type="hidden" id="llmThinking" value="default">
+                            <button id="refreshModels" class="tool-btn">Refresh</button>
+                        </div>
+                        <div class="select-grid__row">
+                            <div class="select-grid__cell">
+                                <span class="content-label">Connection</span>
+                                <div class="dropdown" id="llmConnection-dropdown">
+                                    <button class="dropdown__selected tool-btn"><span>Direct (browser → API)</span></button>
+                                    <div class="dropdown__menu" id="llmConnection-menu">
+                                        <div class="dropdown__item active" data-value="direct">Direct (browser → API)</div>
+                                        <div class="dropdown__item" data-value="relay">Via server relay</div>
+                                    </div>
+                                </div>
+                                <input type="hidden" id="llmConnection" value="direct">
+                            </div>
+                            <div class="select-grid__cell">
+                                <span class="content-label">Thinking</span>
+                                <div class="dropdown" id="llmThinking-dropdown">
+                                    <button class="dropdown__selected tool-btn"><span>Default (provider setting)</span></button>
+                                    <div class="dropdown__menu" id="llmThinking-menu">
+                                        <div class="dropdown__item active" data-value="default">Default (provider setting)</div>
+                                        <div class="dropdown__item" data-value="low">Low</div>
+                                        <div class="dropdown__item" data-value="medium">Medium</div>
+                                        <div class="dropdown__item" data-value="high">High</div>
+                                        <div class="dropdown__item" data-value="max">Max</div>
+                                    </div>
+                                </div>
+                                <input type="hidden" id="llmThinking" value="default">
+                            </div>
                         </div>
                     </div>
                     <span class="content-label">Live Tuning Max Iterations</span>
