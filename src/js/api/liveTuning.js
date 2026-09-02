@@ -218,17 +218,19 @@ export const LiveTuning = {
             </div>
             <div id="${id}" class="thinking-content visible"></div>`;
         const logEl = getEl('response');
+        const pinned = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40;
         logEl.appendChild(wrap);
-        logEl.scrollTop = logEl.scrollHeight;
+        if (pinned) logEl.scrollTop = logEl.scrollHeight;
         return wrap;
     },
 
     _updateThinkingDisplay(wrap, delta) {
         const contentEl = wrap.querySelector('.thinking-content');
         if (!contentEl) return;
-        contentEl.textContent += delta;
         const logEl = getEl('response');
-        logEl.scrollTop = logEl.scrollHeight;
+        const pinned = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40;
+        contentEl.textContent += delta;
+        if (pinned) logEl.scrollTop = logEl.scrollHeight;
     },
 
     _endThinkingDisplay(wrap, reasoning) {
@@ -459,7 +461,8 @@ export const LiveTuning = {
 
     log(message, type = 'info') {
         const logEl = getEl('response');
+        const pinned = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40;
         logEl.insertAdjacentHTML('beforeend', Templates.tuningLog(escapeHtml(message), type));
-        logEl.scrollTop = logEl.scrollHeight;
+        if (pinned) logEl.scrollTop = logEl.scrollHeight;
     }
 };

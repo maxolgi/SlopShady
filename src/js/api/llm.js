@@ -71,9 +71,10 @@ export const LLM = {
         if (!accumulated && !reasoningAccumulated) {
             displayHtml += '<span class="cursor">|</span>';
         }
-        streamingDiv.innerHTML = displayHtml;
         const resp = getEl('response');
-        if (resp) resp.scrollTop = 1e9;
+        const pinned = resp ? resp.scrollHeight - resp.scrollTop - resp.clientHeight < 40 : false;
+        streamingDiv.innerHTML = displayHtml;
+        if (pinned) resp.scrollTop = resp.scrollHeight;
         Conversation.updateTokenCount();
     },
 
@@ -428,11 +429,13 @@ export const LLM = {
         }
 
         if (this._streamingEntry) {
+            const resp = getEl('response');
+            const pinned = resp.scrollHeight - resp.scrollTop - resp.clientHeight < 40;
             this._streamingEntry.innerHTML = responseHtml;
             this._streamingEntry.querySelectorAll('.tool-btn--success').forEach(btn => {
                 btn.addEventListener('click', () => Conversation.loadCode(btn.dataset.code));
             });
-            getEl('response').scrollTop = getEl('response').scrollHeight;
+            if (pinned) resp.scrollTop = resp.scrollHeight;
         } else {
             getEl('response').insertAdjacentHTML('beforeend', responseHtml);
         }
