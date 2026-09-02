@@ -1460,23 +1460,21 @@ body.nodes-view #node-inspector { pointer-events: auto; }
 
 /* Select Grid — labeled dropdowns in aligned rows */
 .select-grid {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
     gap: 4px;
-}
-
-.select-grid__row {
-    display: flex;
-    gap: 4px;
-    align-items: flex-end;
+    align-items: end;
 }
 
 .select-grid__cell {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    flex: 1;
     min-width: 0;
+}
+
+.select-grid__cell--wide {
+    grid-column: 2 / 4;
 }
 
 .tool-btn {
