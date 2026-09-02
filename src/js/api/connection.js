@@ -22,5 +22,12 @@ export function authHeaders() {
 }
 
 export function directConnectionHint(err) {
-    return `Direct connection failed (${err.message}). If the API blocks browser access (CORS) or is on a LAN http:// address, switch Settings → Connection to "Via server relay".`;
+    try {
+        const u = new URL(apiBase());
+        const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+        if (window.location.protocol === 'https:' && u.protocol === 'http:' && !isLocal) {
+            return `Direct connection failed (${err.message}). Plain-http APIs on another machine are blocked by the browser on this HTTPS page (mixed content). Allow insecure content for this site (padlock → Site settings → Insecure content → Allow), or switch Settings → Connection to "Via server relay".`;
+        }
+    } catch (e) {}
+    return `Direct connection failed (${err.message}). If the API blocks browser access (CORS), switch Settings → Connection to "Via server relay".`;
 }
