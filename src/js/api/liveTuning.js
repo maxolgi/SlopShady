@@ -105,7 +105,7 @@ export const LiveTuning = {
         }
     },
 
-    async _llmCall(model, messages, toolChoice) {
+    async _llmCall(model, messages, toolChoice, onThinkingDelta) {
         const payload = {
             model: model,
             messages: messages,
@@ -147,14 +147,15 @@ export const LiveTuning = {
         }
         if (!res.body) throw new Error('No response body');
 
-        return this._collectStream(res.body);
+        return this._collectStream(res.body, onThinkingDelta);
     },
 
-    async _collectStream(body) {
+    async _collectStream(body, onThinkingDelta) {
         const reader = body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
         let content = '';
+        let reasoning = '';
         const toolCalls = [];
 
         const processLine = (line) => {
@@ -166,6 +167,11 @@ export const LiveTuning = {
             try {
                 const json = JSON.parse(jsonStr);
                 const delta = json.choices?.[0]?.delta || {};
+
+                if (delta.reasoning_content || delta.reasoning) {
+                    reasoning += (delta.reasoning_content || delta.reasoning);
+                    if (onThinkingDelta) onThinkingDelta(delta.reasoning_content || delta.reasoning);
+                }
 
                 if (delta.content) content += delta.content;
 
@@ -199,7 +205,43 @@ export const LiveTuning = {
         buffer += decoder.decode();
         if (buffer.trimEnd()) processLine(buffer);
 
-        return { content, toolCalls };
+        return { content, toolCalls, reasoning };
+    },
+
+    _beginThinkingDisplay() {
+        const id = 'tuning-think-' + Date.now();
+        const wrap = document.createElement('div');
+        wrap.className = 'thinking-block';
+        wrap.innerHTML = `<div class="thinking-header" data-toggle="${id}">
+                <span class="toggle-icon">▼</span>
+                <span>💭 Thinking...</span>
+            </div>
+            <div id="${id}" class="thinking-content visible"></div>`;
+        const logEl = getEl('response');
+        logEl.appendChild(wrap);
+        logEl.scrollTop = logEl.scrollHeight;
+        return wrap;
+    },
+
+    _updateThinkingDisplay(wrap, delta) {
+        const contentEl = wrap.querySelector('.thinking-content');
+        if (!contentEl) return;
+        contentEl.textContent += delta;
+        const logEl = getEl('response');
+        logEl.scrollTop = logEl.scrollHeight;
+    },
+
+    _endThinkingDisplay(wrap, reasoning) {
+        if (!reasoning) {
+            wrap.remove();
+            return;
+        }
+        const header = wrap.querySelector('.thinking-header span:last-child');
+        if (header) header.textContent = '💭 Thinking (click to expand)';
+        const icon = wrap.querySelector('.toggle-icon');
+        if (icon) icon.textContent = '▶';
+        const contentEl = wrap.querySelector('.thinking-content');
+        if (contentEl) contentEl.classList.remove('visible');
     },
 
     async start() {
@@ -251,7 +293,9 @@ export const LiveTuning = {
                     : 'auto';
                 forceToolCall = false;
 
-                const { content, toolCalls } = await this._llmCall(model, messages, toolChoice);
+                const thinkWrap = this._beginThinkingDisplay();
+                const { content, toolCalls, reasoning } = await this._llmCall(model, messages, toolChoice, (delta) => this._updateThinkingDisplay(thinkWrap, delta));
+                this._endThinkingDisplay(thinkWrap, reasoning);
 
                 const assistantMsg = { role: 'assistant', content: content || null };
                 assistantMsg.tool_calls = toolCalls.length
