@@ -354,6 +354,7 @@ export const LLM = {
 
         let newShader = null;
         let parseError = null;
+        let usedFenceFallback = false;
         if (state.llmMode === 'shader') {
             let candidate = displayAnswer;
             if (candidate.startsWith('<think>')) candidate = candidate.slice('<think>'.length).trim();
@@ -380,6 +381,27 @@ export const LLM = {
                     }
                 } else {
                     parseError = `invalid JSON — ${e.message}`;
+                }
+            }
+
+            if (!newShader) {
+                const fences = [...content.matchAll(/```[a-zA-Z]*[^\S\n]*\n?([\s\S]*?)```/g)];
+                const body = fences.length ? fences[fences.length - 1][1].trim() : '';
+                if (body) {
+                    let fenced = null;
+                    try {
+                        const parsed = JSON.parse(body);
+                        if (parsed && typeof parsed.shader_code === 'string' && parsed.shader_code.trim()) {
+                            fenced = parsed.shader_code.trim();
+                        }
+                    } catch (e) {
+                        fenced = body;
+                    }
+                    if (fenced) {
+                        newShader = fenced;
+                        usedFenceFallback = true;
+                        parseError = null;
+                    }
                 }
             }
         }
@@ -443,7 +465,8 @@ export const LLM = {
             CodeDials.render();
             this._fixRetries = 0;
 
-            status.innerHTML = '✅ Code received and loaded. <span class="status-highlight-green">Shader recompiled!</span>';
+            status.innerHTML = '✅ Code received and loaded. <span class="status-highlight-green">Shader recompiled!</span>'
+                + (usedFenceFallback ? ' <span class="msg-warning">(endpoint ignored response_format — extracted fenced code)</span>' : '');
             return false;
         }
     }
