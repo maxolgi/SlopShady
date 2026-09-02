@@ -9,7 +9,7 @@ import { getEl } from '../state.js';
 import { AI_SHADER_BASE_PROMPT } from '../config.js';
 import { escapeHtml, showError } from '../utils.js';
 import { Capture } from '../features/capture.js';
-import { getConnection, apiBase, authHeaders, directConnectionHint } from './connection.js';
+import { getConnection, apiBase, authHeaders, directConnectionHint, thinkingParams } from './connection.js';
 import { Templates } from '../utils/templates.js';
 import { CodeDials } from '../ui/codeDials.js';
 
@@ -113,7 +113,8 @@ export const LiveTuning = {
             tool_choice: toolChoice,
             temperature: 0.7,
             max_tokens: 4000,
-            stream: true
+            stream: true,
+            ...thinkingParams()
         };
 
         let res;

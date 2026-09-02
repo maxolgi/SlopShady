@@ -1162,6 +1162,18 @@
                         </div>
                     </div>
                     <input type="hidden" id="llmConnection" value="direct">
+                    <span class="content-label">Thinking</span>
+                    <div class="dropdown" id="llmThinking-dropdown">
+                        <button class="dropdown__selected tool-btn"><span>Default (provider setting)</span></button>
+                        <div class="dropdown__menu" id="llmThinking-menu">
+                            <div class="dropdown__item active" data-value="default">Default (provider setting)</div>
+                            <div class="dropdown__item" data-value="low">Low</div>
+                            <div class="dropdown__item" data-value="medium">Medium</div>
+                            <div class="dropdown__item" data-value="high">High</div>
+                            <div class="dropdown__item" data-value="max">Max</div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="llmThinking" value="default">
                     <span class="content-label">Server URL</span>
                     <input id="apiUrl" type="text" value="http://localhost:1234/v1/" />
                     <span class="content-label">Bearer Token</span>

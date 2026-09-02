@@ -21,6 +21,7 @@ export function saveState() {
         shaderCode: getEl('shaderCode').value,
         apiUrl: getEl('apiUrl').value,
         llmConnection: getEl('llmConnection').value,
+        llmThinking: getEl('llmThinking').value,
         modelNameImage: getEl('modelNameImage').value,
         modelNameText: getEl('modelNameText').value,
         captureResolution: getEl('captureResolution').value,
@@ -125,6 +126,10 @@ export function loadState(data) {
     if (data.llmConnection) {
         getEl('llmConnection').value = data.llmConnection;
         setDropdownValue('llmConnection-menu', data.llmConnection);
+    }
+    if (data.llmThinking) {
+        getEl('llmThinking').value = data.llmThinking;
+        setDropdownValue('llmThinking-menu', data.llmThinking);
     }
     if (data.bearerKey) getEl('bearerKey').value = data.bearerKey;
     if (data.modelNameImage) {
@@ -255,6 +260,9 @@ export function initSettingsPersistence() {
     const savedConn = loadFromLocalStorage(SETTINGS_KEYS.llmConnection, getEl('llmConnection').value);
     getEl('llmConnection').value = savedConn;
     setDropdownValue('llmConnection-menu', savedConn);
+    const savedThinking = loadFromLocalStorage(SETTINGS_KEYS.llmThinking, getEl('llmThinking').value);
+    getEl('llmThinking').value = savedThinking;
+    setDropdownValue('llmThinking-menu', savedThinking);
     getEl('modelNameImage').value = loadFromLocalStorage(SETTINGS_KEYS.modelNameImage, getEl('modelNameImage').value);
     getEl('modelNameText').value = loadFromLocalStorage(SETTINGS_KEYS.modelNameText, getEl('modelNameText').value);
     const savedRes = loadFromLocalStorage(SETTINGS_KEYS.captureResolution, getEl('captureResolution').value);
@@ -284,6 +292,10 @@ export function initSettingsPersistence() {
     getEl('llmConnection-menu').addEventListener('dropdown-select', (e) => {
         getEl('llmConnection').value = e.detail.value;
         saveToLocalStorage(SETTINGS_KEYS.llmConnection, e.detail.value);
+    });
+    getEl('llmThinking-menu').addEventListener('dropdown-select', (e) => {
+        getEl('llmThinking').value = e.detail.value;
+        saveToLocalStorage(SETTINGS_KEYS.llmThinking, e.detail.value);
     });
     getEl('bearerKey').addEventListener('change', (e) => {
         saveToLocalStorage(SETTINGS_KEYS.bearerKey, e.target.value);

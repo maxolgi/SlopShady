@@ -44,6 +44,7 @@ export const SETTINGS_KEYS = {
     apiUrl: 'slopshady_apiUrl',
     bearerKey: 'slopshady_bearerKey',
     llmConnection: 'slopshady_llmConnection',
+    llmThinking: 'slopshady_llmThinking',
     modelNameImage: 'slopshady_modelNameImage',
     modelNameText: 'slopshady_modelNameText',
     captureResolution: 'slopshady_captureResolution',

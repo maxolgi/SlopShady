@@ -6,7 +6,7 @@
 import { state, getEl } from '../state.js';
 import { AI_SHADER_BASE_PROMPT, AI_SYSTEM_PROMPT_ROLE, AI_CHAT_PROMPT_ROLE } from '../config.js';
 import { Conversation } from './conversation.js';
-import { getConnection, apiBase, authHeaders, directConnectionHint } from './connection.js';
+import { getConnection, apiBase, authHeaders, directConnectionHint, thinkingParams } from './connection.js';
 import { ContentParser } from '../utils/contentParser.js';
 import { Capture } from '../features/capture.js';
 import { Templates } from '../utils/templates.js';
@@ -159,7 +159,8 @@ export const LLM = {
             messages: messages,
             temperature: 0.7,
             max_tokens: 100000,
-            stream: true
+            stream: true,
+            ...thinkingParams()
         };
         if (state.llmMode === 'shader') {
             payload.response_format = {

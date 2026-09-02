@@ -21,6 +21,11 @@ export function authHeaders() {
     return key ? { 'Authorization': `Bearer ${key}` } : {};
 }
 
+export function thinkingParams() {
+    const v = getEl('llmThinking')?.value;
+    return v && v !== 'default' ? { reasoning_effort: v } : {};
+}
+
 export function directConnectionHint(err) {
     try {
         const u = new URL(apiBase());
