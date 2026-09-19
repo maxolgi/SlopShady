@@ -5,6 +5,8 @@
 
 import { state, getEl } from '../state.js';
 import { showError } from '../utils.js';
+import { AUDIO_FFT_SIZE } from '../config.js';
+import { AudioTexture } from './audio.js';
 
 export const ScreenCapture = {
     init() {
@@ -29,10 +31,11 @@ export const ScreenCapture = {
                     cursor: 'always',
                     displaySurface: 'monitor'
                 },
-                audio: false
+                audio: true
             });
 
             state.screenStream = stream;
+            this._setupAudioTap(stream);
 
             if (!state.screenElement) {
                 state.screenElement = document.createElement('video');
@@ -71,6 +74,7 @@ export const ScreenCapture = {
             state.screenStream.getTracks().forEach(track => track.stop());
             state.screenStream = null;
         }
+        this._releaseAudioTap();
 
         if (state.screenElement) {
             state.screenElement.srcObject = null;
@@ -86,6 +90,34 @@ export const ScreenCapture = {
         const captureBtn = getEl('captureScreen');
         if (captureBtn) {
             captureBtn.classList.remove('active');
+        }
+    },
+
+    _setupAudioTap(stream) {
+        if (stream.getAudioTracks().length === 0) return;
+        if (!state.audioContext) {
+            state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (state.audioContext.state === 'suspended') {
+            state.audioContext.resume();
+        }
+        this._audioSource = state.audioContext.createMediaStreamSource(stream);
+        this._audioAnalyser = state.audioContext.createAnalyser();
+        this._audioAnalyser.fftSize = AUDIO_FFT_SIZE;
+        this._audioSource.connect(this._audioAnalyser);
+        state.audioAnalyser = this._audioAnalyser;
+        if (!state.audioTextureEnabled) AudioTexture.enable();
+    },
+
+    _releaseAudioTap() {
+        if (this._audioSource) {
+            this._audioSource.disconnect();
+            this._audioSource = null;
+        }
+        if (this._audioAnalyser) {
+            this._audioAnalyser.disconnect();
+            if (state.audioAnalyser === this._audioAnalyser) state.audioAnalyser = null;
+            this._audioAnalyser = null;
         }
     },
 

@@ -20,7 +20,7 @@ const T = {
 
     MIX_SWITCH: 'Crossfade all layer opacity to selected layer · Insert',
     MIX_CAMERA: 'Toggle webcam texture input (iVideo uniform)',
-    MIX_SCREEN: 'Toggle screen/desktop capture texture (iScreen uniform)',
+    MIX_SCREEN: 'Toggle screen/desktop capture texture (iScreen uniform); sharing a tab with audio also feeds u_audioWaveform/u_audioSpectrum',
     MIX_CAMERA_DEVICE: 'Select which camera to use',
     MIX_MIDI_DEVICE: 'Select which MIDI input device to listen to, or All MIDI Devices',
     MIX_DEVICE_EXPAND: 'Camera and monitor device selection',
