@@ -105,7 +105,7 @@ export const ScreenCapture = {
         this._audioAnalyser = state.audioContext.createAnalyser();
         this._audioAnalyser.fftSize = AUDIO_FFT_SIZE;
         this._audioSource.connect(this._audioAnalyser);
-        state.audioAnalyser = this._audioAnalyser;
+        state.screenAudioAnalyser = this._audioAnalyser;
         if (!state.audioTextureEnabled) AudioTexture.enable();
     },
 
@@ -116,7 +116,7 @@ export const ScreenCapture = {
         }
         if (this._audioAnalyser) {
             this._audioAnalyser.disconnect();
-            if (state.audioAnalyser === this._audioAnalyser) state.audioAnalyser = null;
+            if (state.screenAudioAnalyser === this._audioAnalyser) state.screenAudioAnalyser = null;
             this._audioAnalyser = null;
         }
     },

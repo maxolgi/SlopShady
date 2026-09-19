@@ -59,6 +59,7 @@ export const SETTINGS_KEYS = {
     cameraDeviceId: 'slopshady_cameraDeviceId',
     screenMonitorIndex: 'slopshady_screenMonitorIndex',
     midiDeviceId: 'slopshady_midiDeviceId',
+    audioSource: 'slopshady_audioSource',
 };
 
 // =============== MODULATION CURVES ===============

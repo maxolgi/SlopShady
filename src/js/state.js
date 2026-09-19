@@ -45,6 +45,7 @@ export const state = {
     audioSpectrumData: null,
     audioTextureEnabled: false,
     audioPlayerAnalyser: null,
+    screenAudioAnalyser: null,
     midiAccess: null,
     midiCCValues: {},
     oscValues: {},

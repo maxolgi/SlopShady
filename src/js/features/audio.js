@@ -3,8 +3,9 @@
  * Provides waveform and spectrum data as WebGL LUMINANCE textures for shaders
  */
 
-import { state } from '../state.js';
-import { AUDIO_FFT_SIZE } from '../config.js';
+import { state, getEl } from '../state.js';
+import { AUDIO_FFT_SIZE, SETTINGS_KEYS } from '../config.js';
+import { loadFromLocalStorage, saveToLocalStorage } from '../utils.js';
 
 let waveformTex = null;
 let waveformTexW = 0;
@@ -18,8 +19,17 @@ function setupTextureParams(gl, texture) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 }
 
+const AUDIO_SOURCES = [
+    { value: 'player', label: 'Player (Webamp)' },
+    { value: 'mic', label: 'Microphone' },
+    { value: 'capture', label: 'Screen Capture' }
+];
+
 export const AudioTexture = {
+    source: 'player',
+
     init() {
+        this._initSourceDropdown();
         if (!state.gl) return;
         const gl = state.gl;
         // 1x1 placeholder textures so shaders don't fail when no audio is active
@@ -32,6 +42,8 @@ export const AudioTexture = {
         gl.bindTexture(gl.TEXTURE_2D, state.audioSpectrumTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, 1, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, new Uint8Array([0]));
         setupTextureParams(gl, state.audioSpectrumTexture);
+
+        this._initSourceDropdown();
     },
 
     enable() {
@@ -75,7 +87,7 @@ export const AudioTexture = {
 
     update() {
         if (!state.audioTextureEnabled) return;
-        const analyser = state.audioPlayerAnalyser || state.audioAnalyser;
+        const analyser = this._resolveAnalyser();
         if (!analyser || !state.gl) return;
 
         const gl = state.gl;
@@ -114,7 +126,7 @@ export const AudioTexture = {
     },
 
     computeAudioModulators() {
-        const analyser = state.audioPlayerAnalyser || state.audioAnalyser;
+        const analyser = this._resolveAnalyser();
         if (!analyser || !state.audioSpectrumData) {
             state.audioModulators = { peak: 0, bandLow: 0, bandMid: 0, bandHigh: 0 };
             return;
@@ -140,4 +152,35 @@ export const AudioTexture = {
         state.audioModulators.bandHigh = high / ((len - third * 2) * 255);
     },
 
+    _resolveAnalyser() {
+        if (this.source === 'mic') return state.audioAnalyser;
+        if (this.source === 'capture') return state.screenAudioAnalyser;
+        return state.audioPlayerAnalyser;
+    },
+
+    _initSourceDropdown() {
+        const menu = getEl('audio-source-menu');
+        if (!menu) return;
+        this.source = loadFromLocalStorage(SETTINGS_KEYS.audioSource, 'player') || 'player';
+        AUDIO_SOURCES.forEach(src => {
+            const item = document.createElement('div');
+            item.className = 'dropdown__item' + (this.source === src.value ? ' active' : '');
+            item.textContent = src.label;
+            item.dataset.value = src.value;
+            menu.appendChild(item);
+        });
+        menu.addEventListener('dropdown-select', (e) => {
+            this.source = e.target.dataset.value;
+            saveToLocalStorage(SETTINGS_KEYS.audioSource, this.source);
+        });
+        this._updateSourceLabel();
+    },
+
+    _updateSourceLabel() {
+        const dropdown = getEl('audio-source-dropdown');
+        if (!dropdown) return;
+        const span = dropdown.querySelector('span');
+        const src = AUDIO_SOURCES.find(s => s.value === this.source);
+        if (span && src) span.textContent = src.label;
+    },
 };
