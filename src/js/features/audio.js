@@ -42,8 +42,6 @@ export const AudioTexture = {
         gl.bindTexture(gl.TEXTURE_2D, state.audioSpectrumTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, 1, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, new Uint8Array([0]));
         setupTextureParams(gl, state.audioSpectrumTexture);
-
-        this._initSourceDropdown();
     },
 
     enable() {
