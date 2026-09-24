@@ -365,6 +365,17 @@ const OSC_ADDR = {
     VB_SCANLINE: ' · OSC /mix/brain/scan',
     VB_AUDIO: ' · OSC /mix/brain/mic',
     VB_AUDIO_DRIVE: ' · OSC /mix/brain/audio',
+    // Global feedback
+    FB_ENABLED: ' · OSC /mix/fb',
+    FB_BLEND: ' · OSC /mix/fb/blend',
+    FB_AMOUNT: ' · OSC /mix/fb/amount',
+    FB_DECAY: ' · OSC /mix/fb/decay',
+    FB_ZOOM: ' · OSC /mix/fb/zoom',
+    FB_ROTATE: ' · OSC /mix/fb/rotate',
+    FB_OFFSET_X: ' · OSC /mix/fb/offsetx',
+    FB_OFFSET_Y: ' · OSC /mix/fb/offsety',
+    FB_SATURATION: ' · OSC /mix/fb/saturation',
+    FB_BRIGHTNESS: ' · OSC /mix/fb/brightness',
     // Per-layer
     LAYER_TYPE: ' · OSC /mix/{n}/input',
     LAYER_SHADER: ' · OSC /mix/{n}/preset',

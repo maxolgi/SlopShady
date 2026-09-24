@@ -312,6 +312,7 @@ export const OSCSystem = {
                 case 'camera':  return this._oscToggle('enableVideo', args);
                 case 'screen':  return this._oscToggle('captureScreen', args);
                 case 'bg':      return this._oscToggle('mix-bg-toggle', args);
+                case 'fb':      return this._oscToggle('feedbackEnabled', args);
             }
             return;
         }
@@ -356,6 +357,20 @@ export const OSCSystem = {
                 case 'mic':    return this._oscToggle('vb-audio', args);
                 case 'audio':  return this._oscSlider(getEl('vb-audio-drive-slider'), args);
             }
+            return;
+        }
+
+        // ── Global feedback: /mix/fb/... ──
+        if (section === 'fb') {
+            if (sub === 'blend') return this._oscDropdown('feedback-blend-menu', args);
+            const globalFbParamMap = {
+                amount: 'feedbackAmount', decay: 'feedbackDecay', zoom: 'feedbackZoom',
+                rotate: 'feedbackRotate', offsetx: 'feedbackOffsetX', offsety: 'feedbackOffsetY',
+                saturation: 'feedbackSaturation', brightness: 'feedbackBrightness',
+            };
+            const container = getEl('feedback-section');
+            const slider = container && container.querySelector(`[data-param="${globalFbParamMap[sub]}"]`);
+            if (slider) return this._oscSlider(slider, args);
             return;
         }
 
