@@ -350,7 +350,7 @@ export const OSCSystem = {
                 case 'clear':  { const el = getEl('vb-clear');  if (el) el.click(); return; }
                 case 'blend':  return this._oscSlider(getEl('vb-blend-slider'), args);
                 case 'glitch': return this._oscSlider(getEl('vb-glitch-slider'), args);
-                case 'color':  return this._oscSlider(getEl('vb-colorw-slider'), args);
+                case 'colorwt':return this._oscSlider(getEl('vb-colorw-slider'), args);
                 case 'grid':   return this._oscToggle('vb-grid', args);
                 case 'scan':   return this._oscToggle('vb-scanline', args);
                 case 'mic':    return this._oscToggle('vb-audio', args);
@@ -371,8 +371,8 @@ export const OSCSystem = {
                 if (fbAction === 'blend') return this._oscDropdown(`mix-feedback-blend-menu-${i}`, args);
 
                 const fbParamMap = {
-                    amount: 'feedbackAmount', decay: 'feedbackDecay', zoom: 'feedbackZoom',
-                    rotate: 'feedbackRotate', offsetX: 'feedbackOffsetX', offsetY: 'feedbackOffsetY',
+                    amt: 'feedbackAmount', dcy: 'feedbackDecay', zm: 'feedbackZoom',
+                    rot: 'feedbackRotate', ox: 'feedbackOffsetX', oy: 'feedbackOffsetY',
                     sat: 'feedbackSaturation', brt: 'feedbackBrightness',
                 };
                 const fbParam = fbParamMap[fbAction];
@@ -390,16 +390,16 @@ export const OSCSystem = {
             if (sub === 'input')  return this._oscDropdown(`mix-type-menu-${i}`, args);
             if (sub === 'preset') return this._oscDropdown(`mix-shader-menu-${i}`, args);
             if (sub === 'blend')  return this._oscDropdown(`mix-blend-menu-${i}`, args);
-            if (sub === 'solo')      return this._oscToggle(`mix-solo-${i}`, args);
-            if (sub === 'show')      return this._oscToggle(`mix-show-${i}`, args);
-            if (sub === 'audioMute') return this._oscToggle(`mix-audio-mute-${i}`, args);
-            if (sub === 'brain')     return this._oscToggle(`mix-brain-${i}`, args);
+            if (sub === 'solo')  return this._oscToggle(`mix-solo-${i}`, args);
+            if (sub === 'hide')  return this._oscToggle(`mix-show-${i}`, args);
+            if (sub === 'mute')  return this._oscToggle(`mix-audio-mute-${i}`, args);
+            if (sub === 'brain') return this._oscToggle(`mix-brain-${i}`, args);
 
             const sliderParamMap = {
-                opacity: 'opacity', volume: 'volume', brightness: 'brightness', speed: 'speed',
-                posX: 'posX', posY: 'posY', scale: 'scale', amount: 'amount',
-                rotation: 'rotation', stretch: 'stretch', radius: 'radius',
-                maskX: 'maskPosX', maskY: 'maskPosY', maskSoft: 'maskSoftness',
+                opacity: 'opacity', volume: 'volume', brt: 'brightness', spd: 'speed',
+                px: 'posX', py: 'posY', scl: 'scale', amt: 'amount',
+                rot: 'rotation', str: 'stretch', rad: 'radius',
+                mx: 'maskPosX', my: 'maskPosY', sft: 'maskSoftness',
             };
             const paramKey = sliderParamMap[sub];
             if (paramKey) return this._oscSlider(getEl(`mix-${paramKey}-slider-${i}`), args);
@@ -473,7 +473,7 @@ export const OSCSystem = {
             case 'next':   { const el = getEl('layerNext');  if (el) el.click(); return; }
             case 'zoomIn': { const el = getEl('zoomIn');     if (el) el.click(); return; }
             case 'zoomOut':{ const el = getEl('zoomOut');    if (el) el.click(); return; }
-            case 'pause':  return this._oscToggle('pausePlay', args);
+            case 'play':   return this._oscToggle('pausePlay', args);
             case 'compile': {
                 // #recompile listens on mousedown, not click
                 const el = getEl('recompile');
