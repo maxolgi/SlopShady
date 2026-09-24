@@ -60,6 +60,7 @@ export const SETTINGS_KEYS = {
     screenMonitorIndex: 'slopshady_screenMonitorIndex',
     midiDeviceId: 'slopshady_midiDeviceId',
     audioSource: 'slopshady_audioSource',
+    localSnapshot: 'slopshady_localSnapshot',
 };
 
 // =============== MODULATION CURVES ===============

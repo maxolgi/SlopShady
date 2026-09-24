@@ -18,6 +18,7 @@ import { ScreenCapture } from './features/screenCapture.js';
 import { Capture } from './features/capture.js';
 import { AudioTexture } from './features/audio.js';
 import { Sync, setSyncDependencies } from './features/sync.js';
+import { LocalSnapshot } from './features/localSnapshot.js';
 import { ToggleSystem } from './utils/toggleSystem.js';
 import { Shaders } from './api/shaders.js';
 import { Conversation } from './api/conversation.js';
@@ -138,6 +139,7 @@ const SlopShady = {
         MIDISystem.init();
         OSCSystem.init();
         OSCUI.init();
+        LocalSnapshot.init();
         
         // Initialize on-screen keyboard
         const oskContainer = getEl('onScreenKeyboard');
