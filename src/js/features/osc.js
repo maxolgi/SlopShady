@@ -364,9 +364,9 @@ export const OSCSystem = {
         if (section === 'fb') {
             if (sub === 'blend') return this._oscDropdown('feedback-blend-menu', args);
             const globalFbParamMap = {
-                amount: 'feedbackAmount', decay: 'feedbackDecay', zoom: 'feedbackZoom',
-                rotate: 'feedbackRotate', offsetx: 'feedbackOffsetX', offsety: 'feedbackOffsetY',
-                saturation: 'feedbackSaturation', brightness: 'feedbackBrightness',
+                amt: 'feedbackAmount', dcy: 'feedbackDecay', zm: 'feedbackZoom',
+                rot: 'feedbackRotate', ox: 'feedbackOffsetX', oy: 'feedbackOffsetY',
+                sat: 'feedbackSaturation', brt: 'feedbackBrightness',
             };
             const container = getEl('feedback-section');
             const slider = container && container.querySelector(`[data-param="${globalFbParamMap[sub]}"]`);
