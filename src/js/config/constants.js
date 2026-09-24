@@ -96,6 +96,28 @@ export const DEFAULT_OSC_ADDRESSES = {
     'u_maskPosX': '/ch/11',
     'u_maskPosY': '/ch/12',
     'u_maskSoftness': '/ch/13',
+    'u_masterFeedbackAmount': '/ch/14',
+    'u_masterFeedbackDecay': '/ch/15',
+    'u_masterFeedbackZoom': '/ch/16',
+    'u_masterFeedbackRotate': '/ch/17',
+    'u_masterFeedbackOffsetX': '/ch/18',
+    'u_masterFeedbackOffsetY': '/ch/19',
+    'u_masterFeedbackSaturation': '/ch/20',
+    'u_masterFeedbackBrightness': '/ch/21',
+};
+
+// =============== MASTER FEEDBACK MODULATION DESTINATIONS ===============
+// Global (masterState) feedback params usable as mod-matrix destinations.
+// Uniform name → masterState prop + mod-matrix row label.
+export const MASTER_FEEDBACK_MOD_DESTS = {
+    'u_masterFeedbackAmount': { param: 'feedbackAmount', label: 'FB Amt (Global)' },
+    'u_masterFeedbackDecay': { param: 'feedbackDecay', label: 'FB Dcy (Global)' },
+    'u_masterFeedbackZoom': { param: 'feedbackZoom', label: 'FB Zm (Global)' },
+    'u_masterFeedbackRotate': { param: 'feedbackRotate', label: 'FB Rot (Global)' },
+    'u_masterFeedbackOffsetX': { param: 'feedbackOffsetX', label: 'FB OX (Global)' },
+    'u_masterFeedbackOffsetY': { param: 'feedbackOffsetY', label: 'FB OY (Global)' },
+    'u_masterFeedbackSaturation': { param: 'feedbackSaturation', label: 'FB Sat (Global)' },
+    'u_masterFeedbackBrightness': { param: 'feedbackBrightness', label: 'FB Brt (Global)' },
 };
 
 // =============== DEFAULT MODULATION ENTRY ===============

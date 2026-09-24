@@ -4,7 +4,7 @@
  */
 
 import { state, getEl } from '../state.js';
-import { BLEND_MODES, COMPOSITE_VS, COMPOSITE_FS, BACKGROUND_FS, PASSTHROUGH_FS, IMAGE_FS, FEEDBACK_FS, MAX_VOICES, VISUALIZER_TYPES, AUDIO_TEXTURE_WAVEFORM_UNIT, AUDIO_TEXTURE_SPECTRUM_UNIT, LAYER_VIDEO_TEXTURE_UNIT, LAYER_IMAGE_TEXTURE_UNIT, LAYER_SRT_TEXTURE_UNIT, LAYER_PARAM_UNIFORMS } from '../config.js';
+import { BLEND_MODES, COMPOSITE_VS, COMPOSITE_FS, BACKGROUND_FS, PASSTHROUGH_FS, IMAGE_FS, FEEDBACK_FS, MAX_VOICES, VISUALIZER_TYPES, AUDIO_TEXTURE_WAVEFORM_UNIT, AUDIO_TEXTURE_SPECTRUM_UNIT, LAYER_VIDEO_TEXTURE_UNIT, LAYER_IMAGE_TEXTURE_UNIT, LAYER_SRT_TEXTURE_UNIT, LAYER_PARAM_UNIFORMS, MASTER_FEEDBACK_MOD_DESTS } from '../config.js';
 import { FramebufferManager } from './framebuffers.js';
 import { VoiceManager } from './voices.js';
 import { EGSystem } from '../features/envelopeGenerators.js';
@@ -383,6 +383,10 @@ export const LayerSystem = {
         }
 
         state.milkdropEnabled = milkdropActive;
+
+        // Reset per-frame master-feedback modulation offsets (accumulated from
+        // every layer's mod matrix during renderLayerToTexture below)
+        this._masterModOffsets = {};
         
         // 2. For each renderable layer: render shader → composite
         for (const layer of renderableLayers) {
@@ -510,14 +514,15 @@ export const LayerSystem = {
             gl.bindTexture(gl.TEXTURE_2D, feedbackSrcFBO.texture);
             gl.uniform1i(this.feedbackUniforms.u_lastFrame, 1);
             
-            // Set feedback parameters
-            gl.uniform1f(this.feedbackUniforms.u_feedbackAmount, this.masterState.feedbackAmount);
-            gl.uniform1f(this.feedbackUniforms.u_decay, this.masterState.feedbackDecay);
-            gl.uniform1f(this.feedbackUniforms.u_zoom, this.masterState.feedbackZoom);
-            gl.uniform1f(this.feedbackUniforms.u_rotate, this.masterState.feedbackRotate);
-            gl.uniform2f(this.feedbackUniforms.u_offset, this.masterState.feedbackOffsetX, this.masterState.feedbackOffsetY);
-            gl.uniform1f(this.feedbackUniforms.u_saturation, this.masterState.feedbackSaturation ?? 1.0);
-            gl.uniform1f(this.feedbackUniforms.u_brightness, this.masterState.feedbackBrightness ?? 1.0);
+            // Set feedback parameters (base + per-frame mod-matrix offsets)
+            const mm = this._masterModOffsets || {};
+            gl.uniform1f(this.feedbackUniforms.u_feedbackAmount, this.masterState.feedbackAmount + (mm.feedbackAmount || 0));
+            gl.uniform1f(this.feedbackUniforms.u_decay, this.masterState.feedbackDecay + (mm.feedbackDecay || 0));
+            gl.uniform1f(this.feedbackUniforms.u_zoom, this.masterState.feedbackZoom + (mm.feedbackZoom || 0));
+            gl.uniform1f(this.feedbackUniforms.u_rotate, this.masterState.feedbackRotate + (mm.feedbackRotate || 0));
+            gl.uniform2f(this.feedbackUniforms.u_offset, this.masterState.feedbackOffsetX + (mm.feedbackOffsetX || 0), this.masterState.feedbackOffsetY + (mm.feedbackOffsetY || 0));
+            gl.uniform1f(this.feedbackUniforms.u_saturation, (this.masterState.feedbackSaturation ?? 1.0) + (mm.feedbackSaturation || 0));
+            gl.uniform1f(this.feedbackUniforms.u_brightness, (this.masterState.feedbackBrightness ?? 1.0) + (mm.feedbackBrightness || 0));
             gl.uniform1i(this.feedbackUniforms.u_blendMode, this.masterState.feedbackBlendMode ?? 0);
             gl.uniform2f(this.feedbackUniforms.iResolution, feedbackDstFBO.width, feedbackDstFBO.height);
             
@@ -606,7 +611,12 @@ export const LayerSystem = {
                     layer._modulatedParams[paramName] += value;
                     if (paramName === 'opacity') layer._modulatedOpacity += value;
                 } else {
-                    layer._modulatedShaderParams[uniformName] = value;
+                    const masterDest = MASTER_FEEDBACK_MOD_DESTS[uniformName];
+                    if (masterDest) {
+                        this._masterModOffsets[masterDest.param] = (this._masterModOffsets[masterDest.param] || 0) + value;
+                    } else {
+                        layer._modulatedShaderParams[uniformName] = value;
+                    }
                 }
             }
         }

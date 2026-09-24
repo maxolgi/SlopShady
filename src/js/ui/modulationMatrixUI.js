@@ -9,7 +9,7 @@ import { Sync } from '../features/sync.js';
 import { initSlider } from './slider.js';
 import { escapeHtml, createDebouncedSync } from '../utils.js';
 import { T, escapeAttr } from './tooltips.js';
-import { MODULATION_SOURCES, DEFAULT_MODULATION_ENTRY, DEFAULT_OSC_ADDRESSES, MAX_VOICES } from '../config.js';
+import { MODULATION_SOURCES, DEFAULT_MODULATION_ENTRY, DEFAULT_OSC_ADDRESSES, MAX_VOICES, MASTER_FEEDBACK_MOD_DESTS, FEEDBACK_PARAMS } from '../config.js';
 import { MidiLearn } from '../features/midi.js';
 import { OscLearn } from '../features/osc.js';
 
@@ -38,6 +38,12 @@ const SOURCE_ABBREV = {
 };
 
 function _getBaseValue(dest, layer) {
+    const masterDest = MASTER_FEEDBACK_MOD_DESTS[dest];
+    if (masterDest) {
+        const def = FEEDBACK_PARAMS.find(p => p.param === masterDest.param);
+        const v = LayerSystem.masterState[masterDest.param] ?? def?.def;
+        return Number.isFinite(v) ? v : null;
+    }
     const prop = UNIFORM_TO_LAYER_PROP[dest];
     if (prop && layer) {
         const v = layer[prop];
@@ -256,6 +262,7 @@ export const modulationMatrixUI = {
             { value: 'u_maskPosX', label: 'Mask Pos X' },
             { value: 'u_maskPosY', label: 'Mask Pos Y' },
             { value: 'u_maskSoftness', label: 'Mask Softness' },
+            ...Object.entries(MASTER_FEEDBACK_MOD_DESTS).map(([value, d]) => ({ value, label: d.label })),
         ];
         const voiceExtras = [
             { value: 'u_voicePosX', label: 'Voice Pos X (All)' },
