@@ -41,6 +41,7 @@ export const ScreenCapture = {
                 state.screenElement = document.createElement('video');
                 state.screenElement.autoplay = true;
                 state.screenElement.playsInline = true;
+                state.screenElement.muted = true; // no audio pass-through — analyser taps the stream directly
             }
 
             state.screenElement.srcObject = stream;
