@@ -19,7 +19,10 @@ export const WebampUI = {
             windowLayout: {
                 main: { position: { top: 0, left: 0 } },
                 equalizer: { position: { top: 0, left: 0 } },
-                playlist: { position: { top: 0, left: 0 } },
+                playlist: {
+                    position: { top: 0, left: 0 },
+                    size: { extraWidth: 0, extraHeight: 4 },
+                },
             },
             enableHotkeys: false,
             zIndex: 60,
@@ -49,11 +52,6 @@ export const WebampUI = {
             el.classList.remove('draggable');
         });
 
-        if (plWindow) {
-            plWindow.style.width = '';
-            plWindow.style.height = '';
-        }
-
         const grid = document.createElement('div');
         grid.id = 'webamp-grid';
         grid.appendChild(mainWindow);
@@ -62,26 +60,6 @@ export const WebampUI = {
 
         webampEl.innerHTML = '';
         webampEl.appendChild(grid);
-
-        setTimeout(() => {
-            this._resizePlaylist();
-            if (mainWindow && eqWindow) {
-                if (this._playlistObserver) this._playlistObserver.disconnect();
-                this._playlistObserver = new ResizeObserver(() => this._resizePlaylist());
-                this._playlistObserver.observe(mainWindow);
-                this._playlistObserver.observe(eqWindow);
-            }
-        }, 500);
-    },
-
-    _resizePlaylist() {
-        const mainWindow = document.getElementById('main-window');
-        const eqWindow = document.getElementById('equalizer-window');
-        const plWindow = document.getElementById('playlist-window');
-        if (!mainWindow || !eqWindow || !plWindow) return;
-
-        const targetHeight = mainWindow.offsetHeight + eqWindow.offsetHeight;
-        plWindow.style.setProperty('height', targetHeight + 'px', 'important');
     },
 
     _wireAudioTexture() {
