@@ -78,6 +78,10 @@ interface InputEntry {
     audioWriter: WritableStreamDefaultWriter<AudioData> | null;
     audioSourceNode: MediaStreamAudioSourceNode | null;
     layerGains: Map<number, GainNode>;
+    // Ingress-rate sampling: previous stats sample's cumulative rxBytes and
+    // its performance.now() timestamp (see _formatStatusLine).
+    lastRxBytes?: number;
+    lastRxBytesAt?: number;
     audioMutedForLayer: Map<number, boolean>;
     layerVolumes: Map<number, number>;
     analyserTap: GainNode | null;
@@ -840,8 +844,20 @@ export const StreamingInputUI = {
         const cfg = this._readConfig(this._selectedInput);
         const name = cfg.name || '';
         if (entry.status === 'live' && stats) {
-            const mbps = (stats.bandwidthBps || 0) / 1e6;
-            return `Live · ${name} · ↓${mbps.toFixed(1)}Mbps · RTT ${(stats.rttMs || 0).toFixed(0)}ms · rxLoss ${Math.round(stats.rxLoss || 0)}`;
+            // True ingress rate: rxBytes is cumulative received payload, so a
+            // per-sample delta over wall time is the actual stream rate.
+            // bandwidthBps is SRT's mbpsBandwidth — the estimated LINK
+            // CAPACITY, not the stream rate — shown separately, labeled.
+            const now = performance.now();
+            let rateStr = '↓—Mbps';
+            if (entry.lastRxBytes !== undefined && stats.rxBytes >= entry.lastRxBytes && now > entry.lastRxBytesAt) {
+                const mbps = ((stats.rxBytes - entry.lastRxBytes) * 8) / ((now - entry.lastRxBytesAt) / 1000) / 1e6;
+                rateStr = `↓${mbps.toFixed(1)}Mbps`;
+            }
+            entry.lastRxBytes = stats.rxBytes;
+            entry.lastRxBytesAt = now;
+            const link = (stats.bandwidthBps || 0) / 1e6;
+            return `Live · ${name} · ${rateStr} · link ~${link.toFixed(0)}Mbps · RTT ${(stats.rttMs || 0).toFixed(0)}ms · rxLoss ${Math.round(stats.rxLoss || 0)}`;
         }
         if (entry.status === 'connecting') return 'Connecting…';
         if (entry.status === 'closed') return 'Closed';
@@ -870,7 +886,7 @@ export const StreamingInputUI = {
             : '—';
         const audioLine = as?.codec || '—';
         const framesLine = `${vs?.decodedCount || 0} frames · dropped ${vs?.droppedFrames || 0} · ${vs?.decodeFps ? vs.decodeFps.toFixed(0) + 'fps · ' : ''}${vs?.decoderState || '—'}`;
-        const transportLine = `rxBytes ${((stats.rxData || 0) / 1e6).toFixed(1)}MB · rxAck ${Math.round(stats.rxAck || 0)} · rxNak ${Math.round(stats.rxNak || 0)} · rxBuffered ${Math.round(stats.rxBuffered || 0)}`;
+        const transportLine = `rxBytes ${((stats.rxBytes || 0) / 1e6).toFixed(1)}MB · rxAck ${Math.round(stats.rxAck || 0)} · rxNak ${Math.round(stats.rxNak || 0)} · rxBuffered ${Math.round(stats.rxBuffered || 0)}`;
         el.textContent =
             `Video: ${videoLine}\n` +
             `Audio: ${audioLine}\n` +
