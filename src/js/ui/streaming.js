@@ -75,6 +75,8 @@ export const StreamingUI = {
     streamName: 'slopshady',
     _videoBitrate: 8_000_000,       // user-set target bitrate (bps)
     _currentBitrate: 8_000_000,     // live bitrate (adapted when ABR is on; equals target otherwise)
+    _lastTxBytes: undefined,        // egress-rate sampling: previous stats txBytes (cumulative)
+    _lastTxBytesAt: 0,              // egress-rate sampling: performance.now() of that sample
     _fps: 60,
     _latencyMs: 300,
     _keyframeMs: 2000,
@@ -838,9 +840,23 @@ export const StreamingUI = {
     _renderStats(s) {
         const el = getEl('stream-stats');
         if (el && s) {
-            const mbps = (s.bandwidthBps || 0) / 1e6;
+            // True egress rate: txBytes is cumulative bytes handed to SRT
+            // (payload incl. retransmissions), so a per-sample delta over
+            // wall time is the actual wire rate. bandwidthBps is SRT's
+            // mbpsBandwidth — the estimated LINK CAPACITY, not the stream
+            // rate (40-80 on a healthy LAN is normal) — shown separately,
+            // labeled as such.
+            const now = performance.now();
+            let egressStr = '↑—Mbps';
+            if (this._lastTxBytes !== undefined && s.txBytes >= this._lastTxBytes && now > this._lastTxBytesAt) {
+                const mbps = ((s.txBytes - this._lastTxBytes) * 8) / ((now - this._lastTxBytesAt) / 1000) / 1e6;
+                egressStr = `↑${mbps.toFixed(1)}Mbps`;
+            }
+            this._lastTxBytes = s.txBytes;
+            this._lastTxBytesAt = now;
             const abrTag = this._abrEnabled ? ' ABR' : '';
-            el.textContent = `↑${mbps.toFixed(1)}Mbps${abrTag} · RTT ${(s.rttMs || 0).toFixed(0)}ms · txLoss ${Math.round(s.txLoss || 0)} · txRetx ${Math.round(s.txRetransmit || 0)} · txBuf ${Math.round(s.txBuffered || 0)}`;
+            const link = (s.bandwidthBps || 0) / 1e6;
+            el.textContent = `${egressStr}${abrTag} · link ~${link.toFixed(0)}Mbps · RTT ${(s.rttMs || 0).toFixed(0)}ms · txLoss ${Math.round(s.txLoss || 0)} · txRetx ${Math.round(s.txRetransmit || 0)} · txBuf ${Math.round(s.txBuffered || 0)}`;
         }
         const cfgEl = getEl('stream-config');
         if (cfgEl) {
