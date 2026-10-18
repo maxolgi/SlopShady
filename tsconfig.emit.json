@@ -6,8 +6,7 @@
         "rootDir": "src/js",
         "outDir": "static/js",
         "paths": {
-            "/wasm/*": ["static/wasm/*"],
-            "/static/vendor/WebSRT/web/src/*": ["static/vendor/WebSRT/web/src/*"]
+            "/static/vendor/QuicSRT-wasm/*": ["static/vendor/QuicSRT-wasm/*"]
         }
     },
     "include": ["src/js/**/*.ts"]

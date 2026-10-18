@@ -17,8 +17,7 @@
         "verbatimModuleSyntax": false,
         "baseUrl": ".",
         "paths": {
-            "/wasm/*": ["static/wasm/*"],
-            "/static/vendor/WebSRT/web/src/*": ["static/vendor/WebSRT/web/src/*"]
+            "/static/vendor/QuicSRT-wasm/*": ["static/vendor/QuicSRT-wasm/*"]
         },
         "typeRoots": ["./node_modules/@types", "./src/types"],
         "types": []
@@ -31,7 +30,8 @@
         "node_modules",
         "static",
         "slopshady",
-        "vendor/WebSRT/target",
-        "vendor/WebSRT/web/node_modules"
+        "vendor/QuicSRT-wasm/build",
+        "vendor/QuicSRT-wasm/deps",
+        "vendor/QuicSRT-wasm/node_modules"
     ]
 }

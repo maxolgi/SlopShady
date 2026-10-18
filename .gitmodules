@@ -2,3 +2,6 @@
 	path = vendor/WebSRT
 	url = https://github.com/maxolgi/WebSRT
 	branch = master
+[submodule "vendor/QuicSRT-wasm"]
+	path = vendor/QuicSRT-wasm
+	url = https://github.com/maxolgi/QuicSRT-wasm

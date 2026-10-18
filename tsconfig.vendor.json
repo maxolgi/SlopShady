@@ -4,15 +4,11 @@
         "allowJs": false,
         "noEmit": false,
         "declaration": true,
-        "rootDir": "vendor/WebSRT/web/src",
-        "outDir": "static/vendor/WebSRT/web/src"
+        "rootDir": "vendor/QuicSRT-wasm/page/vendor",
+        "outDir": "static/vendor/QuicSRT-wasm/page/vendor"
     },
-    "include": ["vendor/WebSRT/web/src/**/*.ts"],
-    "exclude": [
-        "vendor/WebSRT/web/src/debug/**",
-        "vendor/WebSRT/web/src/pages/**",
-        "vendor/WebSRT/web/src/main.ts",
-        "vendor/WebSRT/web/src/stream.tsx",
-        "vendor/WebSRT/web/src/stream-worker.ts"
+    "include": [
+        "vendor/QuicSRT-wasm/page/vendor/**/*.ts",
+        "src/types/mediastreamtrack-generator.d.ts"
     ]
 }

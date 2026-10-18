@@ -60,8 +60,9 @@ fn has_ts_files(src: &Path) -> bool {
 
 /// Walk all `.js` files under `dir` and append `.js` to extensionless
 /// relative import specifiers (`from './foo'` → `from './foo.js'`).
-/// Needed because the WebSRT submodule's TS uses extensionless specifiers
-/// (standard TS style) which browsers can't resolve in native ES modules.
+/// Needed because the QuicSRT-wasm submodule's TS uses extensionless
+/// specifiers (standard TS style) which browsers can't resolve in native
+/// ES modules.
 fn rewrite_vendor_imports(dir: &Path) {
     fn visit(dir: &Path) {
         let Ok(entries) = fs::read_dir(dir) else {
@@ -173,120 +174,268 @@ fn newest_mtime(dir: &Path) -> Option<std::time::SystemTime> {
     newest
 }
 
-/// True if any of the three WASM artifacts (`static/wasm/<crate>/<crate>_bg.wasm`)
-/// is missing or older than its sources under `vendor/WebSRT/crates/<crate>/`.
-/// Used to gate an automatic rebuild so day-to-day builds that don't touch
-/// WebSRT skip the wasm-pack overhead.
-fn wasm_needs_rebuild(repo_root: &Path) -> bool {
-    let wasm_root = repo_root.join("static").join("wasm");
-    let crates_root = repo_root.join("vendor").join("WebSRT").join("crates");
-    for crate_name in ["srt-wasm", "ts-muxer-wasm", "mpeg2ts-wasm"] {
-        let artifact = wasm_root
-            .join(crate_name)
-            .join(format!("{}_bg.wasm", crate_name.replace('-', "_")));
-        let artifact_mtime = match artifact.metadata().and_then(|m| m.modified()) {
-            Ok(t) => t,
-            Err(_) => return true,
-        };
-        match newest_mtime(&crates_root.join(crate_name)) {
-            None => return true,
-            Some(src) if src > artifact_mtime => return true,
-            _ => {}
+/// True if any of the engine artifacts is missing or older than its
+/// sources under `vendor/QuicSRT-wasm/`. Gates the emcc build so
+/// day-to-day builds that don't touch the engine skip the cmake/em++ work.
+fn engine_needs_rebuild(repo_root: &Path) -> bool {
+    let sub = repo_root.join("vendor").join("QuicSRT-wasm");
+    let built = sub.join("build").join("srt_engine.wasm");
+    let built_mtime = match built.metadata().and_then(|m| m.modified()) {
+        Ok(t) => t,
+        Err(_) => return true, // never linked here (fresh clone / cleaned)
+    };
+    // Sources newer than the last link → relink (cmake recompiles the
+    // static libs first — it is incremental). Missing sources count as
+    // stale so a broken checkout surfaces rather than silently skipping.
+    let mut newest = newest_mtime(&sub.join("harness"));
+    for extra in [
+        sub.join("js").join("engine_shim.c"),
+        sub.join("build")
+            .join("libquicsrt")
+            .join("libquicsrt_receiver_core.a"),
+        sub.join("build").join("libquicsrt").join("libsrt.a"),
+    ] {
+        if let Ok(t) = extra.metadata().and_then(|m| m.modified()) {
+            newest = Some(newest.map_or(t, |n: std::time::SystemTime| n.max(t)));
         }
     }
-    false
+    match newest {
+        None => return true,
+        Some(src) if src > built_mtime => return true,
+        _ => {}
+    }
+    // Staged copy missing or older than the link output → restage (covers
+    // `rm -rf static/vendor` and interrupted builds).
+    let staged = repo_root
+        .join("static")
+        .join("vendor")
+        .join("QuicSRT-wasm")
+        .join("build")
+        .join("srt_engine.wasm");
+    match staged.metadata().and_then(|m| m.modified()) {
+        Ok(t) => t < built_mtime,
+        Err(_) => true,
+    }
 }
 
-/// Build the three WebSRT WASM crates (`srt-wasm`, `ts-muxer-wasm`,
-/// `mpeg2ts-wasm`) from `vendor/WebSRT/crates/` and stage their `pkg/`
-/// output into `static/wasm/`. Invokes `wasm-pack` directly from Rust so
-/// it works on any OS without a shell (an earlier bash-driven version
-/// could not run on Windows without Git Bash/WSL). Output is byte-stable
-/// for a given toolchain version. `wasm_needs_rebuild` gates this so
-/// untouched builds skip the ~8s-per-crate wasm-pack overhead.
-fn build_wasm_crates(repo_root: &Path) {
-    let sub = repo_root.join("vendor").join("WebSRT");
+/// Locate an Emscripten toolchain binary (`emcmake` / `em++`). Resolution
+/// order mirrors upstream QuicSRT-wasm's `source ~/emsdk/emsdk_env.sh`:
+/// `$EMSDK/upstream/emscripten`, then `~/emsdk/upstream/emscripten`, then
+/// PATH. Panics with install instructions when not found.
+fn emscripten_bin(tool: &str) -> std::path::PathBuf {
+    // Windows emsdk shims carry a .bat extension (same split as tsc_bin).
+    let name = if cfg!(windows) {
+        format!("{tool}.bat")
+    } else {
+        tool.to_string()
+    };
+    let mut roots: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(emsdk) = std::env::var("EMSDK") {
+        roots.push(Path::new(&emsdk).join("upstream").join("emscripten"));
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        roots.push(Path::new(&home).join("emsdk").join("upstream").join("emscripten"));
+    }
+    for root in &roots {
+        let bin = root.join(&name);
+        if bin.exists() {
+            return bin;
+        }
+    }
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let bin = dir.join(&name);
+            if bin.exists() {
+                return bin;
+            }
+        }
+    }
+    panic!(
+        "Emscripten binary `{tool}` not found (looked in $EMSDK, ~/emsdk, PATH). \
+         The QuicSRT-wasm engine builds with emsdk: \
+         git clone https://github.com/emscripten-core/emsdk ~/emsdk && \
+         ~/emsdk/emsdk install latest && ~/emsdk/emsdk activate latest \
+         (upstream CI pins 6.0.8)"
+    );
+}
+
+/// Run a command in `cwd`, panicking with context on failure.
+fn run_cmd(bin: &Path, args: &[&str], cwd: &Path, what: &str) {
+    let display = format!("{} {}", bin.display(), args.join(" "));
+    match std::process::Command::new(bin).args(args).current_dir(cwd).status() {
+        Ok(s) if s.success() => {}
+        Ok(s) => panic!("{what} failed (status {s}): {display}"),
+        Err(e) => panic!("failed to invoke {what} ({display}): {e}"),
+    }
+}
+
+/// Build the QuicSRT C++ engine from `vendor/QuicSRT-wasm/` (mirrors
+/// upstream `./build.sh lib` + `./build.sh engine`, invoked directly so it
+/// works on any OS without a shell): configure + build libquicsrt's
+/// receiver-only flavor and the srt static lib with Emscripten, then link
+/// the single emcc engine module `build/srt_engine.mjs` + `.wasm` that
+/// both the player and the publisher drive.
+fn link_quicsrt_engine(sub: &Path) {
     if !sub.join(".git").exists() {
         panic!(
-            "vendor/WebSRT submodule not initialized — run \
-             `git submodule update --init --recursive`"
+            "vendor/QuicSRT-wasm submodule not initialized — run \
+             `git submodule update --init vendor/QuicSRT-wasm` and init its \
+             nested deps (from inside it: `git submodule update --init \
+             deps/libquicsrt` then `git -C deps/libquicsrt submodule \
+             update --init deps/srt`)"
         );
     }
-    let crates_root = sub.join("crates");
-    let out = repo_root.join("static").join("wasm");
-
-    for crate_name in ["srt-wasm", "ts-muxer-wasm", "mpeg2ts-wasm"] {
-        let crate_dir = crates_root.join(crate_name);
-        println!("cargo:warning=building WASM crate {crate_name}...");
-        // build.rs inherits cargo's compiler-wrapper and RUSTFLAGS env vars
-        // (e.g. RUSTC_WORKSPACE_WRAPPER=clippy-driver + `-D warnings` when the
-        // parent build is `cargo clippy -- -D warnings`). wasm-pack's inner
-        // `cargo build` would pick those up and run clippy with -D warnings on
-        // the vendored WASM crates, failing on lints we can't edit (the
-        // vendor/WebSRT boundary). Strip them so the WASM build is always done
-        // with plain rustc and default warning levels, matching local builds.
-        let status = std::process::Command::new("wasm-pack")
-            .args(["build", "--target", "web", "--release"])
-            .current_dir(&crate_dir)
-            .env_remove("RUSTC_WRAPPER")
-            .env_remove("RUSTC_WORKSPACE_WRAPPER")
-            .env_remove("CARGO_BUILD_RUSTC_WRAPPER")
-            .env_remove("RUSTFLAGS")
-            .env_remove("CARGO_ENCODED_RUSTFLAGS")
-            .env_remove("CARGO_BUILD_RUSTFLAGS")
-            .status();
-        match status {
-            Ok(s) if s.success() => {}
-            Ok(s) => panic!("wasm-pack build failed for {crate_name} (status {s})"),
-            Err(e) => panic!(
-                "failed to invoke wasm-pack for {crate_name} — install it with \
-                 `cargo install wasm-pack` and add the target with \
-                 `rustup target add wasm32-unknown-unknown`: {e}"
-            ),
-        }
-
-        // Stage pkg/* → static/wasm/<crate>/ (mirrors the old bash script).
-        let pkg = crate_dir.join("pkg");
-        let dest = out.join(crate_name);
-        match fs::remove_dir_all(&dest) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => panic!("failed to remove {}: {}", dest.display(), e),
-        }
-        if let Err(e) = fs::create_dir_all(&dest) {
-            panic!("failed to create {}: {}", dest.display(), e);
-        }
-        if let Err(e) = copy_dir_all(&pkg, &dest) {
-            panic!(
-                "failed to copy {} → {}: {}",
-                pkg.display(),
-                dest.display(),
-                e
-            );
-        }
-        // wasm-pack emits a per-pkg .gitignore; static/wasm is already
-        // gitignored at the repo root, so drop the redundant one.
-        let _ = fs::remove_file(dest.join(".gitignore"));
+    // Configure once (CMakeCache gate); cmake is incremental after that.
+    if !sub
+        .join("build")
+        .join("libquicsrt")
+        .join("CMakeCache.txt")
+        .exists()
+    {
+        let emcmake = emscripten_bin("emcmake");
+        println!("cargo:warning=configuring libquicsrt receiver-only flavor (emcmake)...");
+        run_cmd(
+            &emcmake,
+            &[
+                "cmake",
+                "-S",
+                "deps/libquicsrt",
+                "-B",
+                "build/libquicsrt",
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DQUICSRT_ENABLE_WT=OFF",
+                "-DQUICSRT_RECEIVER_ONLY=ON",
+                "-DCMAKE_C_FLAGS=-pthread -fexceptions",
+                "-DCMAKE_CXX_FLAGS=-pthread -fexceptions",
+            ],
+            sub,
+            "emcmake configure",
+        );
     }
+    let nproc = std::thread::available_parallelism()
+        .map(|n| n.get().to_string())
+        .unwrap_or_else(|_| "4".to_string());
+    run_cmd(
+        Path::new("cmake"),
+        &[
+            "--build",
+            "build/libquicsrt",
+            "-j",
+            &nproc,
+            "--target",
+            "quicsrt_receiver_core",
+        ],
+        sub,
+        "cmake --build quicsrt_receiver_core",
+    );
+
+    // Link the engine module. The flag list is intentionally verbatim from
+    // upstream build.sh (EXPORTED_FUNCTIONS evolves with the engine C ABI)
+    // so drift shows up as a link error here rather than a silent API gap.
+    println!("cargo:warning=linking srt_engine.mjs (em++)...");
+    let emxx = emscripten_bin("em++");
+    run_cmd(
+        &emxx,
+        &[
+            "harness/receiver.cpp",
+            "harness/stats_map.cpp",
+            "harness/ts_demux.cpp",
+            "harness/nal.cpp",
+            "harness/aes3.cpp",
+            "harness/meter.cpp",
+            "harness/ts_muxer.cpp",
+            "js/engine_shim.c",
+            "build/libquicsrt/libquicsrt_receiver_core.a",
+            "build/libquicsrt/libsrt.a",
+            "-o",
+            "build/srt_engine.mjs",
+            "-fexceptions",
+            "-ffp-contract=off",
+            "-pthread",
+            "-sUSE_PTHREADS=1",
+            "-sALLOW_MEMORY_GROWTH=1",
+            "-Os",
+            "-sMODULARIZE=1",
+            "-sEXPORT_NAME=createSrtEngineModule",
+            "-sEXPORT_ES6=1",
+            "-sEXPORTED_FUNCTIONS=_srtw_init,_srtw_engine_new,_srtw_engine_receiver,_srtw_handle_datagram,_srtw_poll,_srtw_send_message,_srtw_poll_outgoing,_srtw_dropped_outgoing,_srtw_get_stats,_srtw_engine_free,_srtw_test_publisher_start,_srtw_test_publisher_inject,_srtw_test_publisher_poll,_malloc,_free,_tsd_new,_tsd_free,_tsd_feed,_tsd_event_take,_tsd_event_free,_tsd_ev_kind,_tsd_ev_pid,_tsd_ev_pts,_tsd_ev_dts,_tsd_ev_stream_type,_tsd_ev_program_num,_tsd_ev_random_access,_tsd_ev_data_len,_tsd_ev_data,_tsd_ev_text,_tsd_ev_pmt_entry_count,_tsd_ev_pmt_entry,_tsd_ev_format_id_count,_tsd_ev_format_id,_tsd_ev_nal_offset_count,_tsd_ev_nal_offsets,_tsd_ev_nal_type_count,_tsd_ev_nal_types,_tsd_ev_sample_count,_tsd_ev_samples,_tsd_debug_snapshot,_tsd_snapshot_free,_tsd_snap_field,_tsd_meter_snapshot,_tsd_meter_free,_tsd_meter_field,_tsd_set_meter_selection,_tsm_new,_tsm_free,_tsm_set_video_codec,_tsm_set_video_enabled,_tsm_set_audio_codec,_tsm_add_audio_pid,_tsm_set_sparse_enabled,_tsm_set_sparse_threshold,_tsm_push_video,_tsm_push_audio,_tsm_push_pcm,_tsm_push_pcm_pid,_tsm_poll",
+            "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU16,HEAPU32,HEAP16,HEAP32,HEAPF32,HEAPF64",
+            "-DSRT_ENABLE_VIRTUAL_TRANSPORT",
+            "-Iharness",
+            "-Ideps/libquicsrt/src",
+            "-Ideps/libquicsrt/deps/srt/srtcore",
+            "-Ideps/libquicsrt/deps/srt/common",
+            "-Ibuild/libquicsrt/deps/srt",
+        ],
+        sub,
+        "em++ engine link",
+    );
 }
 
-/// Recursively copy a directory's *contents* (entries, not the dir itself)
-/// into `out`, preserving every file type. Unlike `copy_dir_recursive`
-/// (which only mirrors `.js`/`.mjs`), this is used to stage wasm-pack `pkg/`
-/// output verbatim (`.wasm`, `.js`, `.d.ts`, `package.json`).
-fn copy_dir_all(src: &Path, out: &Path) -> std::io::Result<()> {
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let path = entry.path();
-        let dest = out.join(entry.file_name());
-        if path.is_dir() {
-            fs::create_dir_all(&dest)?;
-            copy_dir_all(&path, &dest)?;
-        } else {
-            fs::copy(&path, &dest)?;
+/// Stage the engine module, its JS wrappers, and the SlopShady-authored
+/// wrapper `.d.ts` files under `static/vendor/QuicSRT-wasm/`.
+///
+/// Layout contract: `js/engine_module.js` imports `'../build/srt_engine.mjs'`
+/// relative to itself, and the emcc module self-imports to spawn its
+/// pthread workers and fetches its `.wasm` relative to itself. Staging
+/// `js/` and `build/` as siblings of the tsc-emitted `page/vendor/` tree
+/// keeps every relative import resolving at the served `/static/...` URLs
+/// with zero rewrites. The `.d.ts` files are staged into the submodule's
+/// `js/` directory (untracked there — same trick the old wasm-pack flow
+/// used for crate `.d.ts` files) so tsc.vendor resolves the vendored TS's
+/// relative `'../../js/<wrapper>.js'` imports, which paths mappings cannot
+/// redirect.
+fn stage_quicsrt_engine(repo_root: &Path) {
+    let sub = repo_root.join("vendor").join("QuicSRT-wasm");
+    let out = repo_root.join("static").join("vendor").join("QuicSRT-wasm");
+
+    let out_build = out.join("build");
+    if let Err(e) = fs::create_dir_all(&out_build) {
+        panic!("failed to create {}: {}", out_build.display(), e);
+    }
+    for fname in ["srt_engine.mjs", "srt_engine.wasm"] {
+        let src = sub.join("build").join(fname);
+        if let Err(e) = fs::copy(&src, out_build.join(fname)) {
+            panic!("failed to copy {} (run the engine build first): {}", src.display(), e);
         }
     }
-    Ok(())
+
+    let out_js = out.join("js");
+    if let Err(e) = fs::create_dir_all(&out_js) {
+        panic!("failed to create {}: {}", out_js.display(), e);
+    }
+    for fname in [
+        "srt_engine.js",
+        "demux_engine.js",
+        "muxer_engine.js",
+        "engine_module.js",
+        "pthread_spawn_guard.js",
+    ] {
+        let src = sub.join("js").join(fname);
+        if let Err(e) = fs::copy(&src, out_js.join(fname)) {
+            panic!("failed to copy {}: {} (stale submodule?)", src.display(), e);
+        }
+    }
+
+    let dts_dir = repo_root.join("src").join("types").join("quicsrt");
+    match fs::read_dir(&dts_dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let is_dts = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|n| n.ends_with(".d.ts"))
+                    .unwrap_or(false);
+                if is_dts {
+                    if let Err(e) = fs::copy(&path, sub.join("js").join(entry.file_name())) {
+                        panic!("failed to stage {}: {}", path.display(), e);
+                    }
+                }
+            }
+        }
+        Err(e) => panic!("failed to read_dir {}: {}", dts_dir.display(), e),
+    }
 }
 
 /// Path to the tsc binary in `node_modules/.bin`, with the extension npm
@@ -319,11 +468,8 @@ fn main() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let src_js = repo_root.join("src").join("js");
     let out_js = repo_root.join("static").join("js");
-    let vendor_src = repo_root
-        .join("vendor")
-        .join("WebSRT")
-        .join("web")
-        .join("src");
+    let sub = repo_root.join("vendor").join("QuicSRT-wasm");
+    let vendor_src = sub.join("page").join("vendor");
 
     println!("cargo:rerun-if-changed={}", src_js.display());
     println!("cargo:rerun-if-changed={}", vendor_src.display());
@@ -344,30 +490,46 @@ fn main() {
         repo_root.display()
     );
     println!("cargo:rerun-if-changed={}/src/types", repo_root.display());
+    println!("cargo:rerun-if-changed={}/harness", sub.display());
+    println!("cargo:rerun-if-changed={}/js", sub.display());
     println!(
-        "cargo:rerun-if-changed={}/vendor/WebSRT/crates/srt-wasm",
-        repo_root.display()
+        "cargo:rerun-if-changed={}/deps/libquicsrt/src",
+        sub.display()
     );
     println!(
-        "cargo:rerun-if-changed={}/vendor/WebSRT/crates/ts-muxer-wasm",
-        repo_root.display()
+        "cargo:rerun-if-changed={}/deps/libquicsrt/include",
+        sub.display()
     );
     println!(
-        "cargo:rerun-if-changed={}/vendor/WebSRT/crates/mpeg2ts-wasm",
+        "cargo:rerun-if-changed={}/deps/libquicsrt/CMakeLists.txt",
+        sub.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/deps/libquicsrt/deps/srt/srtcore",
+        sub.display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}/deps/libquicsrt/deps/srt/common",
+        sub.display()
+    );
+    // Watch the staged engine output dir so that deleting it (e.g.
+    // `rm -rf static/vendor` or a fresh clone) re-runs build.rs and
+    // triggers a rebuild. After a rebuild the next run finds artifacts
+    // fresh and skips, so this converges. NOTE: watch only this output
+    // subtree, never the submodule's own build/ dir — that would loop.
+    println!(
+        "cargo:rerun-if-changed={}/static/vendor/QuicSRT-wasm/build",
         repo_root.display()
     );
-    // Watch the WASM output dir so that deleting it (e.g. `rm -rf static/wasm`
-    // or a fresh clone) re-runs build.rs and triggers a rebuild. After a
-    // rebuild the next run finds artifacts fresh and skips, so this converges.
-    println!("cargo:rerun-if-changed={}/static/wasm", repo_root.display());
 
-    // Step 0: Build the three WASM crates from vendor/WebSRT/ when artifacts
-    // are missing or stale. Step 2 (vendor tsc) reads the .d.ts that wasm-pack
-    // emits into static/wasm/mpeg2ts-wasm/, so this must run before it. We only
-    // do it when something actually changed to keep cold builds fast.
-    if wasm_needs_rebuild(&repo_root) {
-        build_wasm_crates(&repo_root);
+    // Step 0: Build + stage the QuicSRT C++ engine from
+    // vendor/QuicSRT-wasm/. Staging runs every time (cheap copies) so the
+    // wrapper .d.ts files exist for the vendor tsc pass below; the
+    // cmake/em++ work is gated by engine_needs_rebuild.
+    if engine_needs_rebuild(&repo_root) {
+        link_quicsrt_engine(&sub);
     }
+    stage_quicsrt_engine(&repo_root);
 
     // Step 1: Mirror `.js` and `.mjs` files verbatim from src/js → static/js.
     // rust-embed's #[folder = "../static/"] picks these up unchanged.
@@ -380,76 +542,24 @@ fn main() {
         );
     }
 
-    // Step 2: Compile upstream WebSRT viewer `.ts` files via tsc.vendor FIRST,
-    // so its .d.ts declarations exist when SlopShady's tsc.emit runs. The
-    // submodule is canonical; we only emit the .js + .d.ts artifacts here,
-    // never modify the source. Produces decode.js + demux.js (and .d.ts).
+    // Step 2: Compile the upstream QuicSRT-wasm viewer `.ts` files via
+    // tsc.vendor FIRST, so its .d.ts declarations exist when SlopShady's
+    // tsc.emit runs. The submodule is canonical; we only emit the .js +
+    // .d.ts artifacts here, never modify the source.
     //
-    // demux.ts imports the mpeg2ts-wasm .d.ts via a relative specifier
-    // (`../wasm/mpeg2ts-wasm/mpeg2ts_wasm.js`). tsc paths mappings don't
-    // apply to relative specifiers, so we stage the .d.ts at the expected
-    // physical location (vendor/WebSRT/web/wasm/mpeg2ts-wasm/) before tsc
-    // runs. Files are untracked in the submodule; regenerated every build.
-    //
-    // We then post-process emitted demux.js (and demux.d.ts) to rewrite the
-    // upstream-relative `../wasm/mpeg2ts-wasm/...` import specifier to
-    // SlopShady's absolute `/wasm/mpeg2ts-wasm/...` path. Upstream's web/
-    // layout has wasm/ as a sibling of src/; SlopShady serves wasm from
-    // static/wasm/ at /wasm/. Without this rewrite the emitted demux.js
-    // would 404 at runtime.
+    // The vendored TS imports the engine wrappers via relative
+    // '../../js/<wrapper>.js' specifiers, which resolve to the .d.ts files
+    // staged into the submodule's js/ dir by stage_quicsrt_engine. In the
+    // emitted output those specifiers are preserved verbatim and resolve
+    // against the staged static/vendor/QuicSRT-wasm/ layout (js/ and
+    // build/ siblings of page/vendor/) — no rewrites needed, unlike the
+    // old wasm-pack flow.
     let vendor_out = repo_root
         .join("static")
         .join("vendor")
-        .join("WebSRT")
-        .join("web")
-        .join("src");
-
-    // Stage mpeg2ts-wasm, srt-wasm, and ts-muxer-wasm .d.ts files where tsc
-    // expects them. demux.ts imports `../wasm/mpeg2ts-wasm/mpeg2ts_wasm.js`,
-    // worker.ts imports `../wasm/srt-wasm/srt_wasm.js`, and stream-worker.ts
-    // imports `../wasm/ts-muxer-wasm/ts_muxer_wasm.js` (reachable since
-    // upstream added shared/publish.ts) — all relative specifiers that
-    // tsc paths mappings don't resolve, so the same staging pattern applies
-    // to all three crates.
-    for crate_name in ["mpeg2ts-wasm", "srt-wasm", "ts-muxer-wasm"] {
-        let stage_dir = repo_root
-            .join("vendor")
-            .join("WebSRT")
-            .join("web")
-            .join("wasm")
-            .join(crate_name);
-        let wasm_src_dir = repo_root.join("static").join("wasm").join(crate_name);
-        if !wasm_src_dir.exists() {
-            continue;
-        }
-        if let Err(e) = fs::create_dir_all(&stage_dir) {
-            panic!("failed to create {}: {}", stage_dir.display(), e);
-        }
-        match fs::read_dir(&wasm_src_dir) {
-            Ok(entries) => {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    let is_dts = path
-                        .file_name()
-                        .and_then(|s| s.to_str())
-                        .map(|n| n.ends_with(".d.ts"))
-                        .unwrap_or(false);
-                    if is_dts {
-                        let dest = stage_dir.join(entry.file_name());
-                        if let Err(e) = fs::copy(&path, &dest) {
-                            panic!(
-                                "failed to copy {} → {}: {}",
-                                path.display(),
-                                dest.display(),
-                                e
-                            );
-                        }
-                    }
-                }
-            }
-            Err(e) => panic!("failed to read_dir {}: {}", wasm_src_dir.display(), e),
-        }
-    }
+        .join("QuicSRT-wasm")
+        .join("page")
+        .join("vendor");
 
     if has_ts_files(&vendor_src) {
         let tsc_bin = tsc_bin(&repo_root);
@@ -476,68 +586,12 @@ fn main() {
             ),
         }
 
-        // Rewrite the WASM import path in emitted demux.{js,d.ts}. The exact
-        // upstream specifier is `'../wasm/mpeg2ts-wasm/mpeg2ts_wasm.js'` —
-        // panic if it's not found so a future submodule bump that changes
-        // the path surfaces here, not as a silent runtime 404.
-        for fname in ["demux.js", "demux.d.ts"] {
-            let path = vendor_out.join(fname);
-            if !path.exists() {
-                continue;
-            }
-            let contents = fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
-            let needle = "'../wasm/mpeg2ts-wasm/mpeg2ts_wasm.js'";
-            let replacement = "'/wasm/mpeg2ts-wasm/mpeg2ts_wasm.js'";
-            if !contents.contains(needle) {
-                panic!(
-                    "expected to find `{}` in {}; upstream specifier may have changed",
-                    needle,
-                    path.display()
-                );
-            }
-            let rewritten = contents.replace(needle, replacement);
-            fs::write(&path, rewritten)
-                .unwrap_or_else(|e| panic!("failed to write {}: {}", path.display(), e));
-        }
-
-        // Rewrite the WASM import path in emitted worker.js (and worker.d.ts
-        // if it surfaces the specifier). worker.ts imports
-        // `'../wasm/srt-wasm/srt_wasm.js'` — the same upstream-relative shape
-        // as demux's mpeg2ts import, which resolves wrong at runtime since
-        // SlopShady serves wasm at /wasm/ (not vendor/WebSRT/web/wasm/).
-        // Panic if the needle is missing in worker.js so a future submodule
-        // bump surfaces loudly; worker.d.ts may elide the specifier, so
-        // rewrite there only if present.
-        for (fname, strict) in [("worker.js", true), ("worker.d.ts", false)] {
-            let path = vendor_out.join(fname);
-            if !path.exists() {
-                continue;
-            }
-            let contents = fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e));
-            let needle = "'../wasm/srt-wasm/srt_wasm.js'";
-            let replacement = "'/wasm/srt-wasm/srt_wasm.js'";
-            if !contents.contains(needle) {
-                if strict {
-                    panic!(
-                        "expected to find `{}` in {}; upstream specifier may have changed",
-                        needle,
-                        path.display()
-                    );
-                }
-                continue;
-            }
-            let rewritten = contents.replace(needle, replacement);
-            fs::write(&path, rewritten)
-                .unwrap_or_else(|e| panic!("failed to write {}: {}", path.display(), e));
-        }
-
         // Rewrite extensionless relative imports in emitted vendor .js files.
-        // The WebSRT submodule's TS source uses extensionless specifiers
-        // (standard TS with moduleResolution: "Bundler"), but browsers require
-        // explicit .js extensions in native ES module imports. Without this,
-        // `import { looksLikeAv1 } from './shared/av1'` 404s in the browser.
+        // The QuicSRT-wasm submodule's TS source uses extensionless
+        // specifiers (standard TS with moduleResolution: "Bundler"), but
+        // browsers require explicit .js extensions in native ES module
+        // imports. Without this, `import { looksLikeAv1 } from './shared/av1'`
+        // 404s in the browser.
         rewrite_vendor_imports(&vendor_out);
     }
 
