@@ -1,12 +1,14 @@
 /**
- * stream-worker.js — module worker for WebSRT publishing.
+ * stream-worker.js — module worker for QuicSRT publishing.
  *
- * Loads two WASM modules (srt-wasm + ts-muxer-wasm), runs the SRT receiver that
- * both ingests incoming datagrams and publishes upstream TS, and exchanges
- * datagrams with the main thread (StreamingUI). Owns the Opus AudioEncoder
- * (fed from a transferred AudioWorklet MessagePort) and, since Phase 3, the
- * VideoEncoder — the main thread posts transferable VideoFrames captured from
- * the WebGL canvas; the worker owns encode + Annex B / SPS-PPS / muxer work.
+ * Loads the C++ QuicSRT engine (one emcc module: SRT receiver + TS demux +
+ * TS muxer behind /static/vendor/QuicSRT-wasm/js/*.js wrappers), runs the
+ * SRT receiver that both ingests incoming datagrams and publishes upstream
+ * TS, and exchanges datagrams with the main thread (StreamingUI). Owns the
+ * Opus AudioEncoder (fed from a transferred AudioWorklet MessagePort) and,
+ * since Phase 3, the VideoEncoder — the main thread posts transferable
+ * VideoFrames captured from the WebGL canvas; the worker owns encode +
+ * Annex B / SPS-PPS / muxer work.
  *
  * Message protocol (main → worker):
  *   { type:'init', latencyMs, videoCodec, videoCodecString, videoBitrate,
@@ -48,8 +50,8 @@
  *   { type:'stopped' }               ack of `stop` — safe to terminate
  *   { type:'recordData', data }      one transferred ArrayBuffer of the recorded .ts (response to stopRecord)
  */
-import init, { SrtReceiver } from '/wasm/srt-wasm/srt_wasm.js';
-import initMux, { TsMuxer } from '/wasm/ts-muxer-wasm/ts_muxer_wasm.js';
+import initSrt, { SrtReceiver } from '/static/vendor/QuicSRT-wasm/js/srt_engine.js';
+import initMux, { TsMuxer } from '/static/vendor/QuicSRT-wasm/js/muxer_engine.js';
 
 let rx = null;
 let muxer = null;
@@ -77,6 +79,8 @@ let audioPort = null;
 let videoEncoder = null;
 let recording = false;        // record-to-file sink active: muxed TS is buffered for download
 let recordChunks = [];        // Uint8Array[] accumulated while recording; drained on stopRecord
+let sendFullWarnAt = -Infinity; // [C++ engine delta] last send-buffer-full warn (rate limit)
+let sendErrWarned = false;      // [C++ engine delta] one-shot warn for other sendMessage rc codes
 
 const nowUs = () => performance.now() * 1000;
 
@@ -105,10 +109,9 @@ function pollOnce() {
 
 async function ensureWasm() {
     if (wasmReady) return;
-    await Promise.all([
-        init({ module_or_path: '/wasm/srt-wasm/srt_wasm_bg.wasm' }),
-        initMux({ module_or_path: '/wasm/ts-muxer-wasm/ts_muxer_wasm_bg.wasm' }),
-    ]);
+    // Both wrappers load the ONE shared emcc engine module (single heap):
+    // srt, demux and muxer all live behind srt_engine.mjs.
+    await Promise.all([initSrt(), initMux()]);
     wasmReady = true;
 }
 
@@ -376,13 +379,40 @@ function canMux() {
 /** Drain muxed TS packets. Feeds the record sink (if active) and the SRT
  *  receiver (when connected + handshaked) for upstream send. muxer.poll()
  *  returns a freshly-allocated Uint8Array each call, so it is safe to retain
- *  in recordChunks and pass to sendMessage in the same call. */
+ *  in recordChunks and pass to sendMessage in the same call.
+ *
+ *  [C++ engine delta] sendMessage() returns the C ABI int, not actions:
+ *  >0 bytes accepted (possibly partial — resume from that offset), 0 empty,
+ *  -1 send buffer full (drop the remainder: live too-late semantics, srt's
+ *  sndDropTooLate owns the backlog), -2 closed, -3 not handshaked (cannot
+ *  happen — gated above), -4/-5 warn once. The fragmented SRT packets ride
+ *  the engine's seam ring and surface as kind-0 actions on the next
+ *  poll drain in pollOnce(). */
 function flushTsToSrt() {
     if (!muxer) return;
     const ts = muxer.poll();
     if (!ts || ts.length === 0) return;
     if (recording) recordChunks.push(ts);
-    if (rx && rx.isHandshakeComplete()) processActions(rx.sendMessage(ts, nowUs()));
+    if (!rx || !rx.isHandshakeComplete()) return;
+    let offset = 0;
+    while (offset < ts.length) {
+        const rc = rx.sendMessage(ts.subarray(offset));
+        if (rc > 0) { offset += rc; continue; }
+        if (rc === -1) {
+            const now = performance.now();
+            if (now - sendFullWarnAt >= 5000) {
+                console.warn(`[worker] srt send buffer full, dropping ${ts.length - offset} TS bytes`);
+                sendFullWarnAt = now;
+            }
+            break;
+        }
+        if (rc === -2) { postMessage({ type: 'close' }); break; }
+        if (rc !== 0 && !sendErrWarned) {
+            console.warn(`[worker] srt sendMessage failed (rc=${rc})`);
+            sendErrWarned = true;
+        }
+        break;
+    }
 }
 
 /** Flush encoders, drain the muxer, and emit the recorded .ts as one

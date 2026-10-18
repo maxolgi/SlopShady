@@ -17,8 +17,8 @@
  */
 
 import { getEl, state } from '../state.js';
-import { mountPlayer } from '/static/vendor/WebSRT/web/src/player/index.js';
-import type { PlayerHandle } from '/static/vendor/WebSRT/web/src/player/index.js';
+import { mountPlayer } from '/static/vendor/QuicSRT-wasm/page/vendor/player/index.js';
+import type { PlayerHandle } from '/static/vendor/QuicSRT-wasm/page/vendor/player/index.js';
 
 const NUM_INPUTS = 8;
 const LS_PREFIX = 'slopshady.stream.input.';
@@ -454,7 +454,7 @@ export const StreamingInputUI = {
 
         entry.handle = mountPlayer(null, {
             decodeInWorker: true,
-            workerUrl: '/static/vendor/WebSRT/web/src/worker.js',
+            workerUrl: '/static/vendor/QuicSRT-wasm/page/vendor/worker.js',
             host: webUrl.hostname,
             port: wtPort || 4433,
             stream,
