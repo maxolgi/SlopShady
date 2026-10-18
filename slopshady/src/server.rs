@@ -1,7 +1,7 @@
 use axum::body::Body;
 use axum::extract::{Query, State};
 use axum::http::header;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
@@ -43,6 +43,24 @@ fn if_none_match(headers: &HeaderMap, etag: &str) -> bool {
         == Some(etag)
 }
 
+/// Cross-origin isolation response headers. The QuicSRT engine module is
+/// built with pthreads (SharedArrayBuffer), so the document (and the
+/// workers it spawns) must be cross-origin isolated for the browser to
+/// expose it. Everything SlopShady serves is same-origin from the
+/// embedded static tree, so `require-corp` excludes nothing — the same
+/// headers the QuicSRT gateway sends for its player pages.
+fn append_cross_origin_isolation(resp: &mut Response) {
+    let headers = resp.headers_mut();
+    headers.insert(
+        HeaderName::from_static("cross-origin-opener-policy"),
+        HeaderValue::from_static("same-origin"),
+    );
+    headers.insert(
+        HeaderName::from_static("cross-origin-embedder-policy"),
+        HeaderValue::from_static("require-corp"),
+    );
+}
+
 async fn serve_index(headers: HeaderMap) -> Response {
     match Asset::get("slopshady.html") {
         Some(content) => {
@@ -58,7 +76,7 @@ async fn serve_index(headers: HeaderMap) -> Response {
                 )
                     .into_response();
             }
-            (
+            let mut resp = (
                 [
                     (header::CONTENT_TYPE, "text/html; charset=utf-8".to_string()),
                     (header::ETAG, etag),
@@ -66,7 +84,9 @@ async fn serve_index(headers: HeaderMap) -> Response {
                 ],
                 body,
             )
-                .into_response()
+                .into_response();
+            append_cross_origin_isolation(&mut resp);
+            resp
         }
         None => StatusCode::NOT_FOUND.into_response(),
     }
@@ -90,7 +110,7 @@ async fn serve_static_file(uri: axum::http::Uri, headers: HeaderMap) -> Response
                     .into_response();
             }
             let mime = from_path(path).first_or_octet_stream();
-            (
+            let mut resp = (
                 [
                     (header::CONTENT_TYPE, mime.as_ref().to_string()),
                     (header::ETAG, etag),
@@ -98,7 +118,9 @@ async fn serve_static_file(uri: axum::http::Uri, headers: HeaderMap) -> Response
                 ],
                 embed_bytes(content.data),
             )
-                .into_response()
+                .into_response();
+            append_cross_origin_isolation(&mut resp);
+            resp
         }
         None => StatusCode::NOT_FOUND.into_response(),
     }
