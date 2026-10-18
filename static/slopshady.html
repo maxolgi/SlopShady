@@ -1247,7 +1247,7 @@
                         <li><span class="bp-help-key">Space</span> — Pause/Play shader animation</li>
                         <li><span class="bp-help-key">Ctrl+Shift+Space</span> — Start/Stop playlist</li>
                         <li><span class="bp-help-key">Ctrl+Shift+Backspace</span> — Master reset (clear all settings)</li>
-                        <li><span class="bp-help-key">Ctrl+Shift+R</span> — Start/Stop recording (WebSRT encoder → .ts)</li>
+                        <li><span class="bp-help-key">Ctrl+Shift+R</span> — Start/Stop recording (QuicSRT encoder → .ts)</li>
                         <li><span class="bp-help-key">Ctrl+Insert</span> — Start/Stop live stream</li>
                         <li><span class="bp-help-key">Ctrl+Shift+L</span> — Show modulation matrix</li>
                     </ul>
@@ -1411,10 +1411,10 @@
             </div>
         </div>
 
-        <!-- Stream Panel (live WebSRT stream + recording) -->
+        <!-- Stream Panel (live QuicSRT stream + recording) -->
         <div class="content-panel content-panel--scrollable" data-panel="stream">
             <div class="panel-section" id="stream-panel">
-                <div class="content-title">Live Stream (WebSRT)</div>
+                <div class="content-title">Live Stream (QuicSRT)</div>
                 <div class="stream-btn-row">
                     <button class="tool-btn" id="startStream">▶ Stream</button>
                     <button class="tool-btn" id="streamRecord">⏺ Rec</button>
@@ -1456,7 +1456,7 @@
                 <div id="stream-codecs"></div>
             </div>
             <div class="panel-section" id="stream-input-panel">
-                <div class="content-title">Live Stream Inputs (WebSRT)</div>
+                <div class="content-title">Live Stream Inputs (QuicSRT)</div>
                 <div class="tool-grid tool-grid--2x1">
                     <div class="dropdown" id="stream-input-selector">
                         <button class="dropdown__selected tool-btn"><span>Input 1</span></button>

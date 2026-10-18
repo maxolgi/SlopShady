@@ -719,7 +719,7 @@ export const LayerSystem = {
             return;
         }
 
-        // Handle WebSRT input type — upload latest decoded VideoFrame.
+        // Handle QuicSRT input type — upload latest decoded VideoFrame.
         if (layer.material && layer.material.type === 'websrt' && !layer.material.params?.shaderMode) {
             this.renderWebSRT(layer, layerFBO);
             return;

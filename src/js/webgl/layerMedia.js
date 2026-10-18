@@ -81,7 +81,7 @@ export const layerMediaMethods = {
     },
 
     /**
-     * Upload the latest WebSRT VideoFrame for a layer into its per-layer GL
+     * Upload the latest QuicSRT VideoFrame for a layer into its per-layer GL
      * texture. Shared by both renderWebSRT (websrt layer type) and
      * _bindLayerMedia (shader-mode layers).
      * @returns {object|null} entry { tex, w, h, lastFrame } or null
@@ -535,7 +535,7 @@ export const layerMediaMethods = {
     },
 
     /**
-     * Render a WebSRT input VideoFrame to the layer FBO. Reuses the image
+     * Render a QuicSRT input VideoFrame to the layer FBO. Reuses the image
      * shader (cover/contain/stretch). One texture per layer index, uploaded
      * fresh each frame from the latest decoded VideoFrame.
      */

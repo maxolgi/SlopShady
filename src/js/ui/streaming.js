@@ -1,10 +1,10 @@
 /**
- * StreamingUI — main-thread coordinator for WebSRT publishing.
+ * StreamingUI — main-thread coordinator for QuicSRT publishing.
  *
  * Captures the WebGL canvas as transferable VideoFrames (one GPU copy + one
  * postMessage per frame) and ships them to a module worker that runs the
  * VideoEncoder + TS muxer + SRT receiver WASM + Opus AudioEncoder, exchanging
- * datagrams with the WebSRT gateway over WebTransport. All CPU-heavy encode
+ * datagrams with the QuicSRT gateway over WebTransport. All CPU-heavy encode
  * work is off-main (Phase 3 moved VideoEncoder to the worker; AudioEncoder
  * followed in Phase 2).
  *
@@ -478,7 +478,7 @@ export const StreamingUI = {
     },
 
     /**
-     * Begin recording to a .ts file via the WebSRT encoder. Spawns the shared
+     * Begin recording to a .ts file via the QuicSRT encoder. Spawns the shared
      * pipeline if no stream is active (standalone record); otherwise engages
      * the record sink on the existing worker (record-while-streaming). The
      * worker buffers muxed TS; stopRecord() (or any teardown) delivers it.
@@ -1017,7 +1017,7 @@ export const StreamingUI = {
 
     /**
      * Spawn the backgrounded-tab timer worker. Posts 'tick' at 1000/_fps; each
-     * tick calls captureFrame(). Kept in sync with the WebSRT demo's schedulePump.
+     * tick calls captureFrame(). Kept in sync with the QuicSRT demo's schedulePump.
      */
     _startBgTimer() {
         if (this._bgWorker) return;

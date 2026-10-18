@@ -1,10 +1,10 @@
 /**
- * StreamingInputUI — main-thread coordinator for WebSRT receiving.
+ * StreamingInputUI — main-thread coordinator for QuicSRT receiving.
  *
- * Manages up to 8 concurrent WebSRT input streams. Lazy connection model
+ * Manages up to 8 concurrent QuicSRT input streams. Lazy connection model
  * driven by two sources:
  *   1. Layer routing (acquire/release from layerMixer when a layer picks
- *      WebSRT + Input N).
+ *      QuicSRT + Input N).
  *   2. Manual Start button on the selected input.
  * Connection is up iff (layerRefs > 0 || manualStart) for that input.
  *

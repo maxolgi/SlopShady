@@ -70,7 +70,7 @@ export const Keyboard = {
             toggleFullscreen();
         }
 
-        // Ctrl+Shift+R: Start/Stop recording (WebSRT encoder → .ts)
+        // Ctrl+Shift+R: Start/Stop recording (QuicSRT encoder → .ts)
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
             e.preventDefault();
             StreamingUI.isRecording ? StreamingUI.stopRecord() : StreamingUI.startRecord();

@@ -87,7 +87,7 @@ VIDEO INPUTS (sampler2D, available when Camera/Screen is enabled):
 PER-LAYER MEDIA (sampler2D, available on Media Shader layers when a media source is selected):
 - iLayerVideo: video file texture (Media Shader layer with Video source)
 - iLayerImage: image file texture (Media Shader layer with Image source)
-- iLayerSRT: WebSRT live stream texture (Media Shader layer with WebSRT source)
+- iLayerSRT: QuicSRT live stream texture (Media Shader layer with QuicSRT source)
 - u_layerTexRes: vec2 — resolution of the active media texture (x, y in pixels)
   vec4 media = texture(iLayerVideo, uv);  // sample the video/image/stream
   // Cover-fit example using u_layerTexRes:

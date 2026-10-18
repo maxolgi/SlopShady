@@ -26,7 +26,7 @@ const TYPE_OPTIONS = [
     { value: 'visualizer', label: 'Visualizer' },
     { value: 'milkdrop', label: 'Milkdrop' },
     { value: 'scanimate', label: 'Scanimate' },
-    { value: 'websrt', label: 'WebSRT' },
+    { value: 'websrt', label: 'QuicSRT' },
 ];
 
 const BLEND_OPTIONS = [
@@ -278,7 +278,7 @@ export const LayerMixer = {
                 if (ctrl) sliderControllers.set(slider, ctrl);
             }
             
-            // Volume slider (WebSRT audio per-layer)
+            // Volume slider (QuicSRT audio per-layer)
             const volSlider = getEl(`mix-volume-slider-${i}`);
             if (volSlider) {
                 const ctrl = initSlider(volSlider, {
@@ -1221,7 +1221,7 @@ export const LayerMixer = {
         const layer = LayerSystem.layers[index];
         if (!layer) return;
         layer.volume = parseFloat(value);
-        // Apply live to StreamingInputUI if this layer routes to a WebSRT input.
+        // Apply live to StreamingInputUI if this layer routes to a QuicSRT input.
         const inputIndex = this._layerWebSRTInput(index);
         if (inputIndex >= 0) {
             StreamingInputUI.setLayerVolume(inputIndex, index, layer.volume);
@@ -1244,7 +1244,7 @@ export const LayerMixer = {
         this.sendUpdate();
     },
 
-    /** Returns the WebSRT input index routed to this layer, or -1 if none. */
+    /** Returns the QuicSRT input index routed to this layer, or -1 if none. */
     _layerWebSRTInput(index) {
         const layer = LayerSystem.layers[index];
         if (!layer || layer.material?.type !== 'websrt') return -1;
