@@ -23,7 +23,7 @@ import type { PlayerHandle } from '/static/vendor/QuicSRT-wasm/page/vendor/playe
 const NUM_INPUTS = 8;
 const LS_PREFIX = 'slopshady.stream.input.';
 
-// PTS-paced presentation (mirrors vendor/WebSRT/web/src/render.ts):
+// PTS-paced presentation (mirrors vendor/QuicSRT-wasm/page/vendor/render.ts):
 // incoming decoded frames are buffered in a small ring and handed to the
 // compositor only when their PTS is due. Without this, a decoder burst
 // (B-frame reorder + WebCodecs pipeline + postMessage batching) arriving
@@ -211,7 +211,7 @@ export const StreamingInputUI = {
         // full ring means the consumer is already behind, so shedding the
         // head (earliest PTS) trims accumulated latency under backpressure
         // rather than buffering stale frames the user hasn't seen. Matches
-        // the WebSRT vendor viewer (render.ts).
+        // the QuicSRT vendor viewer (render.ts).
         while (entry.frameRing.length > FRAME_RING_CAP) {
             const old = entry.frameRing.shift();
             try { old?.close(); } catch (e) { /* ignore */ }
@@ -659,7 +659,7 @@ export const StreamingInputUI = {
         return this._audioCtx!;
     },
 
-    // Self-driven presentation loop (mirrors vendor/WebSRT/web/src/render.ts
+    // Self-driven presentation loop (mirrors vendor/QuicSRT-wasm/page/vendor/render.ts
     // startRafLoop). Advances the PTS-paced ring every animation frame
     // regardless of whether a layer polled latestVideoFrame() this cycle,
     // so the ring drains at display-refresh rate and latency can't build

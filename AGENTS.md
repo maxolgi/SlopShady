@@ -1,117 +1,58 @@
-# AGENTS.md
-
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
-
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
-
-## 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-## 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-## 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-Never revove these guidelines, only edit below.
----
-
 # SlopShady — repo-specific guidance
 
 Rust backend (`slopshady/`, axum + tokio) + TypeScript/JavaScript frontend embedded into the binary at compile time via `rust-embed`. Single binary at runtime; Node + `npm` are contributor-time only (for `tsc`). See `CONTRIBUTING.md` for full build/conventions; `README.md` for feature/uniform reference; `SECURITY.md` for caveats.
 
-## WebSRT submodule: bump-first rule (READ THIS FIRST)
+## QuicSRT-wasm submodule: bump-first rule (READ THIS FIRST)
 
-`vendor/WebSRT/` is a git submodule pinned to ONE commit. It goes stale. The
-user iterates on WebSRT constantly and runs builds newer than this pin, so the
+`vendor/QuicSRT-wasm/` is a git submodule pinned to ONE commit. It goes stale. The
+user iterates on QuicSRT constantly and runs builds newer than this pin, so the
 tree you can read is frequently behind what the user actually runs.
 
-Why the frequent bumps: SlopShady and WebSRT are developed in lockstep right now.
-The user tests them together while making many WebSRT changes, so the pin is kept
-synced to latest origin/master to avoid confusion (stale vendored code ≠ what the
-user actually runs). This should taper off once WebSRT stabilizes; until then,
-bump readily and commit the pin advance as a normal step (see "Pulling WebSRT
-changes").
+Why the frequent bumps: SlopShady and the QuicSRT stack are developed in lockstep
+right now. The user tests them together while making many engine changes, so the
+pin is kept synced to latest origin/master to avoid confusion (stale vendored code
+≠ what the user actually runs). This should taper off once QuicSRT stabilizes;
+until then, bump readily and commit the pin advance as a normal step (see
+"Pulling QuicSRT-wasm changes").
 
-Before reasoning about anything under `vendor/WebSRT/` — gateway, SRT,
-WebTransport, the three WASM crates, or the `web/` frontend — bump:
+Before reasoning about anything under `vendor/QuicSRT-wasm/` — the engine
+(harness/), the JS wrappers (js/), the player TS (page/vendor/), or the C++
+gateway it talks to — bump:
 
-    git submodule update --remote vendor/WebSRT   # advance working tree to latest origin/master
-    ( cd slopshady && cargo build )               # rebuilds stale WASM via build.rs
+    git submodule update --remote vendor/QuicSRT-wasm   # advance working tree to latest origin/master
+    ( cd slopshady && cargo build )                     # rebuilds the stale engine via build.rs
 
 Bump when (non-exhaustive — when in doubt, bump):
-- The user reports behavior in WebSRT, the gateway, SRT/WebTransport, WASM, or the `web/` UI.
-- You cannot find a file/module/path under `vendor/WebSRT/` that the user references.
-- You are about to cite `vendor/WebSRT/` line numbers or claim "the vendored version does/doesn't X."
+- The user reports behavior in QuicSRT, the engine, SRT/WebTransport, the
+  wrappers, or the player TS.
+- You cannot find a file/module/path under `vendor/QuicSRT-wasm/` that the user
+  references.
+- You are about to cite `vendor/QuicSRT-wasm/` line numbers or claim "the
+  vendored version does/doesn't X."
 
 Never conclude "this is old / not implemented" from a stale tree. Bump, re-read,
 then reason. Advancing the working tree is free and non-destructive; it only
 moves the checkout forward. Committing the advanced pin is a separate, intentional
-step (see "Pulling WebSRT changes" below) — agents commit bumps, never push.
+step (see "Pulling QuicSRT-wasm changes" below) — agents commit bumps, never push.
 
-Verify: `git -C vendor/WebSRT log --oneline -1` shows a recent commit and the
-file/module you were missing now exists.
+Verify: `git -C vendor/QuicSRT-wasm log --oneline -1` shows a recent commit and
+the file/module you were missing now exists.
 
-**Never edit files under `vendor/WebSRT/`.** It is the upstream WebSRT library,
-vendored read-only via submodule — SlopShady consumes it (WASM + web assets), it
-does not own it. The only intended mutation of that working tree is bumping the
-pin (`git submodule update --remote`); never modify, create, or delete source
-files there.
+**Never edit source files under `vendor/QuicSRT-wasm/`.** It is the upstream
+QuicSRT-wasm repo, vendored read-only via submodule — SlopShady consumes it (the
+emcc engine module + JS wrappers + player TS), it does not own it. The only
+intended mutations of that working tree are bumping the pin
+(`git submodule update --remote`) and the build-time staging build.rs performs
+(link output in `build/`, and SlopShady-authored wrapper `.d.ts` staged into
+`js/` — both untracked there, regenerated every build). Never modify, create, or
+delete tracked source files there.
 
 A change requested in SlopShady is solved **in SlopShady** (`src/js/`,
 `slopshady/src/*.rs`, static assets). If you conclude the real fix must live in
-WebSRT, stop — that is the boundary. Do not edit the library to resolve a
-SlopShady-side request. Describe the exact WebSRT edit to the user verbatim
-(file, lines, diff); the user applies it in WebSRT (commit + push), then you bump
-the pin here.
+QuicSRT-wasm (engine C++, wrappers, or player TS), stop — that is the boundary.
+Do not edit the library to resolve a SlopShady-side request. Describe the exact
+QuicSRT-wasm edit to the user verbatim (file, lines, diff); the user applies it
+in QuicSRT-wasm (commit + push), then you bump the pin here.
 
 ## Source layout
 
@@ -125,10 +66,14 @@ the pin here.
 One-time setup (after clone or submodule bump):
 
 ```bash
-git submodule update --init --recursive
+git submodule update --init vendor/QuicSRT-wasm
+git -C vendor/QuicSRT-wasm submodule update --init deps/libquicsrt
+git -C vendor/QuicSRT-wasm/deps/libquicsrt submodule update --init deps/srt
 npm install                          # installs typescript dev dependency
-cargo install wasm-pack             # required — build.rs builds WASM on demand
-rustup target add wasm32-unknown-unknown   # required by wasm-pack
+# Emscripten toolchain (build.rs links the engine with emcmake/cmake/em++):
+#   git clone https://github.com/emscripten-core/emsdk ~/emsdk
+#   ~/emsdk/emsdk install latest && ~/emsdk/emsdk activate latest
+# (upstream QuicSRT-wasm CI pins 6.0.8; also needs cmake + ninja + a C++17 compiler)
 ```
 
 Regular workflow:
@@ -142,7 +87,7 @@ cargo build --release         # release binary is the real run target
 ```
 
 `cargo build` automatically runs `build.rs` which:
-1. Builds the three WebSRT WASM crates into `static/wasm/` if missing or stale (invoking `wasm-pack` directly; gated on an mtime check so untouched builds skip the ~8s wasm-pack overhead).
+1. Builds the QuicSRT C++ engine from `vendor/QuicSRT-wasm/` (libquicsrt receiver-only flavor + srt static lib via `emcmake`/`cmake`, then the single emcc module `srt_engine.mjs` + `.wasm` via `em++`) and stages `js/` + `build/` + the tsc-emitted `page/vendor/` as siblings under `static/vendor/QuicSRT-wasm/`. Gated on an mtime check so untouched builds skip the cmake/em++ work. The engine uses pthreads (SharedArrayBuffer) — the server sends COOP/COEP headers so the document is cross-origin isolated.
 2. Mirrors `src/js/**/*.{js,mjs}` to `static/js/` byte-for-byte (preserves hand-formatted source — tsc's printer reformats, so we bypass it for `.js`).
 3. If any `.ts` files exist under `src/js/`, invokes `tsc` to compile them into `static/js/`.
 
@@ -155,37 +100,36 @@ For live-edit iteration, run `npm run watch` in a second terminal — `tsc --wat
 - **`tsconfig.json`** is at the repo root. `allowJs: true, checkJs: false` — existing JS works as-is; new TS gets full type-checking.
 - **Vendored globals** (`LiteGraph`, `butterchurn`, `Webamp`) are typed as `any` in `src/types/*.d.ts` for now. Tightening is a follow-up.
 - **Workers / AudioWorklet** use the same `tsconfig` — `lib` includes both `DOM` and `WebWorker`. The AudioWorklet processor globals (`AudioWorkletProcessor`, `registerProcessor`, `currentFrame`, `sampleRate`) come from `src/types/audioworklet-globals.d.ts`.
-- **WASM imports** use absolute specifiers like `'/wasm/srt-wasm/srt_wasm.js'` — `tsconfig.paths` maps these to `static/wasm/*` so tsc resolves the `.d.ts` emitted by wasm-pack.
+- **Engine wrapper imports** use absolute specifiers like `'/static/vendor/QuicSRT-wasm/js/srt_engine.js'` — `tsconfig.paths` maps the vendor root so tsc resolves the emitted `.d.ts`. The wrapper `.d.ts` files themselves are SlopShady-authored in `src/types/quicsrt/` (emcc emits no types, unlike wasm-pack) and staged into the submodule's `js/` by build.rs so the vendored TS's relative `'../../js/*.js'` imports resolve.
 
-### WebSRT WASM crates
+### QuicSRT engine
 
-`srt-wasm`, `ts-muxer-wasm`, and `mpeg2ts-wasm` are built from the `vendor/WebSRT/` submodule. `build.rs` rebuilds them automatically when the artifacts under `static/wasm/` are missing or older than the crate sources — no manual step required. `static/wasm/` is gitignored (regenerated, not committed). You can force a rebuild anytime by deleting `static/wasm/`. (`scripts/build-wasm.sh` has been removed; `build.rs` now invokes `wasm-pack` directly, so no shell is required on any platform.)
+The browser engine (SRT receiver + TS demux + TS muxer, one emcc module over the real srt codebase) is built from the `vendor/QuicSRT-wasm/` submodule. `build.rs` links it automatically when the staged artifacts under `static/vendor/QuicSRT-wasm/build/` are missing or older than the sources — no manual step required. That tree is gitignored (regenerated, not committed). You can force a rebuild anytime by deleting `static/vendor/QuicSRT-wasm/`. `build.rs` invokes `emcmake`/`cmake`/`em++` directly (mirroring upstream `build.sh`, no shell, so it works on any OS); the emsdk toolchain is located via `$EMSDK`, then `~/emsdk`, then PATH.
 
-Requires `wasm-pack` (`cargo install wasm-pack`) and the `wasm32-unknown-unknown` target (`rustup target add wasm32-unknown-unknown`). Output is byte-stable for a given toolchain version.
+Layout contract: `js/` (wrappers) and `build/` (engine module) must stay siblings of the tsc-emitted `page/vendor/` under `static/vendor/QuicSRT-wasm/` — `engine_module.js` imports `'../build/srt_engine.mjs'` relative to itself, the emcc module self-imports to spawn its pthread workers and fetches its `.wasm` relative to itself, and the vendored TS imports the wrappers via `'../../js/*.js'`. Keep this layout intact or every relative import breaks.
 
-### WebSRT dependency tree (three layers of pinning)
+### QuicSRT-wasm dependency tree (two layers of pinning)
 
-1. **`vendor/WebSRT/` is a git submodule.** SlopShady's git records the exact WebSRT commit (the `gitlink` entry). This is the only layer SlopShady ever touches.
-2. **`srt-protocol` and `mpeg2ts` are git deps** wired via `[patch.crates-io]` in `vendor/WebSRT/Cargo.toml` (~lines 43–45), pointing at the forks `github.com/maxolgi/srt-rs` and `github.com/maxolgi/mpeg2ts`. **Neither has a `rev` pin** — they track the default branch. Despite the `git+https` form, they are **not submodules**; Cargo fetches them into its registry cache on demand.
-3. **The exact rev used at build is frozen in `vendor/WebSRT/Cargo.lock`.** The lock lives inside the submodule, so advancing a dep rev (`cargo update -p srt-protocol`) is a **WebSRT-repo operation**, not a SlopShady one. Do it when working in WebSRT, commit + push there, then pull the result into SlopShady via the bump below.
+1. **`vendor/QuicSRT-wasm/` is a git submodule.** SlopShady's git records the exact commit (the `gitlink` entry). This is the only layer SlopShady ever touches.
+2. **Its nested submodules** (`deps/libquicsrt`, which itself pins `deps/srt` — the srt fork — plus WT-only `deps/lsquic` that never builds here) ride the QuicSRT-wasm commit. Advancing them is a QuicSRT-wasm-repo operation, not a SlopShady one.
 
-#### Pulling WebSRT changes (the only SlopShady-side operation)
+#### Pulling QuicSRT-wasm changes (the only SlopShady-side operation)
 
-Whether WebSRT itself changed or its `srt-rs`/`mpeg2ts` deps moved, the SlopShady-side step is identical — bump the submodule pin:
+Whether the engine C++, the wrappers, the player TS, or the nested libquicsrt/srt pins moved, the SlopShady-side step is identical — bump the submodule pin:
 
 ```bash
-git submodule update --remote vendor/WebSRT      # advance the pin to latest origin/master
-cargo build                                      # build.rs rebuilds stale WASM
-git add vendor/WebSRT && git commit -m "chore(websrt): bump submodule"
+git submodule update --remote vendor/QuicSRT-wasm   # advance the pin to latest origin/master
+cargo build                                         # build.rs relinks the stale engine
+git add vendor/QuicSRT-wasm && git commit -m "chore(quicsrt): bump submodule"
 ```
 
-That's it. Never `cd vendor/WebSRT` to commit from the SlopShady side — that crosses the submodule boundary and creates orphaned local commits that don't survive a future `git submodule update`. Dep-rev bumps belong in the WebSRT repo.
+That's it. Never `cd vendor/QuicSRT-wasm` to commit from the SlopShady side — that crosses the submodule boundary and creates orphaned local commits that don't survive a future `git submodule update`. Nested-dep bumps belong in the QuicSRT-wasm repo.
 
 **Commit posture:** committing in SlopShady is expected as part of normal work —
 you do not need to ask first. This covers the bump commit above and your own
 completed change units. (This overrides the generic "never commit unless asked"
-for this repo.) You never commit in WebSRT — but since you never modify WebSRT
-either, that side never arises.
+for this repo.) You never commit in QuicSRT-wasm — but since you never modify its
+tracked sources either, that side never arises.
 
 - Default port `8100`, OSC UDP `0.0.0.0:8101`, `--data-dir` defaults to `.` (CWD). `shaders.json`, `cert.pem`, `key.pem` are written into `--data-dir` and are gitignored.
 - Two Cargo features: `gui` (default; egui control panel via `eframe`) vs no-default-features (HTTPS server only, no GUI compiled in). MIDI runs in the browser regardless.
@@ -210,8 +154,8 @@ either, that side never arises.
 - **`slopshady-native/`, `oneamp/`, and `projectm/` are referenced extensively in README/CONTRIBUTING but DO NOT exist in this repo** (no `.gitmodules`). This is the backend repo only. Ignore native-port instructions here.
 - Backend is Rust only — there is no `server.py` or Node server.
 - `static/lib/` (butterchurn, litegraph, webamp) is vendored and minified. **Do not hand-edit.**
-- **`vendor/WebSRT/` is a git submodule** (github.com/maxolgi/WebSRT) — source for the three WASM crates. `build.rs` rebuilds them into `static/wasm/` automatically; do not hand-edit `static/wasm/{srt-wasm,ts-muxer-wasm,mpeg2ts-wasm}/` (gitignored, regenerated). The submodule pins a specific commit for reproducibility, but bumping is a normal operation: `git submodule update` + `cargo build`. The `srt-protocol` + `mpeg2ts` forks are wired via `[patch.crates-io]` inside the submodule workspace — **no `rev` pin** (track default branch); the exact built rev is frozen in `vendor/WebSRT/Cargo.lock`. See the "WebSRT dependency tree" section above for the full bump workflow.
-- `static/wasm/` is regenerated by `build.rs` (invokes `wasm-pack` directly; gitignored).
+- **`vendor/QuicSRT-wasm/` is a git submodule** (github.com/maxolgi/QuicSRT-wasm) — the C++ engine (one emcc module: SRT receiver + TS demux + TS muxer), its JS wrappers, and the player TS (`page/vendor/`). `build.rs` links and stages it into `static/vendor/QuicSRT-wasm/` automatically; do not hand-edit that tree (gitignored, regenerated). Bumping is a normal operation: `git submodule update --remote` + `cargo build`. Nested deps (`deps/libquicsrt`, `deps/srt`) ride the submodule commit — see "QuicSRT-wasm dependency tree" above.
+- The old `vendor/WebSRT/` Rust submodule is gone; the Rust stack survives only as the upstream "oracle" gateway in the QuicSRT repos. Never re-add it for SlopShady-side work.
 - Entry points: `slopshady/src/main.rs` (CLI, server/gui startup), `gui.rs` (egui control panel: Start/Stop/Open Browser), `server.rs` (axum router + `#[folder = "../static/"]` embed), `ws.rs` (WebSocket state sync + `PERSIST_KEYS`), `llm.rs` (LLM proxy + `validate_lm_url`), `live_tuning.rs` (server-side tuning loop), `osc.rs` (UDP OSC bridge), `state.rs` (load/save/normalize). Frontend entry: `static/js/main.js`.
 
 ## Frontend conventions (`static/js/`, `static/css/`)

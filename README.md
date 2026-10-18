@@ -94,7 +94,7 @@ Publish the canvas and Webamp audio to a WebSRT gateway for browser viewing. The
 
 ```
 canvas → VideoFrame (WebCodecs, main thread, 1 GPU copy + postMessage/frame)
-       → module worker: VideoEncoder → TS muxer (ts-muxer-wasm) → SRT sender (srt-wasm)
+       → module worker: VideoEncoder → TS muxer (C++ engine) → SRT sender (C++ engine)
                                                                 → WebTransport datagrams
 Webamp analyser → AudioWorklet → worker: Opus AudioEncoder → TS muxer → SRT → WebTransport
 ```
@@ -138,10 +138,13 @@ Single binary, no Python or Node dependencies. Frontend assets are embedded into
    ```bash
    git clone https://github.com/maxolgi/SlopShady.git
    cd SlopShady
-   git submodule update --init --recursive   # populate vendor/WebSRT/ (WASM crate sources)
+   git submodule update --init vendor/QuicSRT-wasm
+   git -C vendor/QuicSRT-wasm submodule update --init deps/libquicsrt
+   git -C vendor/QuicSRT-wasm/deps/libquicsrt submodule update --init deps/srt
    cd slopshady
    cargo run
    ```
+   Building the browser engine additionally requires the [Emscripten SDK](https://emscripten.org/) (`build.rs` locates it via `$EMSDK`, `~/emsdk`, or PATH), plus `cmake` and a C++17 compiler.
 
 3. The server starts on **https://localhost:8100**. The default build (`gui` feature) opens a small egui control panel — click **Start** to launch the HTTPS server and **Open Browser** to open the web app in your system browser (pass `--no-gui` to skip opening the panel). The `--no-default-features` build has no GUI compiled in and launches the HTTPS server directly.
 
@@ -157,19 +160,19 @@ cargo build --release             # optimized binary (~8-12 MB)
 
 > Linux `gui` builds need an OpenGL stack (eframe uses the `glow` backend); no `libwebkit2gtk` or `libgtk-3-dev` is required. To build a pure HTTPS server with no GUI, use `cargo run --no-default-features`.
 
-### Updating WebSRT
+### Updating QuicSRT-wasm
 
-WebSRT lives at `vendor/WebSRT/` as a git submodule (github.com/maxolgi/WebSRT). It ships the three WASM crates (`srt-wasm`, `ts-muxer-wasm`, `mpeg2ts-wasm`) that `build.rs` rebuilds into `static/wasm/` (gitignored). Its internal `srt-protocol` and `mpeg2ts` fork deps are managed inside WebSRT itself.
+QuicSRT-wasm lives at `vendor/QuicSRT-wasm/` as a git submodule (github.com/maxolgi/QuicSRT-wasm). It ships the browser engine — one Emscripten module (SRT receiver + TS demux + TS muxer over the real srt codebase), the JS wrappers, and the player TS (`page/vendor/`) — which `build.rs` links and stages into `static/vendor/QuicSRT-wasm/` (gitignored). Its nested `deps/libquicsrt` (and libquicsrt's own `deps/srt`) are managed inside QuicSRT-wasm itself.
 
-To pull the latest WebSRT changes (whether WebSRT's own source moved, or its `srt-rs`/`mpeg2ts` deps moved upstream):
+To pull the latest changes (whether the engine, the wrappers, the player TS, or the nested dep pins moved):
 
 ```bash
-git submodule update --remote vendor/WebSRT   # advance the pin to latest origin/master
-cargo build                                    # build.rs rebuilds stale WASM
-git add vendor/WebSRT && git commit -m "chore(websrt): bump submodule"
+git submodule update --remote vendor/QuicSRT-wasm   # advance the pin to latest origin/master
+cargo build                                         # build.rs relinks the stale engine
+git add vendor/QuicSRT-wasm && git commit -m "chore(quicsrt): bump submodule"
 ```
 
-That's the whole workflow from SlopShady's side. See `AGENTS.md` ("WebSRT dependency tree") for details on the three-layer pinning.
+That's the whole workflow from SlopShady's side. See `AGENTS.md` ("QuicSRT-wasm dependency tree") for the pinning details.
 
 ### Next Steps
 
@@ -950,16 +953,16 @@ The application loads with "Obsidian Flow / Kinetic Bismuth" as the default shad
 │   ├── css/                   # Application styles (main, webamp, litegraph)
 │   ├── js/                    # Build output (gitignored; regenerated from src/js/)
 │   ├── lib/                   # Vendored third-party libraries (butterchurn, litegraph, webamp)
-│   ├── wasm/                  # WASM build output (gitignored; regenerated from vendor/WebSRT/)
-│   │   ├── srt-wasm/          # Browser-side SRT receiver/sender
-│   │   ├── ts-muxer-wasm/     # MPEG-TS muxer
-│   │   └── mpeg2ts-wasm/      # MPEG-TS demuxer
+│   ├── vendor/QuicSRT-wasm/   # Engine build output (gitignored; regenerated from vendor/QuicSRT-wasm/)
+│   │   ├── js/                # Engine JS wrappers (srt/demux/muxer over one emcc module)
+│   │   ├── build/             # srt_engine.mjs + .wasm (pthreads engine)
+│   │   └── page/vendor/       # tsc output of the vendored player TS
 │   └── content/
 │       ├── manifest.json      # Factory shader catalog
 │       └── shaders/factory/   # 80 built-in GLSL shaders
 ├── vendor/
-│   └── WebSRT/                # Git submodule — source for the WASM crates
-├── .gitmodules                # Submodule definition (vendor/WebSRT)
+│   └── QuicSRT-wasm/          # Git submodule — the C++ engine + JS wrappers + player TS
+├── .gitmodules                # Submodule definition (vendor/QuicSRT-wasm)
 ├── package.json               # tsc dev dependency + build/watch scripts
 ├── tsconfig.json              # TypeScript config (allowJs, Bundler resolution)
 ├── tsconfig.emit.json         # TS emit config (src/js → static/js)
@@ -988,6 +991,4 @@ Third-party libraries are subject to their respective licenses (see [THIRD_PARTY
 | [Webamp](https://webamp.org/) | MIT | Browser Winamp clone (`static/lib/`) |
 | [Butterchurn](https://github.com/jberg/butterchurn) | MIT | Milkdrop visualizer for WebGL (`static/lib/`) |
 | [LiteGraph.js](https://github.com/jagenjo/litegraph.js) | MIT | Node graph editor (`static/lib/`) |
-| [srt-wasm](https://github.com/maxolgi/WebSRT/tree/master/crates/srt-wasm) | MPL-2.0 | SRT receiver/sender WASM (`static/wasm/srt-wasm/`), built from `vendor/WebSRT/` submodule |
-| [ts-muxer-wasm](https://github.com/maxolgi/WebSRT/tree/master/crates/ts-muxer-wasm) | MPL-2.0 | MPEG-TS muxer WASM (`static/wasm/ts-muxer-wasm/`), built from `vendor/WebSRT/` submodule |
-| [mpeg2ts-wasm](https://github.com/maxolgi/WebSRT/tree/master/crates/mpeg2ts-wasm) | MPL-2.0 | MPEG-TS demuxer WASM (`static/wasm/mpeg2ts-wasm/`), built from `vendor/WebSRT/` submodule |
+| [QuicSRT-wasm](https://github.com/maxolgi/QuicSRT-wasm) | MPL-2.0 | Browser engine (emcc module: SRT receiver + TS demux/mux) + JS wrappers + player TS (`static/vendor/QuicSRT-wasm/`), built from the `vendor/QuicSRT-wasm/` submodule (embeds [libquicsrt](https://github.com/maxolgi/libquicsrt) and the [srt](https://github.com/maxolgi/srt) fork, MPL-2.0/Apache-2.0) |

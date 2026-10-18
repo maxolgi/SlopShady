@@ -9,10 +9,15 @@ SlopShady is a Rust application with a vanilla-JS frontend embedded at compile t
 ### Prerequisites (one-time setup)
 
 ```bash
-git submodule update --init --recursive   # populate vendor/WebSRT/ (WASM crate sources)
+git submodule update --init vendor/QuicSRT-wasm                        # the browser engine
+git -C vendor/QuicSRT-wasm submodule update --init deps/libquicsrt    # engine's C++ core
+git -C vendor/QuicSRT-wasm/deps/libquicsrt submodule update --init deps/srt   # the srt fork
 npm install                                # installs typescript (for tsc)
-cargo install wasm-pack                    # builds the three WASM crates
-rustup target add wasm32-unknown-unknown   # required by wasm-pack
+# Emscripten toolchain — build.rs links the engine with emcmake/cmake/em++
+# (located via $EMSDK, ~/emsdk, then PATH; upstream CI pins 6.0.8):
+#   git clone https://github.com/emscripten-core/emsdk ~/emsdk
+#   ~/emsdk/emsdk install latest && ~/emsdk/emsdk activate latest
+# Also needs cmake + ninja + a C++17 compiler.
 ```
 
 ### Build

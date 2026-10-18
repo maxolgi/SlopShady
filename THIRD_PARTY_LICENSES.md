@@ -17,25 +17,30 @@ These are vendored as minified bundles in `static/lib/`. Do not hand-edit them.
 
 | Library | License | Source | Usage |
 |---------|---------|--------|-------|
-| [WebSRT](https://github.com/maxolgi/WebSRT) | MPL-2.0 | Browser SRT sender/receiver | Builds the `srt-wasm`, `ts-muxer-wasm`, and `mpeg2ts-wasm` artifacts under `static/wasm/` (built by `build.rs`) |
+| [QuicSRT-wasm](https://github.com/maxolgi/QuicSRT-wasm) | MPL-2.0 | Browser engine (SRT receiver + TS demux/mux) | Builds the emcc engine module + JS wrappers staged under `static/vendor/QuicSRT-wasm/` (built by `build.rs`). Embeds [libquicsrt](https://github.com/maxolgi/libquicsrt) (MPL-2.0), which pins a fork of [srt](https://github.com/maxolgi/srt) (MPL-2.0 / Apache-2.0) as a nested submodule |
 
-### MPL-2.0 source-availability notice (WebSRT WASM artifacts)
+### MPL-2.0 source-availability notice (QuicSRT engine artifacts)
 
-The compiled WASM blobs under `static/wasm/{srt-wasm,ts-muxer-wasm,mpeg2ts-wasm}/`
-are derived from MPL-2.0-licensed source. MPL-2.0 §3.2 requires that the
-corresponding source be made available. The SlopShady source tree satisfies
-this obligation via the `vendor/WebSRT/` git submodule, which contains the
-full WebSRT source at the pinned commit. `build.rs` reproduces the artifacts
-from that source by invoking `wasm-pack` directly. `static/wasm/` is gitignored
-and regenerated on demand; to build manually:
+The compiled engine module under `static/vendor/QuicSRT-wasm/build/`
+(`srt_engine.mjs` + `srt_engine.wasm`) is derived from MPL-2.0-licensed
+source (QuicSRT-wasm, libquicsrt, and the srt fork). MPL-2.0 §3.2 requires
+that the corresponding source be made available. The SlopShady source tree
+satisfies this obligation via the `vendor/QuicSRT-wasm/` git submodule and
+its nested `deps/libquicsrt` / `deps/srt` submodules, which contain the
+full source at the pinned commits. `build.rs` reproduces the artifacts from
+that source by invoking `emcmake`/`cmake`/`em++` directly.
+`static/vendor/QuicSRT-wasm/` is gitignored and regenerated on demand; to
+build manually:
 
 ```bash
-git submodule update --init --recursive   # populate vendor/WebSRT/
-cargo build                                # build.rs builds the WASM crates
+git submodule update --init vendor/QuicSRT-wasm   # populate the engine sources
+git -C vendor/QuicSRT-wasm submodule update --init deps/libquicsrt
+git -C vendor/QuicSRT-wasm/deps/libquicsrt submodule update --init deps/srt
+cargo build                                       # build.rs links the engine
 ```
 
 MPL-2.0 §3.3 permits combining MPL-licensed code with AGPL-3.0-covered
 code: the combined work may be distributed under AGPL-3.0, while individual
-MPL-licensed files (the WebSRT source) remain under MPL-2.0. The WASM
-modules are served to the browser as separate assets and are not linked
-into the Rust binary.
+MPL-licensed files (the QuicSRT-wasm / libquicsrt / srt sources) remain
+under MPL-2.0. The engine module is served to the browser as a separate
+asset and is not linked into the Rust binary.

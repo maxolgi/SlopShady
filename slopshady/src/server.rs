@@ -199,12 +199,12 @@ async fn api_live_tuning_stop(state: State<Arc<AppState>>) -> axum::Json<Value> 
     crate::live_tuning::live_tuning_stop(state.0).await
 }
 
-/// Proxy the WebSRT gateway's `cert-hash.js`. The caller passes the gateway's
+/// Proxy the QuicSRT gateway's `cert-hash.js`. The caller passes the gateway's
 /// WEB URL (the page the user browses to); `cert-hash.js` is served same-origin
 /// on that host:port. The body advertises both `CERT_HASH` (hex for self-signed
 /// pinning, null for PKI/mkcert) and `WT_PORT` (the WebTransport port), so one
 /// fetch tells the caller everything needed to build the WT URL and pin the
-/// cert. See vendor/WebSRT/docs/embedding.md.
+/// cert. See vendor/QuicSRT-wasm/page/README.md.
 ///
 /// TLS policy: self-signed gateways are a closed-network convenience. Only
 /// loopback/private/link-local hosts (or dotless/`.local`-style names) are
