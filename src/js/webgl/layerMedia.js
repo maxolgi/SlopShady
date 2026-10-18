@@ -37,7 +37,7 @@ export const layerMediaMethods = {
      * Maps media source by layer type:
      *   video  → upload + bind iLayerVideo (unit 5) from params.mediaUrl
      *   image  → bind iLayerImage (unit 6) from params.mediaUrl
-     *   websrt → upload latest VideoFrame + bind iLayerSRT (unit 7) from params.inputIndex
+     *   quicsrt → upload latest VideoFrame + bind iLayerSRT (unit 7) from params.inputIndex
      * Also sets u_layerTexRes to the active media texture's resolution.
      */
     _bindLayerMedia(layer) {
@@ -68,7 +68,7 @@ export const layerMediaMethods = {
             gl.bindTexture(gl.TEXTURE_2D, id.texture);
             gl.uniform1i(layer.layerImageLoc, LAYER_IMAGE_TEXTURE_UNIT);
             if (layer.layerTexResLoc) gl.uniform2f(layer.layerTexResLoc, id.width, id.height);
-        } else if (type === 'websrt' && layer.layerSrtLoc) {
+        } else if (type === 'quicsrt' && layer.layerSrtLoc) {
             const inputIndex = params.inputIndex;
             if (!Number.isFinite(inputIndex)) return;
             const entry = this._uploadLayerSrtFrame(layer, inputIndex);
@@ -82,7 +82,7 @@ export const layerMediaMethods = {
 
     /**
      * Upload the latest QuicSRT VideoFrame for a layer into its per-layer GL
-     * texture. Shared by both renderWebSRT (websrt layer type) and
+     * texture. Shared by both renderQuicSRT (quicsrt layer type) and
      * _bindLayerMedia (shader-mode layers).
      * @returns {object|null} entry { tex, w, h, lastFrame } or null
      */
@@ -92,8 +92,8 @@ export const layerMediaMethods = {
         const frame = StreamingInputUI.latestVideoFrame(inputIndex);
         if (!frame) return null;
 
-        if (!this._websrtTextures) this._websrtTextures = new Map();
-        let entry = this._websrtTextures.get(layer.index);
+        if (!this._quicsrtTextures) this._quicsrtTextures = new Map();
+        let entry = this._quicsrtTextures.get(layer.index);
         if (!entry) {
             const tex = gl.createTexture();
             gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -102,7 +102,7 @@ export const layerMediaMethods = {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             entry = { tex, w: 0, h: 0, lastFrame: null };
-            this._websrtTextures.set(layer.index, entry);
+            this._quicsrtTextures.set(layer.index, entry);
         }
 
         if (entry.lastFrame !== frame) {
@@ -539,7 +539,7 @@ export const layerMediaMethods = {
      * shader (cover/contain/stretch). One texture per layer index, uploaded
      * fresh each frame from the latest decoded VideoFrame.
      */
-    renderWebSRT(layer, layerFBO) {
+    renderQuicSRT(layer, layerFBO) {
         const gl = state.gl;
         if (!gl || !this.imageProgram) return;
         const inputIndex = layer.material?.params?.inputIndex;

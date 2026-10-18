@@ -26,7 +26,7 @@ const TYPE_OPTIONS = [
     { value: 'visualizer', label: 'Visualizer' },
     { value: 'milkdrop', label: 'Milkdrop' },
     { value: 'scanimate', label: 'Scanimate' },
-    { value: 'websrt', label: 'QuicSRT' },
+    { value: 'quicsrt', label: 'QuicSRT' },
 ];
 
 const BLEND_OPTIONS = [
@@ -501,7 +501,7 @@ export const LayerMixer = {
             case 'screen':
                 return `<span class="content-label">Fit</span>
                     ${this._buildFitDropdown(prefix, params)}`;
-            case 'websrt': {
+            case 'quicsrt': {
                 const currentInput = String(params.inputIndex ?? 0);
                 const inputOptions = [];
                 for (let i = 0; i < 8; i++) {
@@ -617,14 +617,14 @@ export const LayerMixer = {
      *  one layer. Must run whenever material.type or params.shaderMode changes
      *  — _rebuildShaderDropdowns() alone only rebuilds menu items, leaving the
      *  wrapper visibility and FX button stale (e.g. shader dropdown stays
-     *  visible after switching a layer to websrt with FX off). */
+     *  visible after switching a layer to quicsrt with FX off). */
     _syncLayerTypeUi(i) {
         const layer = LayerSystem.layers[i];
         if (!layer) return;
-        // FX button: only visible for video/image/websrt types
+        // FX button: only visible for video/image/quicsrt types
         const fxBtn = getEl(`mix-fx-${i}`);
         if (fxBtn) {
-            const supported = ['video', 'image', 'websrt'];
+            const supported = ['video', 'image', 'quicsrt'];
             const isSupported = supported.includes(layer.material?.type);
             fxBtn.style.display = isSupported ? '' : 'none';
             fxBtn.classList.toggle('active', !!layer.material?.params?.shaderMode);
@@ -842,7 +842,7 @@ export const LayerMixer = {
             case 'webcam':
             case 'screen':
                 return { source: '', params: { fit: this._readDropdownValue(`${prefix}-fit`) || 'contain' } };
-            case 'websrt': {
+            case 'quicsrt': {
                 const inputIndex = parseInt(this._readDropdownValue(`${prefix}-srtInput`), 10) || 0;
                 return { source: null, params: { inputIndex } };
             }
@@ -1004,7 +1004,7 @@ export const LayerMixer = {
                         );
                         this.refreshAllMilkdropDropdowns();
                     }
-                    if (type === 'websrt') {
+                    if (type === 'quicsrt') {
                         const newInput = values.params.inputIndex;
                         if (Number.isFinite(oldInput) && oldInput !== newInput) {
                             StreamingInputUI.removeLayerTap(oldInput, layerIndex);
@@ -1016,7 +1016,7 @@ export const LayerMixer = {
                             StreamingInputUI.setLayerMute(newInput, layerIndex, !!layer.audioMuted);
                         }
                         if (!layer.material.params?.shaderMode) {
-                            layer.material.source = `websrt:${newInput}`;
+                            layer.material.source = `quicsrt:${newInput}`;
                         }
                     }
                 }
@@ -1125,8 +1125,8 @@ export const LayerMixer = {
         const oldType = layer.material?.type;
         if (oldType === newType) return;
 
-        // If leaving websrt, release the input refcount + drop audio tap.
-        if (oldType === 'websrt') {
+        // If leaving quicsrt, release the input refcount + drop audio tap.
+        if (oldType === 'quicsrt') {
             const oldInput = layer.material?.params?.inputIndex;
             if (Number.isFinite(oldInput)) {
                 StreamingInputUI.removeLayerTap(oldInput, layerIndex);
@@ -1161,13 +1161,13 @@ export const LayerMixer = {
             };
         } else if (newType === 'scanimate') {
             layer.material.params = {};
-        } else if (newType === 'websrt') {
+        } else if (newType === 'quicsrt') {
             // Default to input 0; user picks via the second dropdown.
             layer.material.params = { inputIndex: 0 };
             StreamingInputUI.acquire(0);
             StreamingInputUI.setLayerVolume(0, layerIndex, layer.volume ?? 1.0);
             StreamingInputUI.setLayerMute(0, layerIndex, !!layer.audioMuted);
-            layer.material.source = 'websrt:0';
+            layer.material.source = 'quicsrt:0';
         } else {
             layer.material.params = {};
         }
@@ -1222,7 +1222,7 @@ export const LayerMixer = {
         if (!layer) return;
         layer.volume = parseFloat(value);
         // Apply live to StreamingInputUI if this layer routes to a QuicSRT input.
-        const inputIndex = this._layerWebSRTInput(index);
+        const inputIndex = this._layerQuicSRTInput(index);
         if (inputIndex >= 0) {
             StreamingInputUI.setLayerVolume(inputIndex, index, layer.volume);
         }
@@ -1233,7 +1233,7 @@ export const LayerMixer = {
         const layer = LayerSystem.layers[index];
         if (!layer) return;
         layer.audioMuted = !layer.audioMuted;
-        const inputIndex = this._layerWebSRTInput(index);
+        const inputIndex = this._layerQuicSRTInput(index);
         if (inputIndex >= 0) {
             StreamingInputUI.setLayerMute(inputIndex, index, layer.audioMuted);
             // Re-apply volume too so unmute restores the correct level.
@@ -1245,9 +1245,9 @@ export const LayerMixer = {
     },
 
     /** Returns the QuicSRT input index routed to this layer, or -1 if none. */
-    _layerWebSRTInput(index) {
+    _layerQuicSRTInput(index) {
         const layer = LayerSystem.layers[index];
-        if (!layer || layer.material?.type !== 'websrt') return -1;
+        if (!layer || layer.material?.type !== 'quicsrt') return -1;
         const idx = layer.material.params?.inputIndex;
         return Number.isFinite(idx) ? idx : -1;
     },
@@ -1269,7 +1269,7 @@ export const LayerMixer = {
         const defaults = {
             video: DEFAULT_MEDIA_VIDEO_SHADER,
             image: DEFAULT_MEDIA_IMAGE_SHADER,
-            websrt: DEFAULT_MEDIA_SRT_SHADER,
+            quicsrt: DEFAULT_MEDIA_SRT_SHADER,
         };
         if (!defaults[type]) return;
 

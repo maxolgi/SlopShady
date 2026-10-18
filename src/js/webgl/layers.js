@@ -393,7 +393,7 @@ export const LayerSystem = {
             // Skip layers that need a per-layer shader program but don't have one.
             // Material types here use a shared program (imageProgram / dedicated
             // engine) and don't need layer.program to be set.
-            const programlessTypes = ['visualizer', 'milkdrop', 'scanimate', 'websrt', 'image', 'video', 'webcam', 'screen', 'text'];
+            const programlessTypes = ['visualizer', 'milkdrop', 'scanimate', 'quicsrt', 'image', 'video', 'webcam', 'screen', 'text'];
             if (!layer.program && !programlessTypes.includes(layer.material?.type)) continue;
 
             this.renderLayerToTexture(layer, currentTime);
@@ -720,8 +720,8 @@ export const LayerSystem = {
         }
 
         // Handle QuicSRT input type — upload latest decoded VideoFrame.
-        if (layer.material && layer.material.type === 'websrt' && !layer.material.params?.shaderMode) {
-            this.renderWebSRT(layer, layerFBO);
+        if (layer.material && layer.material.type === 'quicsrt' && !layer.material.params?.shaderMode) {
+            this.renderQuicSRT(layer, layerFBO);
             return;
         }
 

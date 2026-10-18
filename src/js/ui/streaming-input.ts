@@ -567,7 +567,7 @@ export const StreamingInputUI = {
                 for (const [layerIndex, gain] of entry.layerGains) {
                     entry.audioSourceNode.connect(gain);
                 }
-                if (this._analyserSource === `websrt:${inputIndex}`) {
+                if (this._analyserSource === `quicsrt:${inputIndex}`) {
                     if (!entry.analyserTap) entry.analyserTap = this._ensureAnalyserTap(inputIndex);
                     try { entry.audioSourceNode.connect(entry.analyserTap!); } catch (e) { /* ignore */ }
                     entry._analyserConnected = true;
@@ -617,7 +617,7 @@ export const StreamingInputUI = {
         for (let i = 0; i < NUM_INPUTS; i++) {
             const entry = this._inputs[i];
             if (!entry || !entry.audioSourceNode) continue;
-            const should = (this._analyserSource === `websrt:${i}`);
+            const should = (this._analyserSource === `quicsrt:${i}`);
             const has = entry._analyserConnected;
             if (should && !has) {
                 if (!entry.analyserTap) entry.analyserTap = this._ensureAnalyserTap(i);
@@ -736,7 +736,7 @@ export const StreamingInputUI = {
         let items = `<div class="dropdown__item${this._analyserSource === 'webamp' ? ' active' : ''}" data-value="webamp">Webamp</div>`;
         for (let i = 0; i < NUM_INPUTS; i++) {
             const name = this.getInputName(i) || `Input ${i + 1}`;
-            const v = `websrt:${i}`;
+            const v = `quicsrt:${i}`;
             items += `<div class="dropdown__item${this._analyserSource === v ? ' active' : ''}" data-value="${v}">${name}</div>`;
         }
         menu.innerHTML = items;
@@ -776,7 +776,7 @@ export const StreamingInputUI = {
         const span = document.querySelector('#stream-input-analyser-dropdown .dropdown__selected span');
         if (!span) return;
         if (this._analyserSource === 'webamp') { span.textContent = 'Webamp'; return; }
-        const m = /^websrt:(\d+)$/.exec(this._analyserSource);
+        const m = /^quicsrt:(\d+)$/.exec(this._analyserSource);
         if (m) {
             const i = parseInt(m[1], 10);
             span.textContent = this.getInputName(i) || `Input ${i + 1}`;
