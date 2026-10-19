@@ -113,7 +113,13 @@ pub async fn chat_completions(
         .build()
         .unwrap();
 
-    let resp = match client.post(&url).headers(headers).json(&payload).send().await {
+    let resp = match client
+        .post(&url)
+        .headers(headers)
+        .json(&payload)
+        .send()
+        .await
+    {
         Ok(resp) => resp,
         Err(e) => {
             let error = if e.is_connect() {

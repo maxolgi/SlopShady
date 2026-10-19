@@ -159,7 +159,9 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
             }
 
             let broadcast_msg = json!({"type": "update", "data": sanitized_data}).to_string();
-            let _ = state_for_write.broadcast_tx.send((client_id, broadcast_msg));
+            let _ = state_for_write
+                .broadcast_tx
+                .send((client_id, broadcast_msg));
 
             // Hot-swap the OSC UDP bridge when oscPort/oscBind change.
             // Runs on a blocking thread because restart joins the old listener

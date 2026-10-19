@@ -126,7 +126,9 @@ async fn stream_llm_call(
         buffer.extend_from_slice(&chunk);
 
         while let Some(pos) = buffer[consumed..].iter().position(|&b| b == b'\n') {
-            let line = String::from_utf8_lossy(&buffer[consumed..consumed + pos]).trim_end().to_string();
+            let line = String::from_utf8_lossy(&buffer[consumed..consumed + pos])
+                .trim_end()
+                .to_string();
             consumed += pos + 1;
 
             if !line.starts_with("data: ") {

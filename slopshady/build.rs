@@ -234,7 +234,12 @@ fn emscripten_bin(tool: &str) -> std::path::PathBuf {
         roots.push(Path::new(&emsdk).join("upstream").join("emscripten"));
     }
     if let Ok(home) = std::env::var("HOME") {
-        roots.push(Path::new(&home).join("emsdk").join("upstream").join("emscripten"));
+        roots.push(
+            Path::new(&home)
+                .join("emsdk")
+                .join("upstream")
+                .join("emscripten"),
+        );
     }
     for root in &roots {
         let bin = root.join(&name);
@@ -262,7 +267,11 @@ fn emscripten_bin(tool: &str) -> std::path::PathBuf {
 /// Run a command in `cwd`, panicking with context on failure.
 fn run_cmd(bin: &Path, args: &[&str], cwd: &Path, what: &str) {
     let display = format!("{} {}", bin.display(), args.join(" "));
-    match std::process::Command::new(bin).args(args).current_dir(cwd).status() {
+    match std::process::Command::new(bin)
+        .args(args)
+        .current_dir(cwd)
+        .status()
+    {
         Ok(s) if s.success() => {}
         Ok(s) => panic!("{what} failed (status {s}): {display}"),
         Err(e) => panic!("failed to invoke {what} ({display}): {e}"),
@@ -396,7 +405,11 @@ fn stage_quicsrt_engine(repo_root: &Path) {
     for fname in ["srt_engine.mjs", "srt_engine.wasm"] {
         let src = sub.join("build").join(fname);
         if let Err(e) = fs::copy(&src, out_build.join(fname)) {
-            panic!("failed to copy {} (run the engine build first): {}", src.display(), e);
+            panic!(
+                "failed to copy {} (run the engine build first): {}",
+                src.display(),
+                e
+            );
         }
     }
 

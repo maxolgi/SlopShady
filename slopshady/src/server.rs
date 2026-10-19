@@ -148,7 +148,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/shaders/download", get(download_shaders))
         .route("/api/stream/cert-hash", get(api_stream_cert_hash));
 
-    let router = if state.llm_relay_disabled.load(std::sync::atomic::Ordering::SeqCst) {
+    let router = if state
+        .llm_relay_disabled
+        .load(std::sync::atomic::Ordering::SeqCst)
+    {
         router
     } else {
         router
@@ -234,9 +237,7 @@ fn closed_network_host(host: &str) -> bool {
     }
     if let Ok(ip) = h.parse::<std::net::IpAddr>() {
         return match ip {
-            std::net::IpAddr::V4(v4) => {
-                v4.is_loopback() || v4.is_private() || v4.is_link_local()
-            }
+            std::net::IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
             std::net::IpAddr::V6(v6) => {
                 let s = v6.segments();
                 v6.is_loopback()
@@ -245,10 +246,7 @@ fn closed_network_host(host: &str) -> bool {
             }
         };
     }
-    !h.contains('.')
-        || h.ends_with(".local")
-        || h.ends_with(".lan")
-        || h.ends_with(".internal")
+    !h.contains('.') || h.ends_with(".local") || h.ends_with(".lan") || h.ends_with(".internal")
 }
 
 async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Json<Value> {
