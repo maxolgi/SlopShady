@@ -128,8 +128,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # build.rs resolves emsdk via $EMSDK → ~/emsdk → PATH (.bat shims on
-      # Windows). 6.0.8 matches upstream QuicSRT-wasm CI.
+      # build.rs resolves emsdk via $EMSDK → ~/emsdk → PATH (Windows
+      # launchers are <tool>.exe pylaunchers on emsdk >= 4, legacy
+      # <tool>.bat below that). 6.0.8 matches upstream QuicSRT-wasm CI.
       - name: Install Emscripten (emsdk 6.0.8)
         shell: bash
         run: |
@@ -165,7 +166,18 @@ jobs:
             libxcursor-dev libxi-dev libxxf86vm-dev \
             libwayland-dev libxkbcommon-dev
 
+      # Windows: build under an emsdk-activated environment so the pylauncher
+      # .exe entry points build.rs spawns directly get canonical
+      # EMSDK_PYTHON/EM_CONFIG and the em* tools on PATH. `call` (not a bare
+      # invoke) so cmd returns control and runs cargo afterwards.
+      - name: Build slopshady binary (Windows)
+        if: runner.os == 'Windows'
+        working-directory: slopshady
+        shell: cmd
+        run: call "%EMSDK%\emsdk_env.bat" && cargo build --release
+
       - name: Build slopshady binary
+        if: runner.os != 'Windows'
         working-directory: slopshady
         run: cargo build --release
 

@@ -143,7 +143,7 @@ tracked sources either, that side never arises.
 
 ## Verification
 
-**There is no test suite, linter, formatter, or CI.** No `rustfmt.toml`/`clippy.toml` — match surrounding style.
+**CI exists: `.github/workflows/build.yml`.** The `check` job (ubuntu) runs advisory `cargo fmt --check` / `cargo clippy`, `cargo test`, and `npm run typecheck`; the `build` job produces Linux/Windows/macOS release artifacts and publishes a GitHub Release. No `rustfmt.toml`/`clippy.toml` — match surrounding style.
 
 - `cargo check` from `slopshady/` (must pass before submitting).
 - Run the release binary and exercise the affected feature in the UI.

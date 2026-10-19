@@ -221,42 +221,50 @@ fn engine_needs_rebuild(repo_root: &Path) -> bool {
 /// Locate an Emscripten toolchain binary (`emcmake` / `em++`). Resolution
 /// order mirrors upstream QuicSRT-wasm's `source ~/emsdk/emsdk_env.sh`:
 /// `$EMSDK/upstream/emscripten`, then `~/emsdk/upstream/emscripten`, then
-/// PATH. Panics with install instructions when not found.
+/// PATH. Panics with the full probed file list when not found.
+///
+/// Entry-point naming differs by emsdk generation: >= 4 generates Windows
+/// launchers as `<tool>.exe` (pylauncher copies — create_entry_points.py
+/// explicitly deletes the legacy `.bat`/`.ps1` shims, so probing `.bat`
+/// alone misses a healthy 6.0.8 install), <= 3 shipped `<tool>.bat`, and
+/// non-Windows uses the extensionless sh script in every generation.
 fn emscripten_bin(tool: &str) -> std::path::PathBuf {
-    // Windows emsdk shims carry a .bat extension (same split as tsc_bin).
-    let name = if cfg!(windows) {
-        format!("{tool}.bat")
+    let candidates: Vec<String> = if cfg!(windows) {
+        vec![format!("{tool}.exe"), format!("{tool}.bat")]
     } else {
-        tool.to_string()
+        vec![tool.to_string()]
     };
-    let mut roots: Vec<std::path::PathBuf> = Vec::new();
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(emsdk) = std::env::var("EMSDK") {
-        roots.push(Path::new(&emsdk).join("upstream").join("emscripten"));
+        dirs.push(Path::new(&emsdk).join("upstream").join("emscripten"));
     }
     if let Ok(home) = std::env::var("HOME") {
-        roots.push(
+        dirs.push(
             Path::new(&home)
                 .join("emsdk")
                 .join("upstream")
                 .join("emscripten"),
         );
     }
-    for root in &roots {
-        let bin = root.join(&name);
-        if bin.exists() {
-            return bin;
-        }
-    }
     if let Ok(path) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path) {
-            let bin = dir.join(&name);
+        dirs.extend(std::env::split_paths(&path));
+    }
+    for dir in &dirs {
+        for name in &candidates {
+            let bin = dir.join(name);
             if bin.exists() {
                 return bin;
             }
         }
     }
+    let searched = dirs
+        .iter()
+        .flat_map(|dir| candidates.iter().map(move |name| dir.join(name)))
+        .map(|bin| bin.display().to_string())
+        .collect::<Vec<_>>()
+        .join("\n  ");
     panic!(
-        "Emscripten binary `{tool}` not found (looked in $EMSDK, ~/emsdk, PATH). \
+        "Emscripten binary `{tool}` not found. Searched:\n  {searched}\n\
          The QuicSRT-wasm engine builds with emsdk: \
          git clone https://github.com/emscripten-core/emsdk ~/emsdk && \
          ~/emsdk/emsdk install latest && ~/emsdk/emsdk activate latest \
