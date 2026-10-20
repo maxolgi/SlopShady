@@ -8,7 +8,7 @@ A real-time WebGL2 GLSL shader editor featuring AI-powered shader generation via
 - [Getting Started](#getting-started)
 - [Architecture](#architecture)
 - [Capture & Export](#capture--export)
-- [Live Stream (WebSRT)](#live-stream-websrt)
+- [Live Stream (QuicSRT)](#live-stream-quicsrt)
 - [Live Tuning](#live-tuning)
 - [Content Browser](#content-browser)
 - [Scanimate Engine](#scanimate-engine)
@@ -43,7 +43,7 @@ A real-time WebGL2 GLSL shader editor featuring AI-powered shader generation via
 - **Shader Library**: Save, load, and manage shaders with no storage limit
 - **Screenshot Capture**: Export shader output as PNG or WebP with configurable resolution and quality
 - **Video Recording**: Record shader output as WebM video with configurable codec, bitrate, and resolution
-- **Live Stream**: Publish the canvas + Webamp audio over WebSRT (WebTransport + SRT) with H.264 / HEVC / AV1 + Opus, adaptive or constant bitrate
+- **Live Stream**: Publish the canvas + Webamp audio over QuicSRT (WebTransport + SRT) with H.264 / HEVC / AV1 + Opus, adaptive or constant bitrate
 - **Playlist**: Automated shader sequencing with configurable duration, crossfade, MIDI triggering, and loop mode
 - **Feedback Effect**: Global and per-layer frame feedback with configurable zoom, rotation, blend mode, saturation, and decay
 - **Sync**: Beat-synced LFOs with configurable BPM
@@ -88,9 +88,9 @@ Screenshots are encoded as base64 data URLs for transmission to the LLM API.
 
 ---
 
-## Live Stream (WebSRT)
+## Live Stream (QuicSRT)
 
-Publish the canvas and Webamp audio to a WebSRT gateway for browser viewing. The pipeline runs almost entirely off the main thread:
+Publish the canvas and Webamp audio to a QuicSRT gateway for browser viewing. The pipeline runs almost entirely off the main thread:
 
 ```
 canvas → VideoFrame (WebCodecs, main thread, 1 GPU copy + postMessage/frame)
@@ -103,7 +103,7 @@ Webamp analyser → AudioWorklet → worker: Opus AudioEncoder → TS muxer → 
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Gateway URL** | `https://127.0.0.1:4433/wt` | WebTransport URL of your WebSRT gateway |
+| **Gateway URL** | `https://127.0.0.1:4433/wt` | WebTransport URL of your QuicSRT gateway |
 | **Stream name** | `slopshady` | Viewers connect with `?stream=<name>` |
 | **Codec** | AV1 (auto-detected) | H.264 / HEVC / AV1; codecs are probed on load and filtered to what the local muxer + viewer can carry |
 | **Bitrate** | 8 Mbps | Target video bitrate (live-adjustable when ABR is off) |
@@ -229,7 +229,7 @@ All `/api/models`, `/api/chat/completions` and `/api/live-tuning/*` routes are t
 | `POST /api/live-tuning/shader-result` | POST | Receives shader compilation results during tuning |
 | `POST /api/live-tuning/stop` | POST | Aborts active tuning session |
 | `GET /api/shaders/download` | GET | Downloads the `shaders.json` file |
-| `GET /api/stream/cert-hash?url=<gateway>` | GET | Proxies the WebSRT gateway's `cert-hash.js` so the browser can pin it for WebTransport (same-origin; avoids CORS). Self-signed certs are accepted only for closed-network hosts (private/loopback IPs, `.local`-style names); public gateways must present a PKI-valid certificate |
+| `GET /api/stream/cert-hash?url=<gateway>` | GET | Proxies the QuicSRT gateway's `cert-hash.js` so the browser can pin it for WebTransport (same-origin; avoids CORS). Self-signed certs are accepted only for closed-network hosts (private/loopback IPs, `.local`-style names); public gateways must present a PKI-valid certificate |
 
 ---
 

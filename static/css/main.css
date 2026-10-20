@@ -2900,7 +2900,7 @@ body.nodes-view #node-inspector { pointer-events: auto; }
     background: var(--slop-active);
 }
 
-/* Live Stream Inputs panel (WebSRT receive) — master-detail */
+/* Live Stream Inputs panel (QuicSRT receive) — master-detail */
 #stream-input-panel .content-title { margin-bottom: 6px; }
 #stream-input-panel input[type="text"] {
     padding: 6px 8px;

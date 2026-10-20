@@ -187,5 +187,5 @@ tracked sources either, that side never arises.
 ## Submitting changes
 
 PR against `main`. Ensure `cargo check` passes from `slopshady/`. Describe verification (no CI to fall back on).
-- A `vendor/WebSRT/` submodule bump needs no extra step — `build.rs` rebuilds WASM on the next `cargo build`. Nothing under `static/wasm/` is committed (gitignored).
+- A `vendor/QuicSRT-wasm/` submodule bump needs no extra step — `build.rs` relinks the engine on the next `cargo build`. Nothing under `static/vendor/QuicSRT-wasm/` is committed (gitignored).
 
