@@ -1,3 +1,8 @@
 [submodule "vendor/QuicSRT-wasm"]
 	path = vendor/QuicSRT-wasm
 	url = https://github.com/maxolgi/QuicSRT-wasm
+	# build.rs stages SlopShady-authored wrapper .d.ts files into js/ on
+	# every build (untracked there by design). Don't let that perpetual
+	# untracked content mark the submodule as modified in git status;
+	# tracked-file edits and real pin changes still surface.
+	ignore = untracked
