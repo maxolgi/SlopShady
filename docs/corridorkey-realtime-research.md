@@ -1,274 +1,259 @@
-# CorridorKey 2.0 → Realtime 1080p: Research & Roadmap
+# Realtime 1080p Keying for SlopShady — Research & Roadmap (v2)
 
-Goal: green/blue-screen keying at **1080p60** quality comparable to CorridorKey 2.0,
-running live, feedable into SlopShady. Hardware: one RTX 5090 (32 GB, Blackwell).
-Audience: first-time model trainer (this doc doubles as the learning curriculum).
+Goal: **live 1080p keying of people** feedable into SlopShady as a video layer,
+in two modes: **chroma** (green/blue screen, CorridorKey-class quality) and
+**screenless** (video-call-style salient human matting, no color background).
+Hardware: one RTX 5090 (32 GB, Blackwell). Audience: first-time model trainer.
 
-Sources: CorridorKey 2.0 source (`infer.py`, `foundations.py`, `stage1.py`, `stage2.py`
-read directly from the repo), its README/VRAM tables, RVM paper/repo, ONNX/TRT
-community ports. Items marked **[estimate]** are my math, to be verified in Phase 0.
+v2 changes (after agent review + new requirements): dual-mode scope, separate
+repo (`livekey`), two-tier serving (browser quick-key + 5090 sidecar), screenless
+teacher switched from CorridorKey to a license-clean BiRefNet ensemble, new M0
+milestone (usable keyer with zero training), VRAM claim corrected, fp8/custom-v2
+cut. v1 of this doc is superseded.
+
+Verified vs estimated: model facts were read from CorridorKey 2.0 source
+(`infer.py`, `foundations.py`, `stage1.py`, `stage2.py`) and the HF model card;
+2025–26 SOTA claims were web-verified (BiRefNet, BEN2, MatAnyone, MediaPipe).
+Items marked **[estimate]** remain my math, to be confirmed in M1 benchmarks.
 
 ---
 
 ## 1. TL;DR
 
-- **Pure inference optimization of CorridorKey cannot reach realtime 1080p. Ever.**
-  The model needs roughly **8–10 TFLOPs per 1080p frame** **[estimate, see §3]**;
-  60 fps means ~500 sustained TFLOPs — 3–5× beyond a 5090 even at perfect
-  utilization, and the real bottleneck (offline Hann-window batching, quadratic
-  spatiotemporal attention, memory churn) is worse than the FLOP math suggests.
-- **Distillation closes the gap.** Train a small *student* network to reproduce the
-  *outputs* of CorridorKey (the *teacher*). The student never runs the three
-  foundation models (C-RADIOv4-SO400M, MoGe-2, DeepMind RVM-MAE) or the Hann
-  windows — it learns to imitate their combined behavior from RGB frames alone.
-- **The "100×" decomposes cleanly** into ~20–40× from architecture (distill into a
-  RVM-class recurrent student: proven 104 fps at 1080p on a *1080 Ti*) × ~3–5× from
-  inference tech (fp16/fp8, TensorRT/torch.compile, CUDA graphs, decode/encode
-  pipelining). Product: **60–200×**. That's the whole trick.
-- **SlopShady integration needs zero SlopShady code for v0**: SlopShady already
-  ingests live SRT/WebTransport video via its streaming-input layers (QuicSRT).
-  The keyer runs as a sidecar on the 5090 box and streams the keyed feed to it.
-- Timeline for a motivated beginner: **~4–8 weeks part-time** to student v1
-  (fine-tuned RobustVideoMatting), longer for a custom student with better quality.
+- CorridorKey cannot run realtime 1080p by optimization alone: ~8–10 TFLOPs per
+  frame (review-confirmed order of magnitude) ⇒ 60 fps needs ~400–600 sustained
+  TFLOPs vs a 5090's ~210 dense fp16 peak. **Distillation is the path.**
+- **Two modes, two teachers:** chroma mode distills from CorridorKey (nothing
+  else does screen-unmixing + FG reconstruction + temporal stability). Screenless
+  mode **does not touch CorridorKey at all** — wrong task (its domain is rendered
+  chroma screens) and wrong license (would taint the student CC BY-NC-SA). It
+  distills from an MIT-licensed BiRefNet + BEN2 ensemble instead.
+- **One student family:** RVM-class recurrent conv-GRU nets (proven 104 fps @
+  1080p on a 1080 Ti; ONNX/TensorRT-proven; O(1) streaming state; graceful
+  720p fallback via `downsample_ratio`). Two checkpoints: `chroma`, `screenless`.
+- **Two serving tiers:** (1) *browser quick-key* — MediaPipe SelfieSegmenter
+  (Apache-2.0) inside SlopShady's frontend, zero sidecar, Meet-tier quality;
+  (2) *quality tier* — the `livekey` sidecar on the 5090 (capture → student TRT
+  engine → NVENC → SRT), hair-grade quality, works today over SlopShady's
+  existing streaming-input layers.
+- **SlopShady integration = convention, not code:** point a streaming-input layer
+  at `srt://<keyer-box>:<port>`. No cargo feature that spawns/distributes the
+  sidecar (couples release cycles; CorridorKey's license forbids commercial
+  software integration without agreement — keep the repos strictly separate).
+- **M0 ships a usable screenless keyer with zero ML work** (stock RVM behind the
+  sidecar) — validate the whole serving path before training anything.
 
----
-
-## 2. What CorridorKey 2.0 actually is (from source)
+## 2. What CorridorKey 2.0 is (chroma teacher)
 
 ```
 input RGB (+optional hint)
-  ├─ foundations.py (frozen)                    → per-frame features at /64
-  │   ├─ C-RADIOv4-SO400M   (input H/4·W/4, patch16, ~400M params)
-  │   ├─ MoGe-2 ViT-B       (input 7H/32·7W/32, patch14)
-  │   └─ DeepMind RVM MAE   (recurrent feature extractor, "small")
-  ├─ stage1.py — spatiotemporal transformer     → "baton" d=512 at /16
-  │   ├─ patchify RGB+hint → d=512 at /16 (~8.6K tokens/frame @1080p)
-  │   ├─ 2× full-spatial attention at /16
-  │   ├─ downsample → /64, concat VFM feats → d=1536
-  │   ├─ 10× FULL spatiotemporal attention  ← the offline killer
-  │   ├─ mid detour /64→/16→/64 (Swin blocks)
-  │   ├─ upsample → /16, U-net skips, 6–8× Swin-3D (full-T windows)
-  │   └─ run over overlapping Hann windows (up to 80 frames!)
-  └─ stage2.py — per-frame refinement           → alpha + FG at full res
-      ├─ patchify RGB 768d + baton 512d = 1280d at /16
-      ├─ 10 blocks: 2× full-spatial (8.6K tokens) + Swin/CSwin
-      ├─ late zero-init pixel skip (patchify_2 + gate)
-      └─ depatchify 16× → (α, RGB); optional /4 ConvNeXt refine head
+  ├─ foundations (frozen)                       → features at /64
+  │   ├─ C-RADIOv4-SO400M (H/4·W/4 in, patch16, ~400M params)
+  │   ├─ MoGe-2 ViT-B (7H/32·7W/32 in, patch14)
+  │   └─ DeepMind RVM-MAE (recurrent, "small")
+  ├─ stage1 — spatiotemporal transformer        → "baton" d=512 @ /16
+  │   ├─ 2× full-spatial attention @ /16 (~8.6K tok/frame @1080p)
+  │   ├─ /64 body: 10× FULL spatiotemporal attention over Hann windows
+  │   │   (up to 80 frames × ~540 tok = ~43K tokens, quadratic) ← offline killer
+  │   ├─ mid /64→/16→/64 Swin detour, U-net skips, 6–8× Swin-3D
+  ├─ stage2 — per-frame refinement (no temporal) → α + FG @ full res
+  │   └─ 10 blocks d=1280 @ /16, 2 full-spatial, depatchify 16×
 ```
 
-Facts that matter for us:
+Facts that matter:
 
-- Stage 1's `/64` body attends across **all frames of a Hann window jointly**
-  (80 frames × ~540 tokens = ~43K tokens, quadratic attention ×10 blocks).
-  That's why 48 GB cards are busy at 1080p. This is a *batch* design; it is
-  fundamentally at odds with per-frame streaming. (`recurrent_64_sites` hints a
-  recurrent memory option exists, but shipped configs don't rely on it.)
-- Stage 2 has **no temporal mixing** — everything temporal lives in stage 1.
-- The runtime has a `--model_scale` Lanczos hook: run the whole teacher at e.g.
-  0.75× or 0.5× resolution. Untested quality tradeoff — ablate in Phase 0.
-- Outputs we need for labels: `alpha` and `fg` (or `cutout`), writable as
-  ProRes 4444 (`yuva444p12le`) — i.e., the teacher already emits exactly the
-  lossless-with-alpha training format we want.
+- Trained **entirely on in-house 3D-rendered data** (per the HF model card) —
+  strong precedent for our synthetic-composite data strategy.
+- VRAM is **not** the constraint (official: 4 GB @1440p, 6 GB @4K; the Hann
+  window auto-sizing manages memory fine). The constraint is pure compute
+  throughput. *(v1 of this doc wrongly claimed 48 GB cards struggle at 1080p.)*
+- `--model_scale` (Lanczos) lets the teacher label at reduced res — ablate once.
+- Outputs `alpha`/`fg`/`cutout` as ProRes 4444 / FFV1 `yuva444p16le` — exactly
+  the labeled training format we want.
+- License (CC BY-NC-SA 4.0 variant) adds: no paid API, no commercial-software
+  integration without written agreement, keep the "CorridorKey" name, $20M-org
+  seat clause. Teacher *outputs* (labels) used personally are unencumbered;
+  anything derived from the model itself inherits its terms.
 
-## 3. The speed math (why realtime teacher is impossible)
+## 3. Speed math (why realtime teacher is impossible)
 
-Padded 1080p (1920×1152, shape quantum 128): **8,640 tokens/frame at /16**,
-540 at /64. Per-frame cost, big-ticket items **[estimates — verify Phase 0]**:
+Padded 1080p (1920×1152): 8,640 tokens/frame @ /16; 540 @ /64. **[estimates,
+order confirmed by review]**
 
-| Component | ~TFLOPs/frame | Notes |
+| Component | ~TFLOPs/frame |
+|---|---|
+| Foundations (C-RADIO ~0.6 + MoGe ~0.1 + RVM) | ~0.8 |
+| Stage-1 enc_16 (2× full-spatial @ 8.6K tok) | ~0.7 |
+| Stage-1 body_64 @ Hann 80/40, amortized | ~2.5–3.5 |
+| Stage-1 Swin stacks + mid detour | ~0.5 |
+| Stage-2 (10 blocks d=1280, 2 full-spatial) | ~3.5–4.5 |
+| **Total** | **~8–10** ⇒ 60 fps ≈ 400–600 TF sustained |
+
+Even `hann_chunk=1` (forfeiting temporal context) leaves ~5 TF/frame — still
+150+ TF for 60 fps. Conclusion stands: **the model itself must shrink.**
+
+Student budget: RVM measured 104 fps HD on a 1080 Ti ⇒ ≤0.1 TF/frame (v1's
+"0.2" was ~2× optimistic; headroom conclusion unchanged). A student 3–5×
+heavier than RVM still clears 60–100 fps on a 5090 after TensorRT fp16.
+
+## 4. Architecture: two tiers, two modes
+
+```
+Tier 1 — browser quick-key (inside SlopShady, no sidecar)
+  MediaPipe SelfieSegmenter (Apache-2.0, 256², ~1.5ms-class)
+  → Meet-tier composite for webcam layers; runs on laptops.
+
+Tier 2 — livekey sidecar (separate repo, runs on the 5090 box)
+  camera/file → NVDEC → student engine (TRT fp16) → NVENC H.264 → SRT
+  modes: --mode chroma | screenless   (two checkpoints, same code)
+  → SlopShady streaming-input layer (srt://host:port) — zero SlopShady code
+```
+
+Why recurrent (RVM-class) students for Tier 2, both modes: O(1) causal state
+(beats segmentation→matting cascades, which flicker per-frame, and temporal
+transformers, which are overkill here); ONNX/TRT-proven with known gotchas;
+720p degradation for weaker GPUs is one parameter. **Browser-tier honesty:** in
+2026, onnxruntime-web/WebGPU handles 512² matting nets at ~10–25 fps on
+laptops; 1024² variants OOM; recent ORT-WebGPU int8 bugs pushed sites to WASM
+fallbacks. Hair-grade 1080p60 stays on the sidecar. SlopShady's COOP/COEP
+headers coexist fine with getUserMedia/WebGPU.
+
+**Subject handling (human-centric):** salient-person students will swap
+subjects mid-set (known RVM failure; MatAnyone's paper is about exactly this).
+v1: single/most-salient subject + **re-lock control** — re-initialize the
+recurrent state via sidecar hotkey and OSC (SlopShady already speaks OSC,
+port 8101). v2 if needed: click-to-assign first-frame target mask
+(MatAnyone's paradigm, reimplemented on MIT bases — MatAnyone itself is
+non-commercial and may not be distilled from for a permissive release).
+
+## 5. Teachers per mode
+
+| Mode | Teacher | License of teacher | Student weights license |
+|---|---|---|---|
+| chroma | CorridorKey 2.0 (best-quality label mode; ablate `model_scale` 0.75 once) | CC BY-NC-SA variant | CorridorKey-variant terms (free, NC, name) |
+| screenless | **BiRefNet (MIT) + BEN2 (MIT) ensemble** pseudo-labels on real clips; confidence = inter-teacher agreement mask | MIT | **MIT — fully clean** |
+
+Screenless rationale: CorridorKey's no-hint mode still lives in a rendered
+chroma-screen domain — wrong function *and* wrong license for this mode. The
+MIT ensemble + MIT-licensed datasets (**P3M-10K, VideoMatte240K, PhotoMatte85**)
+cover the task: trimap-free salient/portrait matting at SOTA-ish quality
+(BiRefNet SwinT-lite ≈ 20ms/frame in TRT fp16; BEN2 94.6M params, strong hair).
+Use ensemble *disagreement* as a per-pixel confidence mask to down-weight bad
+labels (hair, thin structures) during distillation. Do **not** distill from
+MatAnyone/MatAnyone-2 (NTU S-Lab license, non-commercial, actively enforced).
+
+Label post-processing (screenless): BiRefNet/BEN2 are per-frame stills models →
+**temporal median filter the pseudo-labels** (e.g. 5-frame window) before
+training, or flicker gets baked into the student.
+
+## 6. Students, data, training
+
+Students: RVM mobilev3 (~6.7M) and/or resnet50 (~30M) fine-tunes; one codebase,
+two checkpoints. Defer any custom student until stock-quality proves limiting.
+
+**Chroma mode data (two tiers, as v1):**
+- Tier A — synthetic composites, effectively infinite: public matte assets on
+  procedural green/blue screens (color casts, uneven lighting, spill, noise,
+  motion blur, compression, shadows). CorridorKey itself was trained on rendered
+  data — precedent.
+- Tier B — CorridorKey pseudo-labels on 10–20 h of real green-screen footage
+  (halved from v1's 100 h; expand only if metrics demand it — storage drops to
+  a few hundred GB).
+
+**Screenless mode data:** VideoMatte240K + P3M-10K + PhotoMatte85 (MIT) +
+ensemble-labeled **real webcam footage**. The webcam domain gap (noise, rolling
+shutter, low light, compressed conferencing feeds vs film-grade composites) is
+the **#1 quality risk for the human-centric use case** — put real webcam clips
+in Tier B and add webcam-ish augmentation (gain noise, compression, motion blur).
+
+Losses (both modes): L1(α) + compositional L1 over random backgrounds +
+Laplacian pyramid on composite; clip-based training (8–16 frames) with L1 over
+clips; optional flow-warp consistency for flicker. Chroma: also supervise FG
+(suppression of spill). Screenless: confidence-masked pixel loss from §5.
+
+Training setup (first-timer): PyTorch + torch.compile + bf16 AMP, AdamW cosine,
+512² crops batch 8–16, ~100–200K steps, final finetune at 960–1080p tiles;
+Weights & Biases tracking. **Week-1 sanity check: overfit ONE 10-s clip to
+near-perfection before scaling.** Fine-tuned RVM converges in days on a 5090.
+
+Honest quality target: student ≥ teacher on ~80% of frames, visibly worse on
+~5% (wet hair, motion blur, glass). For live VJ use that's a good trade.
+
+## 7. Separate repo (`livekey`) & SlopShady integration
+
+```
+livekey/
+  serve/    capture → NVDEC → TRT engine → NVENC → SRT sidecar (--mode, --port,
+            re-lock hotkey/OSC, engine selection)
+  label/    teacher labeling pipelines (chroma: CorridorKey; screenless: BiRefNet
+            +BEN2 ensemble + temporal median + confidence masks)
+  train/    distillation (RVM fine-tunes, both modes)
+  export/   ONNX → TRT engine builds (static downsample_ratio — known gotcha)
+  docs/slopshady.md   recipes: srt:// URLs, layer setup, OSC re-lock
+```
+
+Weight channels stay **strictly separated**: chroma checkpoints (CorridorKey
+license lineage) never mix data/checkpoints with screenless checkpoints (MIT
+lineage). Log provenance per checkpoint. This keeps the screenless student
+fully permissive regardless of what the chroma student inherits.
+
+**"Build option for SlopShady" = documentation + convention.** v0 (works today):
+streaming-input layer → `srt://<keyer-box>:<port>`. Optional later: a static
+help page in SlopShady listing keyer recipes + the built-in browser tier.
+Rejected on purpose: a cargo feature that spawns/connets the sidecar — it
+couples release cycles and risks SlopShady distributing/launching
+NC-SA-lineage code (license forbids commercial integration without agreement).
+
+**Alpha transport (decide at M0):** SRT/H.264 carries no alpha. Recommended:
+**side-by-side packed RGB‖α frames** (2× pixels, alpha preserved for in-shader
+re-compositing — natural fit for SlopShady's layer/shader system, e.g. key over
+any background with `iLayerVideo`). Alternative: composite-at-sidecar (locks
+background, simplest). Dual streams: wasteful. NVENC H.264 at 1080p60 handles
+the doubled width fine (≈3840×1080).
+
+## 8. Eval protocol
+
+- Chroma: SAD / MSE / Grad / Conn on held-out real clips; boundary vs core
+  region reported separately.
+- Screenless: add **dtSSD** (temporal stability) and the **YouTubeMatte**
+  benchmark (32 harmonized clips, from MatAnyone's CVPR'25 paper) — permissive
+  to evaluate against.
+- Live acceptance: 1080p60 sustained, ≤3 frames end-to-end latency, no visible
+  flicker on static subjects over 60 s, subject re-lock < 1 s.
+
+## 9. Milestones
+
+| ID | When | Outcome |
 |---|---|---|
-| Foundations (C-RADIO ~0.6 + MoGe ~0.1 + RVM) | ~0.8 | per-frame, no temporals |
-| Stage-1 enc_16 (2× full-spatial @ 8.6K tok) | ~0.7 | |
-| Stage-1 body_64 @ Hann 80/40, amortized | ~2.5–3.5 | 43K-token full attention ×10 |
-| Stage-1 Swin stacks + mid detour | ~0.5 | windowed, cheap |
-| Stage-2 (10 blocks, d=1280, 2 full-spatial) | ~3.5–4.5 | |
-| **Total** | **~8–10** | ⇒ 60 fps needs ~500 sustained TFLOPs |
+| **M0** | wk 1 | `livekey` sidecar serves **stock RVM** (screenless, zero training) over SRT; keyed performer appears as a SlopShady layer. Validate serving + alpha-transport choice. Gig-usable day one. |
+| **M1** | wk 2 | CorridorKey teacher running on 5090; per-stage benchmark table; labeling mode chosen. Browser quick-key tier (SelfieSegmenter) wired in SlopShady frontend. |
+| **M2** | wk 3–5 | Chroma student v1: RVM fine-tune, 10–15 h corpus, Tier A/B. One-clip overfit check first. |
+| **M3** | wk 6 | TRT fp16 engines, SRT 1080p60, eval suite, ship v1 (both modes; screenless still stock-or-ensemble-labeled RVM). |
+| **M4** | only if stock quality insufficient | Screenless student: BiRefNet-ensemble distill into RVM with confidence-masked, median-filtered labels. |
 
-A 5090 peaks around ~100–200 fp16/bf16 tensor TFLOPs; sustained real-world
-utilization on attention-heavy models is far lower. With `hann_chunk=1` the
-body_64 cost collapses (~5 TFLOPs/frame total) — still ≥150 TFLOPs for 60 fps,
-*and* you'd forfeit the temporal model that makes CorridorKey good.
-**Conclusion: no retraining-free path exists. The model itself must shrink.**
+Cut from v1: fp8/torchao teacher levers (hann_chunk + bf16 + batching reaches
+labeling throughput), custom student v2, 100 h / 4 TB data tier, cargo-feature
+integration.
 
-Student budget, for contrast: RVM (mobilev3) does 1080p at 104 fps on a 1080 Ti
-(~0.2 TFLOPs/frame). On a 5090 that class of model has ~10× headroom — we can
-afford a student 3–5× heavier than RVM if it buys quality, and still hit
-60–100 fps after TensorRT.
-
-## 4. Phase 0 — Reproduce & measure (weekend 1)
-
-On the 5090 box (Blackwell needs torch ≥ 2.7 cu128; the repo pins 2.9.1 — good):
-
-```bash
-git clone https://github.com/nikopueringer/CorridorKey2.0 && cd CorridorKey2.0
-python -m venv venv && source venv/bin/activate
-pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu128
-pip install -r requirements.txt
-python scripts/download_weights.py            # ~5 GB teacher + foundations
-```
-
-1. Run a 1080p test clip end-to-end (`infer.py --input t.mp4 --output_dir out`).
-2. **Profile per-stage** (wrap each in `torch.cuda.Event` timing or use
-   `torch.profiler`): foundations vs stage1 vs stage2, at `hann_chunk`
-   80/40, 8/4, 1/1, and `model_scale` 1.0 / 0.75 / 0.5. Fill in the §3 table
-   with real numbers — every later decision hangs on this.
-3. Record quality of each config on 2–3 clips (screenshots of alpha edges) —
-   this tells us the cheapest acceptable **labeling mode**.
-
-Deliverable: a one-page benchmark table (mode → fps, VRAM, quality).
-
-## 5. Phase 1 — Make the teacher fast *enough to label data* (not realtime)
-
-Same work doubles as the labeling engine. Realistic gains, stacked:
-
-| Lever | Expected gain **[est.]** | Notes |
-|---|---|---|
-| `hann_chunk` 8/4 or 4/2 for labeling | 2–4× | per-window attention collapses |
-| `model_scale 0.75` (ablate first) | ~1.7× | teacher upsamples labels back to source res — check edges |
-| bf16 → **fp8** inference (torchao, or TRT-fp8 on Blackwell) | 1.3–2× | attention layers are the win |
-| `torch.compile` + CUDA graphs + channels_last | 1.2–1.5× | kills the pervasive `.permute().contiguous()` churn |
-| Batch clips / multiple CUDA streams | 1.5–2× throughput | labeling is offline; throughput > latency |
-
-Even a conservative **5–10× total** takes the teacher from ~1–2 fps to ~10–20 fps
-labeling throughput ⇒ a 100-hour corpus (360K frames) labels in **5–10
-GPU-hours**. That's an overnight job, not a bottleneck. Do not spend more than
-a week here; realtime-serving polish belongs to the student, not the teacher.
-
-## 6. Phase 2 — Distillation (the actual 100×)
-
-### 6.1 Architecture: replace bidirectional attention with causality
-
-The core move: CorridorKey's quality = *semantic + geometric + temporal* context,
-delivered by huge offline attention. A **recurrent** student delivers temporal
-context with O(1) state — that's exactly how RVM is realtime. The student learns
-to reproduce teacher behavior causally from RGB alone.
-
-**Student v1 (recommended start): fine-tune PeterL1n/RobustVideoMatting**
-- ~6.7M params (mobilev3) / ~30M (resnet50), recurrent, trimap-free.
-- Official ONNX/TensorRT exports already exist (community-verified ONNX→TRT path).
-- Fine-tuning a pretrained matter on teacher labels is a *dramatically* easier
-  first project than training from scratch — days, not weeks, to first result.
-- It will not match the teacher; expect it to close maybe half the quality gap
-  vs stock RVM on green-screen-specific failure modes (spill, hair, glass).
-
-**Student v2 (if v1 quality caps out): custom small recurrent net**
-- Encoder: MobileNetV3-Small/Large or EfficientNet-B0 to /8–/16.
-- Temporal: 1–2 conv-GRU cells in the decoder (RVM pattern) or a tiny causal
-  transformer at /32.
-- Decoder: light FPN + pixel-shuffle to (α, FG). Target 30–80M params,
-  ≤0.8 TFLOPs/frame @1080p ⇒ 60+ fps on 5090 after TRT fp16.
-- Train from scratch OR warm-start from RVM weights where shapes allow.
-
-### 6.2 Data engine (two tiers)
-
-**Tier A — synthetic composites, effectively infinite, perfectly labeled.**
-Take any existing alpha-matte assets and composite onto procedural screens:
-- Matte sources: RVM's VideoMattes (CC-BY 4.0), Distinctions-646, PPM-100,
-  PhotoMatte85K (check each license; personal VJ use is safe).
-- Screen simulation: green/blue/magenta/cyan casts, radial + gradient lighting
-  unevenness, spill on subject edges (alpha-weighted bleed), noise, motion blur,
-  slight defocus, shadows, H.264 re-compression artifacts, camera shake.
-- This teaches the *task* with zero teacher cost and infinite domain coverage.
-
-**Tier B — teacher pseudo-labels on real footage (the quality carrier).**
-- Curate 50–150 h: real green/blue screen clips (stock sites, CC YouTube,
-  Corridor's own BTS footage), plus hard cases — wrinkle screens, spill-heavy,
-  semi-transparent fabric, hair, fast motion.
-- Run Phase-1 labeling engine (`--outputs alpha fg`, ProRes 4444, or FFV1
-  `yuva444p16le` for ~lossless at lower bitrate). **Always run the teacher at
-  its best quality mode** — student quality is capped by label quality.
-- Blend Tier A and B roughly 50/50 early; shift toward B for final epochs.
-
-Storage math: 100 h ≈ source H.264 (~8 Mbps) + alpha FFV1 (~80–150 Mbps)
-≈ **~2 TB** — get a 4 TB SSD for the 5090 box.
-
-### 6.3 Losses
-
-- `L1(α, α̂)` + **compositional loss**: `L1(α·F over random bg, α̂·F̂ over same bg)`
-  (mimics RVM training; directly optimizes what you see).
-- **Laplacian pyramid loss** on the composited image — edge quality without
-  trimaps.
-- Temporal: run student on 8–16-frame clips; L1 over clip + optional flow-warp
-  consistency penalty (Raft-small optical flow) to suppress flicker.
-- No hint conditioning — train the hint-free mode.
-
-### 6.4 Training setup (first-timer notes)
-
-- Plain **PyTorch + torch.compile + bf16 AMP**, AdamW, cosine schedule.
-- Crops: 512² random crops of 1080p frames, batch 8–16 (fits 32 GB easily),
-  ~100–200K steps; final finetune at 960²–1080p tiles for edge sharpness.
-- **Week-1 sanity check that saves weeks**: overfit the student on ONE 10-second
-  clip until near-perfect. If it can't memorize one clip, something's broken —
-  fix before scaling. (This is the single most important beginner habit.)
-- Track with Weights & Biases (free). Eval: SAD / MSE / Grad / Conn on a held-out
-  real-clip set + side-by-side alpha viewer vs stock RVM vs teacher.
-- Fine-tuning RVM: freeze nothing, LR ~1e-4 → 1e-5, expect first credible
-  results in a couple of evenings on the 5090.
-
-### 6.5 Honest quality expectations
-
-Distillation closes most of the gap on *common* cases; the teacher's advantage
-persists on brutal edges (wet hair against bright green, motion blur, glass).
-Target: "student ≥ teacher on 80% of frames, visibly worse on 5%" — for live
-VJ use that's a great trade. Measure it, don't guess it.
-
-## 7. Phase 3 — Serving + SlopShady integration
-
-Pipeline on the 5090 box:
-
-```
-camera/file → NVDEC decode → student (TensorRT fp16/fp8, CUDA graphs)
-           → α·RGB composite (or α+FG) → NVENC H.264 → SRT out
-```
-
-- Export student ONNX → TensorRT engine (`trtexec --fp16`; try `--fp8` —
-  Blackwell supports it; fall back if alpha banding appears). For RVM keep
-  `downsample_ratio` static (known ONNX→TRT gotcha, issue #219).
-- Budget @1080p60 **[est.]**: decode ~1ms + student 5–10ms + encode ~1ms
-  ⇒ ~2–3 frame end-to-end latency. Fine for VJ.
-- **SlopShady v0 needs nothing new**: its streaming-input layers already
-  ingest SRT/WebTransport (QuicSRT). Point one at `srt://<5090-box>:<port>`
-  and the keyed subject is a live layer, mixable with shaders (`iLayerVideo`
-  / `iVideo` uniforms), scanimate, etc.
-- Later (optional): a small "ML keyer" panel in SlopShady to spawn/configure
-  the sidecar and set despill/color parameters client-side.
-
-## 8. License notes (read before publishing anything)
-
-- CorridorKey code+weights: CC BY-NC-SA 4.0 variant. "Build on the code and
-  model" ⇒ a distilled student is *arguably a derivative of the model's
-  behavior*; the safe posture is to release student weights under the same
-  terms (free, non-commercial, "CorridorKey-distill" naming). Personal/live
-  use: unambiguous. Selling it or a hosted API: prohibited.
-- SlopShady stays AGPL and merely *consumes a video stream* — no CorridorKey
-  code or weights in this repo, so the licenses never mix. Keep it that way.
-- Foundation models have their own terms (NVIDIA Open Model License, MIT,
-  Apache-2/CC-BY) — irrelevant once the student is trained, but relevant while
-  the teacher runs.
-
-## 9. Risk register
+## 10. Risks
 
 | Risk | Mitigation |
 |---|---|
-| Teacher labels too slow to scale | Phase 1 levers; start with 10 h corpus, expand after |
-| Student plateaus below usable quality | Two-tier data; v2 custom student; hybrid: student + classic despill/chroma assist |
-| Temporal flicker in student | Clip-based training + warp-consistency loss; recurrent (not per-frame) student |
-| Teacher artifacts baked into student | Inspect labels (checker output) before each corpus expansion |
-| 5090/Blackwell toolchain quirks (fp8, TRT) | torch 2.9+cu128 pinned by the repo; keep an fp16 fallback path |
-| Scope creep | Phases 0–1 have a hard 2-week cap; the prize is Phase 2 |
+| Webcam domain gap (screenless) — #1 risk | Real webcam footage in Tier B + webcam augmentation |
+| Subject swap mid-set | Re-lock (state re-init) hotkey/OSC at M0; click-to-assign only in v2 |
+| Teacher label flicker baked into student | Temporal median labels; clip losses; flow-warp consistency |
+| Teacher disagreement on hair/thin structures | Ensemble confidence mask in the loss |
+| Chroma student plateaus | Expand corpus toward 30–50 h; heavier RVM backbone |
+| ORT-WebGPU immaturity (browser tier) | Keep tier 1 to SelfieSegmenter-class models; WASM fallback |
+| License contamination | Strict weight-channel separation in `livekey`; provenance log |
+| 5090/Blackwell toolchain quirks | torch 2.9+cu128 (repo-pinned); fp16 fallback everywhere |
+| Scope creep | M0–M3 are the product; M4 is conditional |
 
-## 10. Roadmap for a first-time trainer
+## 11. First actions (when we start building)
 
-| Week | Outcome |
-|---|---|
-| 1 | Teacher runs on 5090; per-stage benchmark table; labeling mode chosen |
-| 2 | Labeling engine automated (watch-folder → labeled clips); 10 h corpus v0 |
-| 3 | PyTorch training loop running; ONE-clip overfit sanity check passes |
-| 4–5 | RVM fine-tune on Tier A+B; first A/B vs stock RVM; iterate data mix |
-| 6 | 1080p tile finetune; eval suite; pick student v1 checkpoint |
-| 7 | ONNX→TensorRT; SRT sidecar serving 1080p60; view in SlopShady |
-| 8+ | Decide: ship v1, or invest in custom student v2 |
-
-**Definition of done (v1):** 1080p60 sustained on the 5090, ≤3 frames latency,
-side-by-side alpha quality clearly better than stock RVM on your test clips,
-streaming into a SlopShady layer over SRT.
+1. Create the `livekey` repo; `serve/` skeleton: ffmpeg capture → stock RVM
+   torch → NVENC → SRT; confirm 1080p60 into a SlopShady streaming-input layer.
+2. Decide RGB‖α packing vs composite-at-sidecar from real footage tests.
+3. On the 5090: CorridorKey Phase-0 benchmarks (per-stage timing table).
+4. SlopShady side (this repo): browser quick-key tier + a `docs/` recipe page
+   linking `livekey` — the only SlopShady-side work in scope.
