@@ -11,6 +11,12 @@ teacher switched from CorridorKey to a license-clean BiRefNet ensemble, new M0
 milestone (usable keyer with zero training), VRAM claim corrected, fp8/custom-v2
 cut. v1 of this doc is superseded.
 
+v2.1 pivot (after UX discussion): **the keyer is a layer effect that produces
+alpha**, not an external video source. SlopShady's compositor already supports
+this (`mix(base, layer, alpha)`). Tiers 0–1 (chroma shader, browser ML) live
+inside SlopShady; the sidecar survives only as a **matte factory** for hair-grade
+quality, shipping a small grayscale alpha stream — video never round-trips.
+
 Verified vs estimated: model facts were read from CorridorKey 2.0 source
 (`infer.py`, `foundations.py`, `stage1.py`, `stage2.py`) and the HF model card;
 2025–26 SOTA claims were web-verified (BiRefNet, BEN2, MatAnyone, MediaPipe).
@@ -31,17 +37,24 @@ Items marked **[estimate]** remain my math, to be confirmed in M1 benchmarks.
 - **One student family:** RVM-class recurrent conv-GRU nets (proven 104 fps @
   1080p on a 1080 Ti; ONNX/TensorRT-proven; O(1) streaming state; graceful
   720p fallback via `downsample_ratio`). Two checkpoints: `chroma`, `screenless`.
-- **Two serving tiers:** (1) *browser quick-key* — MediaPipe SelfieSegmenter
-  (Apache-2.0) inside SlopShady's frontend, zero sidecar, Meet-tier quality;
-  (2) *quality tier* — the `livekey` sidecar on the 5090 (capture → student TRT
-  engine → NVENC → SRT), hair-grade quality, works today over SlopShady's
-  existing streaming-input layers.
-- **SlopShady integration = convention, not code:** point a streaming-input layer
-  at `srt://<keyer-box>:<port>`. No cargo feature that spawns/distributes the
-  sidecar (couples release cycles; CorridorKey's license forbids commercial
-  software integration without agreement — keep the repos strictly separate).
-- **M0 ships a usable screenless keyer with zero ML work** (stock RVM behind the
-  sidecar) — validate the whole serving path before training anything.
+- **The keyer is a LAYER EFFECT (v2.1 pivot):** it produces alpha; SlopShady's
+  compositor already does the rest — layers composite as `mix(base, layer, alpha)`
+  with per-layer blend modes (verified in `src/js/config/shaders.js`), so a keyed
+  layer reveals whatever is below it. Three implementations of the same effect,
+  by compute location: **Tier 0** chroma shader (pure WebGL, in SlopShady — needs
+  a real green/blue screen, perfect on well-lit screens, free forever);
+  **Tier 1** screenless browser model (MediaPipe SelfieSegmenter-class,
+  Apache-2.0, Meet-tier, in SlopShady); **Tier 2** hair-grade screenless via the
+  `livekey` sidecar on the 5090 — which ships **only a small matte stream**
+  (grayscale, e.g. 540p); the layer's video never round-trips.
+- **SlopShady gains a small, permissively-licensed key effect** (our GLSL +
+  Apache-2.0 model wrapper — no CorridorKey lineage, so no license issue). The
+  `livekey` repo stays strictly separate and holds everything
+  CorridorKey-lineage plus the Tier-2 engine. Still rejected: cargo features
+  that spawn/distribute sidecar binaries.
+- **M0 ships usable keying with zero ML training**, in-layer: Tier-0 chroma
+  shader + Tier-1 SelfieSegmenter effect in SlopShady; the sidecar (stock RVM
+  matte stream) is optional quality headroom, not a prerequisite.
 
 ## 2. What CorridorKey 2.0 is (chroma teacher)
 
@@ -96,27 +109,56 @@ Student budget: RVM measured 104 fps HD on a 1080 Ti ⇒ ≤0.1 TF/frame (v1's
 "0.2" was ~2× optimistic; headroom conclusion unchanged). A student 3–5×
 heavier than RVM still clears 60–100 fps on a 5090 after TensorRT fp16.
 
-## 4. Architecture: two tiers, two modes
+## 4. Architecture: the key is a layer effect (three tiers)
+
+UX north star: **the keyer is an effect on a layer.** It computes alpha;
+SlopShady's compositor already does the reveal — every layer composites as
+`mix(base, layer, alpha)` with per-layer blend modes (verified in
+`src/js/config/shaders.js`). Video stays where it already lives in SlopShady
+(webcam / video / stream layers); the effect only adds alpha.
 
 ```
-Tier 1 — browser quick-key (inside SlopShady, no sidecar)
-  MediaPipe SelfieSegmenter (Apache-2.0, 256², ~1.5ms-class)
-  → Meet-tier composite for webcam layers; runs on laptops.
+Tier 0 — chroma shader effect (in SlopShady, pure WebGL)
+  Layer fragment shader: color-distance key → alpha + despill + matte/edge
+  controls. Needs a real green/blue screen. Perfect on well-lit screens,
+  realtime at any resolution forever, zero infrastructure.
 
-Tier 2 — livekey sidecar (separate repo, runs on the 5090 box)
-  camera/file → NVDEC → student engine (TRT fp16) → NVENC H.264 → SRT
-  modes: --mode chroma | screenless   (two checkpoints, same code)
-  → SlopShady streaming-input layer (srt://host:port) — zero SlopShady code
+Tier 1 — screenless browser model (in SlopShady, WASM/WebGPU)
+  MediaPipe SelfieSegmenter-class (Apache-2.0, 256², ~ms-class): runs on the
+  layer's video, mask texture multiplies the layer's alpha. Meet-tier quality,
+  no screen needed, no sidecar. This is the "video-call app" experience.
+
+Tier 2 — hair-grade screenless / distilled chroma (livekey sidecar, 5090 box)
+  Stock RVM now, distilled students later. Ships ONLY the matte: a small
+  grayscale sub-stream (e.g. 540p H.264 over SRT) that the same layer effect
+  samples as its alpha source. The layer's video never round-trips when the
+  camera is local to SlopShady. If the camera is attached to the keyer box,
+  the sidecar sends packed RGB‖α in one stream instead (perfect sync).
 ```
+
+Why the sidecar exists at all: CorridorKey-class and hair-grade models cannot
+execute in a browser — their compute must live in a separate process on a big
+GPU. The sidecar is a **matte factory**, not a video mixer. Matte-only shipping
+keeps SlopShady the source of truth for pixels and compositing; only the
+decision (alpha) travels.
+
+Why tiers 0–1 weren't the v2.0 default: the project began as "CorridorKey at
+realtime," which forced sidecar-first thinking. Corrected — the effect UX is
+the product; external compute is an optional quality upgrade.
+
+Tier-2 sync note: a network matte arrives ~2–3 frames behind local video.
+Invisible for mostly-static performers; for fast motion use packed RGB‖α
+(single stream, guaranteed sync) or accept slight edge lag. Decide from live
+tests at M0. **Browser-tier honesty:** in 2026, onnxruntime-web/WebGPU handles
+512² matting nets at ~10–25 fps on laptops; 1024² variants OOM; recent
+ORT-WebGPU int8 bugs pushed sites to WASM fallbacks. Hair-grade 1080p60 stays
+on the sidecar. SlopShady's COOP/COEP headers coexist fine with
+getUserMedia/WebGPU.
 
 Why recurrent (RVM-class) students for Tier 2, both modes: O(1) causal state
 (beats segmentation→matting cascades, which flicker per-frame, and temporal
 transformers, which are overkill here); ONNX/TRT-proven with known gotchas;
-720p degradation for weaker GPUs is one parameter. **Browser-tier honesty:** in
-2026, onnxruntime-web/WebGPU handles 512² matting nets at ~10–25 fps on
-laptops; 1024² variants OOM; recent ORT-WebGPU int8 bugs pushed sites to WASM
-fallbacks. Hair-grade 1080p60 stays on the sidecar. SlopShady's COOP/COEP
-headers coexist fine with getUserMedia/WebGPU.
+720p degradation for weaker GPUs is one parameter.
 
 **Subject handling (human-centric):** salient-person students will swap
 subjects mid-set (known RVM failure; MatAnyone's paper is about exactly this).
@@ -197,19 +239,22 @@ license lineage) never mix data/checkpoints with screenless checkpoints (MIT
 lineage). Log provenance per checkpoint. This keeps the screenless student
 fully permissive regardless of what the chroma student inherits.
 
-**"Build option for SlopShady" = documentation + convention.** v0 (works today):
-streaming-input layer → `srt://<keyer-box>:<port>`. Optional later: a static
-help page in SlopShady listing keyer recipes + the built-in browser tier.
-Rejected on purpose: a cargo feature that spawns/connets the sidecar — it
-couples release cycles and risks SlopShady distributing/launching
-NC-SA-lineage code (license forbids commercial integration without agreement).
+**"Build option for SlopShady" = the key effect ships in SlopShady; the sidecar
+is a documented companion.** Tiers 0–1 live in SlopShady itself (permissively
+licensable — our GLSL + Apache-2.0 weights, no CorridorKey lineage). Tier 2 is
+opt-in: run `livekey` on a GPU box, point the layer effect's matte source at
+`srt://<keyer-box>:<port>`. Rejected on purpose: a cargo feature that
+spawns/connets the sidecar — it couples release cycles and risks SlopShady
+distributing/launching NC-SA-lineage code (license forbids commercial
+integration without agreement).
 
-**Alpha transport (decide at M0):** SRT/H.264 carries no alpha. Recommended:
-**side-by-side packed RGB‖α frames** (2× pixels, alpha preserved for in-shader
-re-compositing — natural fit for SlopShady's layer/shader system, e.g. key over
-any background with `iLayerVideo`). Alternative: composite-at-sidecar (locks
-background, simplest). Dual streams: wasteful. NVENC H.264 at 1080p60 handles
-the doubled width fine (≈3840×1080).
+**Alpha transport (decide at M0):** with the effect-centric UX the default is
+**matte-only** — the sidecar ships a small grayscale alpha stream (540p-class
+H.264 over SRT); the layer keeps its own video, nothing round-trips, nothing
+double-compresses. Use **packed side-by-side RGB‖α** (2× pixels, ≈3840×1080 at
+1080p60 — trivial for NVENC) when the camera is physically attached to the
+keyer box or when matte/video sync at fast motion matters. Composite-at-sidecar
+(locks the background) is the last resort.
 
 ## 8. Eval protocol
 
@@ -225,8 +270,8 @@ the doubled width fine (≈3840×1080).
 
 | ID | When | Outcome |
 |---|---|---|
-| **M0** | wk 1 | `livekey` sidecar serves **stock RVM** (screenless, zero training) over SRT; keyed performer appears as a SlopShady layer. Validate serving + alpha-transport choice. Gig-usable day one. |
-| **M1** | wk 2 | CorridorKey teacher running on 5090; per-stage benchmark table; labeling mode chosen. Browser quick-key tier (SelfieSegmenter) wired in SlopShady frontend. |
+| **M0** | wk 1 | **Key effect lands in SlopShady, zero ML training:** Tier-0 chroma shader (green/blue pick, despill, matte/edge controls, tooltips per repo conventions) + Tier-1 SelfieSegmenter screenless mask. Optional: `livekey` sidecar streaming a stock-RVM matte for Tier-2 early validation. Gig-usable day one, in-layer. |
+| **M1** | wk 2 | CorridorKey teacher running on 5090; per-stage benchmark table; labeling mode chosen. Matte-source plumbing in the key effect (SRT grayscale stream) if not done at M0. |
 | **M2** | wk 3–5 | Chroma student v1: RVM fine-tune, 10–15 h corpus, Tier A/B. One-clip overfit check first. |
 | **M3** | wk 6 | TRT fp16 engines, SRT 1080p60, eval suite, ship v1 (both modes; screenless still stock-or-ensemble-labeled RVM). |
 | **M4** | only if stock quality insufficient | Screenless student: BiRefNet-ensemble distill into RVM with confidence-masked, median-filtered labels. |
@@ -251,9 +296,13 @@ integration.
 
 ## 11. First actions (when we start building)
 
-1. Create the `livekey` repo; `serve/` skeleton: ffmpeg capture → stock RVM
-   torch → NVENC → SRT; confirm 1080p60 into a SlopShady streaming-input layer.
-2. Decide RGB‖α packing vs composite-at-sidecar from real footage tests.
-3. On the 5090: CorridorKey Phase-0 benchmarks (per-stage timing table).
-4. SlopShady side (this repo): browser quick-key tier + a `docs/` recipe page
-   linking `livekey` — the only SlopShady-side work in scope.
+1. In SlopShady (this repo): the **key effect** — per-layer material mode or
+   post-effect with Tier-0 chroma shader (color pick via eyedropper on the
+   layer, tolerance, despill, choke/softness) and alpha out to the existing
+   `mix(base, layer, alpha)` compositor. Tooltips for every control.
+2. Tier 1 in SlopShady: SelfieSegmenter (tasks-vision, WASM/WebGPU) producing a
+   mask texture consumed by the same effect. Confirm fps at 720p/1080p webcam.
+3. Create the `livekey` repo; `serve/` skeleton: camera/ffmpeg → stock RVM →
+   540p grayscale matte → SRT; point the key effect's matte source at it
+   end-to-end. Decide matte-only vs packed RGB‖α from live sync tests.
+4. On the 5090: CorridorKey per-stage benchmark table (chroma labeling mode).
