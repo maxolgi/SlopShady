@@ -105,12 +105,12 @@ export const LiveTuning = {
         }
     },
 
-    async _llmCall(model, messages, toolChoice, onThinkingDelta) {
+    async _llmCall(model, messages, onThinkingDelta) {
         const payload = {
             model: model,
             messages: messages,
             tools: LIVE_TUNING_TOOLS,
-            tool_choice: toolChoice,
+            tool_choice: 'auto',
             temperature: 0.7,
             max_tokens: 100000,
             stream: true,
@@ -282,7 +282,6 @@ export const LiveTuning = {
 
         try {
             let iteration = 1;
-            let forceToolCall = false;
             let lastCompileError = null;
 
             while (iteration <= maxIterations) {
@@ -290,13 +289,8 @@ export const LiveTuning = {
 
                 this.log(`Iteration ${iteration}/${maxIterations}...`, 'info');
 
-                const toolChoice = forceToolCall
-                    ? { type: 'function', function: { name: 'load_shader' } }
-                    : 'auto';
-                forceToolCall = false;
-
                 const thinkWrap = this._beginThinkingDisplay();
-                const { content, toolCalls, reasoning } = await this._llmCall(model, messages, toolChoice, (delta) => this._updateThinkingDisplay(thinkWrap, delta));
+                const { content, toolCalls, reasoning } = await this._llmCall(model, messages, (delta) => this._updateThinkingDisplay(thinkWrap, delta));
                 this._endThinkingDisplay(thinkWrap, reasoning);
 
                 const assistantMsg = { role: 'assistant', content: content || null };
@@ -355,7 +349,6 @@ export const LiveTuning = {
                         if (compileResult?.error) {
                             const err = compileResult.error;
                             lastCompileError = err;
-                            forceToolCall = true;
                             const transformed = compileResult.transformedSource || '';
                             const errorMsg =
                                 `Compilation failed with error:\n${err}\n\n` +
