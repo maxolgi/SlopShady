@@ -52,6 +52,7 @@ export const SETTINGS_KEYS = {
     captureFormat: 'slopshady_captureFormat',
     captureQuality: 'slopshady_captureQuality',
     liveTuningMaxIterations: 'slopshady_liveTuningMaxIterations',
+    liveTuningHistoryLimit: 'slopshady_liveTuningHistoryLimit',
     syncEnabled: 'slopshady_syncEnabled',
     tooltipsEnabled: 'slopshady_tooltipsEnabled',
     fboFormat: 'slopshady_fboFormat',

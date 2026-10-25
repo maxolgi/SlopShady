@@ -257,6 +257,7 @@ const T = {
     LLM_CLEAR: 'Clear conversation history',
     LLM_PROMPT: 'Enter your request or instruction for the AI',
     LT_START: 'Start iterative AI tuning session with screenshot feedback',
+    LT_HISTORY: 'Live tuning history limit: max conversation messages sent to the model (excluding the system prompt). Oldest messages are dropped at safe boundaries when exceeded. 0 = keep everything',
     LT_STOP: 'Stop the active live tuning session',
     LT_PROMPT: 'Describe the visual goal the AI should work toward',
 
@@ -733,6 +734,7 @@ const STATIC_MAP = [
     ['#startLiveTuning', 'LT_START'],
     ['#stopLiveTuning', 'LT_STOP'],
     ['#liveTuningPrompt', 'LT_PROMPT'],
+    ['#liveTuningHistoryLimit', 'LT_HISTORY'],
 
     ['#modal-close', 'MODAL_CLOSE'],
     ['#panel-resize-handle', 'RESIZE_HANDLE'],

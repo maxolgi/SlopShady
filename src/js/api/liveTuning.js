@@ -105,6 +105,23 @@ export const LiveTuning = {
         }
     },
 
+    _trimHistory(messages, limit) {
+        // 0 (or invalid) = keep everything; below 4 there is nothing coherent left to trim to
+        if (!Number.isFinite(limit) || limit < 4) return;
+        // messages[0] is the system prompt — always kept
+        if (messages.length - 1 <= limit) return;
+
+        let start = messages.length - limit;
+        // Never open with an orphaned tool response: its assistant tool_calls
+        // message must stay attached, so advance past any tool messages.
+        while (start < messages.length && messages[start].role === 'tool') start++;
+        if (start >= messages.length - 1) return;
+
+        const removed = start - 1;
+        messages.splice(1, removed);
+        this.log(`🗂️ History trimmed: dropped ${removed} old message(s), sending ${messages.length - 1}`, 'info');
+    },
+
     async _llmCall(model, messages, onThinkingDelta) {
         const payload = {
             model: model,
@@ -263,6 +280,7 @@ export const LiveTuning = {
         const shaderCode = getEl('shaderCode').value;
         const model = getEl('modelNameImage').value.trim();
         const maxIterations = parseInt(getEl('liveTuningMaxIterations').value) || 20;
+        const historyLimit = parseInt(getEl('liveTuningHistoryLimit').value) || 0;
 
         this.abortController = new AbortController();
 
@@ -288,6 +306,8 @@ export const LiveTuning = {
                 if (!this.active) break;
 
                 this.log(`Iteration ${iteration}/${maxIterations}...`, 'info');
+
+                this._trimHistory(messages, historyLimit);
 
                 const thinkWrap = this._beginThinkingDisplay();
                 const { content, toolCalls, reasoning } = await this._llmCall(model, messages, (delta) => this._updateThinkingDisplay(thinkWrap, delta));

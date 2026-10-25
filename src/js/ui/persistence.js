@@ -28,6 +28,7 @@ export function saveState() {
         captureFormat: getEl('captureFormat').value,
         captureQuality: state.captureQuality,
         liveTuningMaxIterations: getEl('liveTuningMaxIterations').value,
+        liveTuningHistoryLimit: getEl('liveTuningHistoryLimit').value,
         bearerKey: getEl('bearerKey').value,
         codeDialOriginals: state.codeDialOriginals,
         llmMode: state.llmMode,
@@ -150,6 +151,7 @@ export function loadState(data) {
     }
     if (data.captureQuality) state.captureQuality = parseInt(data.captureQuality);
     if (data.liveTuningMaxIterations) getEl('liveTuningMaxIterations').value = data.liveTuningMaxIterations;
+    if (data.liveTuningHistoryLimit) getEl('liveTuningHistoryLimit').value = data.liveTuningHistoryLimit;
     if (data.codeDialOriginals) {
         state.codeDialOriginals = data.codeDialOriginals;
         Object.assign(state.codeDialValues, data.codeDialOriginals);
@@ -267,6 +269,8 @@ export function initSettingsPersistence() {
     getEl('response').style.fontSize = savedTextSize + 'px';
     getEl('modelNameImage').value = loadFromLocalStorage(SETTINGS_KEYS.modelNameImage, getEl('modelNameImage').value);
     getEl('modelNameText').value = loadFromLocalStorage(SETTINGS_KEYS.modelNameText, getEl('modelNameText').value);
+    getEl('liveTuningMaxIterations').value = loadFromLocalStorage(SETTINGS_KEYS.liveTuningMaxIterations, getEl('liveTuningMaxIterations').value);
+    getEl('liveTuningHistoryLimit').value = loadFromLocalStorage(SETTINGS_KEYS.liveTuningHistoryLimit, getEl('liveTuningHistoryLimit').value);
     const savedRes = loadFromLocalStorage(SETTINGS_KEYS.captureResolution, getEl('captureResolution').value);
     getEl('captureResolution').value = savedRes;
     setDropdownValue('captureResolution-menu', savedRes);
@@ -328,6 +332,9 @@ export function initSettingsPersistence() {
     });
     getEl('liveTuningMaxIterations').addEventListener('change', (e) => {
         saveToLocalStorage(SETTINGS_KEYS.liveTuningMaxIterations, e.target.value);
+    });
+    getEl('liveTuningHistoryLimit').addEventListener('change', (e) => {
+        saveToLocalStorage(SETTINGS_KEYS.liveTuningHistoryLimit, e.target.value);
     });
     
     // Reset button
