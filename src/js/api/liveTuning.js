@@ -37,6 +37,31 @@ const LIVE_TUNING_TOOLS = [
     {
         type: 'function',
         function: {
+            name: 'edit_shader',
+            description: 'Apply targeted find/replace edits to the CURRENT shader — much cheaper than resending the whole file. Each edit finds old_code (must match exactly one location) and replaces it with new_code. Prefer for fixes, tweaks and small changes; use load_shader for full rewrites or when edits cannot match.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    edits: {
+                        type: 'array',
+                        description: 'Ordered find/replace edits, applied sequentially.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                old_code: { type: 'string', description: 'Exact existing code to find — must be unique; include surrounding lines to disambiguate.' },
+                                new_code: { type: 'string', description: 'Replacement text (empty string deletes the matched code).' }
+                            },
+                            required: ['old_code', 'new_code']
+                        }
+                    }
+                },
+                required: ['edits']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'get_screenshot',
             description: 'Capture a screenshot of the current shader state.',
             parameters: { type: 'object', properties: {}, required: [] }
@@ -70,10 +95,11 @@ export const LiveTuning = {
             `CURRENT SHADER CODE:\n` +
             `${FENCE}glsl\n${shaderCode}\n${FENCE}\n\n` +
             `=== TOOLS AVAILABLE ===\n` +
-            `- load_shader(shader_code): Load a new shader. ALWAYS use this after compilation errors to fix the code.\n` +
+            `- edit_shader(edits): Apply targeted find/replace edits to the CURRENT shader. Each edit's old_code must exactly match ONE location (include surrounding lines to disambiguate); new_code replaces it. PREFER this for fixes and small changes — it is much cheaper than resending the whole shader.\n` +
+            `- load_shader(shader_code): Load a complete new shader. Use for full rewrites, or when edit_shader cannot match. ALWAYS use this after compilation errors that need structural changes.\n` +
             `- get_screenshot(): Capture the current visual state.\n\n` +
             `=== ERROR HANDLING ===\n` +
-            `If load_shader returns a compilation error, you MUST call load_shader again with the corrected code. Do not respond with text - fix the error and call the tool.\n\n` +
+            `If a tool returns a compilation error, you MUST send corrected code again (edit_shader for targeted fixes, load_shader for a full rewrite). Do not respond with text - fix the error and call the tool.\n\n` +
             `Goal: ${goal}`;
     },
 
@@ -115,6 +141,90 @@ export const LiveTuning = {
             .replace(/<think>[\s\S]*?<\/think>\s*/g, '')
             .replace(/<think>[\s\S]*$/g, '')
             .trim();
+    },
+
+    // Apply find/replace edits to shader source, all-or-nothing.
+    // Exact match first; falls back to whitespace-lenient matching
+    // (leading/trailing whitespace per line ignored), like OpenCode's edit tool.
+    _applyEdits(source, edits) {
+        const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        let text = source;
+        for (let i = 0; i < edits.length; i++) {
+            const label = `edit ${i + 1}/${edits.length}`;
+            const oldCode = typeof edits[i]?.old_code === 'string' ? edits[i].old_code : null;
+            const newCode = typeof edits[i]?.new_code === 'string' ? edits[i].new_code : '';
+            if (!oldCode || !oldCode.trim()) return { ok: false, error: `${label}: old_code is empty` };
+
+            const exactCount = text.split(oldCode).length - 1;
+            if (exactCount === 1) {
+                text = text.replace(oldCode, () => newCode);
+                continue;
+            }
+            if (exactCount > 1) {
+                return { ok: false, error: `${label}: old_code matches ${exactCount} locations — include surrounding lines so it matches exactly once` };
+            }
+
+            // whitespace-lenient fallback: ignore per-line leading/trailing whitespace
+            const pattern = oldCode.split('\n')
+                .map(l => l.trim())
+                .map(l => (l ? '[ \\t]*' + esc(l) + '[ \\t]*' : '[ \\t]*'))
+                .join('\\r?\\n');
+            const re = new RegExp(pattern, 'g');
+            const matches = text.match(re);
+            if (!matches) {
+                return { ok: false, error: `${label}: old_code not found in the current shader — copy the text EXACTLY from the shader you last sent (check whitespace and line breaks), or use load_shader for a full rewrite` };
+            }
+            if (matches.length > 1) {
+                return { ok: false, error: `${label}: old_code matches ${matches.length} locations (whitespace-insensitive) — include surrounding lines so it matches exactly once` };
+            }
+            text = text.replace(re, () => newCode);
+        }
+        return { ok: true, text };
+    },
+
+    // Shared compile + load path for load_shader and edit_shader.
+    // Pushes the tool response and returns { ok, error }.
+    _compileAndLoad(messages, toolCallId, shader, opts = {}) {
+        const compileResult = window.WebGL?.compileProgram(shader, true);
+
+        if (compileResult?.error) {
+            const err = compileResult.error;
+            const transformed = compileResult.transformedSource || '';
+            const errorMsg =
+                `Compilation failed with error:\n${err}\n\n` +
+                `The engine transforms your shader before compilation:\n` +
+                `1. Numeric literals are extracted and replaced with u_param_cdN uniform parameters (code dials)\n` +
+                `2. #version, precision, uniform, and out declarations are stripped (engine auto-provides them)\n` +
+                `3. Voice wrapper code is appended\n\n` +
+                `Here is the ACTUAL compiled source (with your numeric literals replaced by code dial uniforms):\n` +
+                `${FENCE}glsl\n${transformed}\n${FENCE}\n\n` +
+                `Fix the error and send the corrected code — edit_shader for targeted fixes, load_shader for a full rewrite. Do NOT use u_param_cdN directly — write normal numeric values and the engine will extract them.`;
+            messages.push({
+                role: 'tool',
+                tool_call_id: toolCallId,
+                content: JSON.stringify({ success: false, error: errorMsg })
+            });
+            this.log(`❌ Shader compilation failed: ${err.substring(0, 100)}...`, 'error');
+            return { ok: false, error: err };
+        }
+
+        getEl('shaderCode').value = shader;
+        if (window.WebGL) window.WebGL.initShader({ save: true });
+        CodeDials.render();
+
+        // edit path stays short on success; full rewrites echo the transformed
+        // source so the model sees the dial mapping (existing behavior)
+        let successMsg = (opts.note ? `${opts.note} ` : '') + 'Shader compiled and loaded successfully.';
+        if (opts.echoTransformed && compileResult?.transformedSource) {
+            successMsg += `\n\nHere is the compiled shader (your numeric literals replaced with code dial uniforms):\n${FENCE}glsl\n${compileResult.transformedSource}\n${FENCE}`;
+        }
+        messages.push({
+            role: 'tool',
+            tool_call_id: toolCallId,
+            content: JSON.stringify({ success: true, message: successMsg })
+        });
+        this.log('✅ Shader loaded and compiled successfully', 'result');
+        return { ok: true };
     },
 
     _trimHistory(messages, limit) {
@@ -342,7 +452,7 @@ export const LiveTuning = {
                     this.log('No tool calls. Asking to continue...', 'info');
                     messages.push({
                         role: 'user',
-                        content: 'Please continue tuning by calling load_shader() with improvements or get_screenshot() to see the current state.'
+                        content: 'Please continue tuning by calling edit_shader() with targeted improvements, load_shader() for a full rewrite, or get_screenshot() to see the current state.'
                     });
                     await this._sleep(500);
                     iteration++;
@@ -377,44 +487,34 @@ export const LiveTuning = {
                             this.log('⚠️ Model sent an incomplete shader — asking for a full resend', 'error');
                             continue;
                         }
-                        const compileResult = window.WebGL?.compileProgram(shader, true);
-
-                        if (compileResult?.error) {
-                            const err = compileResult.error;
-                            lastCompileError = err;
-                            const transformed = compileResult.transformedSource || '';
-                            const errorMsg =
-                                `Compilation failed with error:\n${err}\n\n` +
-                                `The engine transforms your shader before compilation:\n` +
-                                `1. Numeric literals are extracted and replaced with u_param_cdN uniform parameters (code dials)\n` +
-                                `2. #version, precision, uniform, and out declarations are stripped (engine auto-provides them)\n` +
-                                `3. Voice wrapper code is appended\n\n` +
-                                `Here is the ACTUAL compiled source (with your numeric literals replaced by code dial uniforms):\n` +
-                                `${FENCE}glsl\n${transformed}\n${FENCE}\n\n` +
-                                `Fix the error and call load_shader() again. Do NOT use u_param_cdN directly — write normal numeric values and the engine will extract them.`;
+                        const result = this._compileAndLoad(messages, tc.id, shader, { echoTransformed: true });
+                        if (!result.ok) lastCompileError = result.error;
+                    } else if (tc.name === 'edit_shader') {
+                        const edits = Array.isArray(fnArgs.edits) ? fnArgs.edits.slice(0, 50) : [];
+                        if (!edits.length) {
                             messages.push({
                                 role: 'tool',
                                 tool_call_id: tc.id,
-                                content: JSON.stringify({ success: false, error: errorMsg })
+                                content: JSON.stringify({
+                                    success: false,
+                                    error: 'edits was missing or empty. Send {"edits": [{"old_code": "exact existing code", "new_code": "replacement"}]} — old_code must match exactly one location in the current shader.'
+                                })
                             });
-                            this.log(`❌ Shader compilation failed: ${err.substring(0, 100)}...`, 'error');
-                        } else {
-                            getEl('shaderCode').value = shader;
-                            if (window.WebGL) window.WebGL.initShader({ save: true });
-                            CodeDials.render();
-
-                            const transformed = compileResult?.transformedSource || '';
-                            let successMsg = 'Shader compiled and loaded successfully.';
-                            if (transformed) {
-                                successMsg += `\n\nHere is the compiled shader (your numeric literals replaced with code dial uniforms):\n${FENCE}glsl\n${transformed}\n${FENCE}`;
-                            }
-                            messages.push({
-                                role: 'tool',
-                                tool_call_id: tc.id,
-                                content: JSON.stringify({ success: true, message: successMsg })
-                            });
-                            this.log('✅ Shader loaded and compiled successfully', 'result');
+                            this.log('⚠️ edit_shader called with no edits', 'error');
+                            continue;
                         }
+                        const result = this._applyEdits(getEl('shaderCode').value, edits);
+                        if (!result.ok) {
+                            messages.push({
+                                role: 'tool',
+                                tool_call_id: tc.id,
+                                content: JSON.stringify({ success: false, error: `No edits were applied (atomic — all or nothing). ${result.error}` })
+                            });
+                            this.log(`⚠️ Edit failed: ${result.error}`, 'error');
+                            continue;
+                        }
+                        const applied = this._compileAndLoad(messages, tc.id, result.text, { note: `Applied ${edits.length} edit(s).` });
+                        if (!applied.ok) lastCompileError = applied.error;
                     } else if (tc.name === 'get_screenshot') {
                         const shot = (await Capture.canvas({ format: 'image/jpeg', quality: 0.8 })).split(',')[1];
                         this._redactOldScreenshots(messages);
@@ -426,7 +526,7 @@ export const LiveTuning = {
 
                         let screenshotText = "Screenshot captured. Here's the current state:";
                         if (lastCompileError) {
-                            screenshotText += `\n\nNote: The last shader failed to compile with this error:\n${lastCompileError}\n\nPlease fix this error and call load_shader() with corrected code.`;
+                            screenshotText += `\n\nNote: The last shader failed to compile with this error:\n${lastCompileError}\n\nPlease fix this error and send corrected code via edit_shader or load_shader.`;
                             lastCompileError = null;
                         }
 
