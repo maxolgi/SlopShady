@@ -189,6 +189,8 @@ export const LiveTuning = {
                 `3. Voice wrapper code is appended\n\n` +
                 `Here is the ACTUAL compiled source (with your numeric literals replaced by code dial uniforms):\n` +
                 `${FENCE}glsl\n${transformed}\n${FENCE}\n\n` +
+                `The shader was NOT loaded — the currently active shader is unchanged:\n` +
+                `${FENCE}glsl\n${getEl('shaderCode').value}\n${FENCE}\n\n` +
                 `Fix the error and send the corrected code — edit_shader for targeted fixes, load_shader for a full rewrite. Do NOT use u_param_cdN directly — write normal numeric values and the engine will extract them.`;
             messages.push({
                 role: 'tool',
