@@ -21,7 +21,7 @@ const LIVE_TUNING_TOOLS = [
         type: 'function',
         function: {
             name: 'load_shader',
-            description: 'Load a complete modified shader into the editor.',
+            description: 'Replace the ENTIRE shader with a complete new one. Use ONLY for full rewrites or when edit_shader cannot express the change — otherwise prefer edit_shader.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -38,7 +38,7 @@ const LIVE_TUNING_TOOLS = [
         type: 'function',
         function: {
             name: 'edit_shader',
-            description: 'Apply targeted find/replace edits to the CURRENT shader — much cheaper than resending the whole file. Each edit finds old_code (must match exactly one location) and replaces it with new_code. Prefer for fixes, tweaks and small changes; use load_shader for full rewrites or when edits cannot match.',
+            description: 'Apply targeted find/replace edits to the CURRENT shader — your DEFAULT tool for making changes. Works for ANY modification: tweaks, value adjustments, small additions, refactors, fixes. Each edit finds old_code (must match exactly one location) and replaces it with new_code. Much cheaper than resending the whole shader.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -95,8 +95,8 @@ export const LiveTuning = {
             `CURRENT SHADER CODE:\n` +
             `${FENCE}glsl\n${shaderCode}\n${FENCE}\n\n` +
             `=== TOOLS AVAILABLE ===\n` +
-            `- edit_shader(edits): Apply targeted find/replace edits to the CURRENT shader. Each edit's old_code must exactly match ONE location (include surrounding lines to disambiguate); new_code replaces it. PREFER this for fixes and small changes — it is much cheaper than resending the whole shader.\n` +
-            `- load_shader(shader_code): Load a complete new shader. Use for full rewrites, or when edit_shader cannot match. ALWAYS use this after compilation errors that need structural changes.\n` +
+            `- edit_shader(edits): Your DEFAULT tool for making changes — targeted find/replace edits against the CURRENT shader. Each edit's old_code must exactly match ONE location in the shader AS YOU LAST WROTE IT (with normal numeric literals — NOT the transformed u_param_cdN version shown in compile errors); new_code replaces it. Include surrounding lines to disambiguate. Use for ANY modification: tweaks, value changes, small additions, refactors, fixes. Much cheaper than resending the whole shader.\n` +
+            `- load_shader(shader_code): Replace the ENTIRE shader. Only for full rewrites or when edit_shader cannot express the change.\n` +
             `- get_screenshot(): Capture the current visual state.\n\n` +
             `=== ERROR HANDLING ===\n` +
             `If a tool returns a compilation error, you MUST send corrected code again (edit_shader for targeted fixes, load_shader for a full rewrite). Do not respond with text - fix the error and call the tool.\n\n` +
@@ -212,12 +212,11 @@ export const LiveTuning = {
         if (window.WebGL) window.WebGL.initShader({ save: true });
         CodeDials.render();
 
-        // edit path stays short on success; full rewrites echo the transformed
-        // source so the model sees the dial mapping (existing behavior)
-        let successMsg = (opts.note ? `${opts.note} ` : '') + 'Shader compiled and loaded successfully.';
-        if (opts.echoTransformed && compileResult?.transformedSource) {
-            successMsg += `\n\nHere is the compiled shader (your numeric literals replaced with code dial uniforms):\n${FENCE}glsl\n${compileResult.transformedSource}\n${FENCE}`;
-        }
+        // Success responses stay short: echoing the transformed source bloats
+        // context and invites edit_shader old_code mismatches (the model must
+        // match the source as it wrote it, with literals — not u_param_cdN).
+        // The compile-error path still echoes it for diagnosis.
+        const successMsg = (opts.note ? `${opts.note} ` : '') + 'Shader compiled and loaded successfully.';
         messages.push({
             role: 'tool',
             tool_call_id: toolCallId,
@@ -487,7 +486,7 @@ export const LiveTuning = {
                             this.log('⚠️ Model sent an incomplete shader — asking for a full resend', 'error');
                             continue;
                         }
-                        const result = this._compileAndLoad(messages, tc.id, shader, { echoTransformed: true });
+                        const result = this._compileAndLoad(messages, tc.id, shader);
                         if (!result.ok) lastCompileError = result.error;
                     } else if (tc.name === 'edit_shader') {
                         const edits = Array.isArray(fnArgs.edits) ? fnArgs.edits.slice(0, 50) : [];
