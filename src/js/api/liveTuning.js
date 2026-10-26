@@ -105,6 +105,18 @@ export const LiveTuning = {
         }
     },
 
+    // Reasoning models (qwen3 etc.) inline <think>…</think> in content when the
+    // server doesn't split reasoning into reasoning_content deltas. Providers ask
+    // that reasoning never be replayed in history — and it bloats every request.
+    // The live thinking display streams separately and is unaffected.
+    // Mirrors how agent harnesses discard prior-turn thinking.
+    _stripThinking(text) {
+        return text
+            .replace(/<think>[\s\S]*?<\/think>\s*/g, '')
+            .replace(/<think>[\s\S]*$/g, '')
+            .trim();
+    },
+
     _trimHistory(messages, limit) {
         // 0 (or invalid) = keep everything; below 4 there is nothing coherent left to trim to
         if (!Number.isFinite(limit) || limit < 4) return;
@@ -313,7 +325,8 @@ export const LiveTuning = {
                 const { content, toolCalls, reasoning } = await this._llmCall(model, messages, (delta) => this._updateThinkingDisplay(thinkWrap, delta));
                 this._endThinkingDisplay(thinkWrap, reasoning);
 
-                const assistantMsg = { role: 'assistant', content: content || null };
+                const cleanedContent = this._stripThinking(content || '');
+                const assistantMsg = { role: 'assistant', content: cleanedContent || null };
                 assistantMsg.tool_calls = toolCalls.length
                     ? toolCalls.map(tc => ({
                         id: tc.id,
