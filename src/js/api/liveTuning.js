@@ -95,7 +95,7 @@ export const LiveTuning = {
             `CURRENT SHADER CODE:\n` +
             `${FENCE}glsl\n${shaderCode}\n${FENCE}\n\n` +
             `=== TOOLS AVAILABLE ===\n` +
-            `- edit_shader(edits): Your DEFAULT tool for making changes — targeted find/replace edits against the CURRENT shader. Each edit's old_code must exactly match ONE location in the shader AS YOU LAST WROTE IT (with normal numeric literals — NOT the transformed u_param_cdN version shown in compile errors); new_code replaces it. Include surrounding lines to disambiguate. Use for ANY modification: tweaks, value changes, small additions, refactors, fixes. Much cheaper than resending the whole shader.\n` +
+            `- edit_shader(edits): Your DEFAULT tool for making changes — targeted find/replace edits against the CURRENT shader. Each edit's old_code must exactly match ONE location in the CURRENT shader (with normal numeric literals — NOT the transformed u_param_cdN version shown in compile errors); the authoritative current source is attached to every screenshot. Include surrounding lines to disambiguate. Use for ANY modification: tweaks, value changes, small additions, refactors, fixes. Much cheaper than resending the whole shader.\n` +
             `- load_shader(shader_code): Replace the ENTIRE shader. Only for full rewrites or when edit_shader cannot express the change.\n` +
             `- get_screenshot(): Capture the current visual state.\n\n` +
             `=== ERROR HANDLING ===\n` +
@@ -520,6 +520,15 @@ export const LiveTuning = {
                         });
 
                         let screenshotText = "Screenshot captured. Here's the current state:";
+
+                        // Always resync the model with the authoritative source —
+                        // after failed/partial edits its mental copy can drift,
+                        // and edit_shader old_code must match this exactly.
+                        const currentShader = getEl('shaderCode').value;
+                        if (currentShader.trim()) {
+                            screenshotText += `\n\nCURRENT SHADER SOURCE (authoritative — match edit_shader old_code against this, not your memory):\n${FENCE}glsl\n${currentShader}\n${FENCE}`;
+                        }
+
                         if (lastCompileError) {
                             screenshotText += `\n\nNote: The last shader failed to compile with this error:\n${lastCompileError}\n\nPlease fix this error and send corrected code via edit_shader or load_shader.`;
                             lastCompileError = null;
