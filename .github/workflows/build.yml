@@ -195,12 +195,15 @@ jobs:
     steps:
       # Must precede checkout: git is not in the base image and checkout falls
       # back to a REST download (no submodules) without it.
+      # libssl-dev: reqwest pulls openssl-sys via default native-tls; ubuntu
+      # runner images preinstall it, the bare container does not.
       - name: Install build deps (Debian trixie)
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
             ca-certificates curl git python3 xz-utils \
             build-essential cmake ninja-build pkg-config \
+            libssl-dev \
             libegl-dev libgl1-mesa-dev \
             libxcb1-dev libxrandr-dev libxinerama-dev \
             libxcursor-dev libxi-dev libxxf86vm-dev \
