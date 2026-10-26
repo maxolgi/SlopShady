@@ -94,10 +94,11 @@ jobs:
         run: npm run typecheck
 
   # ---------------------------------------------------------------------------
-  # 2. Full build — Linux, Windows, macOS (ARM).
+  # 2. Full build — Windows, macOS (ARM).
   #    build.rs embeds static/ via rust-embed at compile time; it also links
   #    the QuicSRT engine (emcc) and runs tsc, so emsdk + npm ci must precede
   #    the cargo build.
+  #    (Linux builds in build-linux below.)
   # ---------------------------------------------------------------------------
   build:
     name: Build (${{ matrix.name }})
@@ -105,11 +106,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Linux x64
-            os: ubuntu-latest
-            binary: slopshady
-            artifact: slopshady-linux-x64
-            staged: slopshady-linux-x64
           - name: Windows x64
             os: windows-latest
             binary: slopshady.exe
@@ -156,16 +152,6 @@ jobs:
 
       - run: npm ci
 
-      - name: Install Linux build deps (eframe/egui needs EGL/X11/Wayland headers)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libegl-dev libgl1-mesa-dev \
-            libxcb1-dev libxrandr-dev libxinerama-dev \
-            libxcursor-dev libxi-dev libxxf86vm-dev \
-            libwayland-dev libxkbcommon-dev
-
       # Windows: build under an emsdk-activated environment so the pylauncher
       # .exe entry points build.rs spawns directly get canonical
       # EMSDK_PYTHON/EM_CONFIG and the em* tools on PATH. `call` (not a bare
@@ -194,18 +180,92 @@ jobs:
           path: artifact/${{ matrix.staged }}
           if-no-files-found: error
 
-      # .deb package — Linux only (binary already built, --no-build skips rebuild)
+  # ---------------------------------------------------------------------------
+  # 3. Linux build — Debian 13 (trixie) container, glibc 2.41.
+  #    ubuntu-latest images carry a newer glibc (2.42), which would raise the
+  #    binary's minimum requirement above Debian stable. Building inside
+  #    debian:trixie caps it at glibc 2.41, and cargo-deb's $auto depends
+  #    resolve against trixie's library versions. `container:` cannot be set
+  #    conditionally from a matrix, hence a separate job.
+  # ---------------------------------------------------------------------------
+  build-linux:
+    name: Build (Linux x64)
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      # Must precede checkout: git is not in the base image and checkout falls
+      # back to a REST download (no submodules) without it.
+      - name: Install build deps (Debian trixie)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git python3 xz-utils \
+            build-essential cmake ninja-build pkg-config \
+            libegl-dev libgl1-mesa-dev \
+            libxcb1-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxxf86vm-dev \
+            libwayland-dev libxkbcommon-dev
+          ldd --version | head -n 1
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # dtolnay/rust-toolchain assumes rustup is preinstalled (true on GH
+      # runners, not in the bare container), so install rustup directly.
+      - name: Install Rust (stable)
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      # build.rs resolves emsdk via $EMSDK → ~/emsdk → PATH. 6.0.8 is the
+      # toolchain the engine port was built against (matches upstream
+      # QuicSRT-wasm CI).
+      - name: Install Emscripten (emsdk 6.0.8)
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install 6.0.8
+          "$HOME/emsdk/emsdk" activate 6.0.8
+          echo "EMSDK=$HOME/emsdk" >> "$GITHUB_ENV"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: slopshady
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Build slopshady binary
+        working-directory: slopshady
+        run: cargo build --release
+
+      - name: Stage binary
+        run: |
+          mkdir -p artifact
+          cp slopshady/target/release/slopshady artifact/slopshady-linux-x64
+          strip artifact/slopshady-linux-x64
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: slopshady-linux-x64
+          path: artifact/slopshady-linux-x64
+          if-no-files-found: error
+
+      # .deb package (binary already built, --no-build skips rebuild). $auto
+      # depends resolve against trixie via dpkg-shlibdeps (from build-essential).
       - name: Install cargo-deb
-        if: runner.os == 'Linux'
         run: cargo install cargo-deb --locked
 
       - name: Build .deb package
-        if: runner.os == 'Linux'
         working-directory: slopshady
         run: cargo deb --no-build
 
       - name: Upload .deb
-        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v7
         with:
           name: slopshady-deb
@@ -213,13 +273,13 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # 3. Publish a GitHub Release for every successful build.
+  # 4. Publish a GitHub Release for every successful build.
   #    - Push to main  → regular release tagged dev-<short_sha>, marked "latest"
   #    - v* tag push    → stable release tagged <version>, marked "latest"
   # ---------------------------------------------------------------------------
   release:
     name: Publish release
-    needs: build
+    needs: [build, build-linux]
     if: >-
       github.event_name != 'pull_request' &&
       (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
