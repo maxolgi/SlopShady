@@ -397,7 +397,9 @@ export const LiveTuning = {
         getEl('response').innerHTML = '';
         getEl('status').textContent = 'Starting tuning session...';
 
-        const screenshot = await Capture.canvas({ format: 'image/jpeg', quality: 0.8 });
+        // Respect the Capture settings (resolution/format/quality) instead of
+        // hardcoding jpeg/0.8 — the dataURL carries the correct mime prefix.
+        const screenshot = await Capture.canvas();
         const shaderCode = getEl('shaderCode').value;
         const model = getEl('modelNameImage').value.trim();
         const maxIterations = parseInt(getEl('liveTuningMaxIterations').value) || 20;
@@ -412,7 +414,7 @@ export const LiveTuning = {
                 role: 'user',
                 content: [
                     { type: 'text', text: prompt },
-                    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${screenshot.split(',')[1]}` } }
+                    { type: 'image_url', image_url: { url: screenshot } }
                 ]
             }
         ];
@@ -515,12 +517,14 @@ export const LiveTuning = {
                         const applied = this._compileAndLoad(messages, tc.id, result.text, { note: `Applied ${edits.length} edit(s).` });
                         if (!applied.ok) lastCompileError = applied.error;
                     } else if (tc.name === 'get_screenshot') {
-                        const shot = (await Capture.canvas({ format: 'image/jpeg', quality: 0.8 })).split(',')[1];
+                        const shotUrl = await Capture.canvas();
+                        const shot = shotUrl.split(',')[1];
+                        const fmt = shotUrl.slice(5, shotUrl.indexOf(';')).replace('image/', '');
                         this._redactOldScreenshots(messages);
                         messages.push({
                             role: 'tool',
                             tool_call_id: tc.id,
-                            content: JSON.stringify({ success: true, screenshot_data: shot, format: 'jpeg' })
+                            content: JSON.stringify({ success: true, screenshot_data: shot, format: fmt })
                         });
 
                         let screenshotText = "Screenshot captured. Here's the current state:";
@@ -533,7 +537,7 @@ export const LiveTuning = {
                             role: 'user',
                             content: [
                                 { type: 'text', text: screenshotText },
-                                { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${shot}` } }
+                                { type: 'image_url', image_url: { url: shotUrl } }
                             ]
                         });
                         this.log('📸 Screenshot sent to model', 'result');
