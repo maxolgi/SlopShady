@@ -253,6 +253,10 @@ export function loadState(data) {
 export function loadLocalPreferences() {
     state.fboFormat = loadFromLocalStorage(SETTINGS_KEYS.fboFormat, 'rgba8');
     state.resolutionScale = loadFromLocalStorage(SETTINGS_KEYS.resolutionScale, '1');
+    // Rendering resolution is applied to the canvas in WebGL.init(), which runs
+    // right after this — but nothing else syncs the dropdown, so the label would
+    // claim the HTML default ("1x (CSS") while rendering at the persisted scale.
+    setDropdownValue('resolution-menu', state.resolutionScale);
 }
 
 export function initSettingsPersistence() {
