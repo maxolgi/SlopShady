@@ -104,30 +104,21 @@ export const LiveTuning = {
     },
 
     _redactOldScreenshots(messages) {
+        // Images live only in user messages (tool responses are text-only).
+        // Keep the newest MAX_SCREENSHOTS_IN_HISTORY images, strip the rest.
         const shotIndices = [];
         for (let i = 0; i < messages.length; i++) {
             const msg = messages[i];
-            if (msg.role !== 'tool' || typeof msg.content !== 'string') continue;
-            let parsed = null;
-            try { parsed = JSON.parse(msg.content); } catch (e) {}
-            if (parsed && parsed.screenshot_data) shotIndices.push(i);
+            if (msg.role !== 'user' || !Array.isArray(msg.content)) continue;
+            if (msg.content.some(part => part && part.image_url)) shotIndices.push(i);
         }
         if (shotIndices.length <= MAX_SCREENSHOTS_IN_HISTORY) return;
 
-        const cutoff = shotIndices[shotIndices.length - MAX_SCREENSHOTS_IN_HISTORY];
-
+        const keepFrom = shotIndices[shotIndices.length - MAX_SCREENSHOTS_IN_HISTORY];
         for (const idx of shotIndices) {
-            if (idx < cutoff) {
-                messages[idx].content = JSON.stringify({ success: true, message: 'screenshot omitted to save context' });
-            }
-        }
-
-        for (let i = 0; i < cutoff; i++) {
-            const msg = messages[i];
-            if (msg.role !== 'user' || !Array.isArray(msg.content)) continue;
-            if (!msg.content.some(part => part && part.image_url)) continue;
-            const textParts = msg.content.filter(part => part.type === 'text');
-            msg.content = textParts.length ? textParts : '[screenshot omitted]';
+            if (idx >= keepFrom) break;
+            const textParts = messages[idx].content.filter(part => part.type === 'text');
+            messages[idx].content = textParts.length ? textParts : '[screenshot omitted]';
         }
     },
 
@@ -518,13 +509,14 @@ export const LiveTuning = {
                         if (!applied.ok) lastCompileError = applied.error;
                     } else if (tc.name === 'get_screenshot') {
                         const shotUrl = await Capture.canvas();
-                        const shot = shotUrl.split(',')[1];
-                        const fmt = shotUrl.slice(5, shotUrl.indexOf(';')).replace('image/', '');
                         this._redactOldScreenshots(messages);
+                        // Text-only tool response; the image goes only in the
+                        // follow-up user message — sending the identical base64
+                        // twice doubled every screenshot's context cost.
                         messages.push({
                             role: 'tool',
                             tool_call_id: tc.id,
-                            content: JSON.stringify({ success: true, screenshot_data: shot, format: fmt })
+                            content: JSON.stringify({ success: true, message: 'Screenshot captured — attached in the following message.' })
                         });
 
                         let screenshotText = "Screenshot captured. Here's the current state:";

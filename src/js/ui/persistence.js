@@ -281,11 +281,11 @@ export function initSettingsPersistence() {
     const savedFmt = loadFromLocalStorage(SETTINGS_KEYS.captureFormat, getEl('captureFormat').value);
     getEl('captureFormat').value = savedFmt;
     setDropdownValue('captureFormat-menu', savedFmt);
-    state.captureQuality = parseInt(loadFromLocalStorage(SETTINGS_KEYS.captureQuality, '80'));
+    state.captureQuality = Math.min(80, parseInt(loadFromLocalStorage(SETTINGS_KEYS.captureQuality, '50')) || 50);
     const qualSlider = getEl('captureQualitySlider');
     if (qualSlider) {
         const ctrl = initSlider(qualSlider, {
-            min: 10, max: 100, step: 1, defaultValue: 80,
+            min: 10, max: 80, step: 1, defaultValue: 50,
             format: v => v + '%',
             onChange: (val) => { state.captureQuality = val; },
             onCommit: (val) => {

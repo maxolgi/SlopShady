@@ -16,7 +16,7 @@ export const Capture = {
     async canvas(opts = {}) {
         const scale = opts.scale !== undefined ? opts.scale : parseFloat(getEl('captureResolution').value);
         const format = opts.format || getEl('captureFormat').value;
-        const quality = opts.quality !== undefined ? opts.quality : (state.captureQuality || 80) / 100;
+        const quality = opts.quality !== undefined ? opts.quality : (state.captureQuality || 50) / 100;
 
         const dataUrl = await captureNextFrame();
 

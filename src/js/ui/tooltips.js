@@ -229,7 +229,7 @@ const T = {
     SETTINGS_MODEL_TEXT: 'Text model — used for shader generation and chat',
     SETTINGS_CAPTURE_RES: 'Screenshot resolution scale: Full, Half, or Quarter',
     SETTINGS_FORMAT: 'Screenshot format: PNG (lossless) or WebP (compressed)',
-    SETTINGS_QUALITY: 'WebP compression quality (10-100%)',
+    SETTINGS_QUALITY: 'WebP compression quality (10-80%)',
     SETTINGS_MAX_ITER: 'Max AI iterations per live tuning session (1-100)',
     SETTINGS_RESET: 'Clear all localStorage and reset to defaults',
     SETTINGS_SAVE: 'Export full state as JSON file · Ctrl+S',

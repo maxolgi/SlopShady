@@ -97,7 +97,7 @@ export const state = {
         noteCount: 0,
         trackCount: 0
     },
-    captureQuality: 80,
+    captureQuality: 50,
     visualBrain: {
         blockSize: 16,
         isRecording: false,
