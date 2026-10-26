@@ -58,7 +58,6 @@ export const SETTINGS_KEYS = {
     fboFormat: 'slopshady_fboFormat',
     resolutionScale: 'slopshady_resolutionScale',
     cameraDeviceId: 'slopshady_cameraDeviceId',
-    screenMonitorIndex: 'slopshady_screenMonitorIndex',
     midiDeviceId: 'slopshady_midiDeviceId',
     audioSource: 'slopshady_audioSource',
     localSnapshot: 'slopshady_localSnapshot',
