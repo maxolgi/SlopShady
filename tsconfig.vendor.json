@@ -10,5 +10,8 @@
     "include": [
         "vendor/QuicSRT-wasm/page/vendor/**/*.ts",
         "src/types/mediastreamtrack-generator.d.ts"
+    ],
+    "exclude": [
+        "vendor/QuicSRT-wasm/page/vendor/debug"
     ]
 }
