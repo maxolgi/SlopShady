@@ -151,6 +151,14 @@ export const AudioTexture = {
     },
 
     _resolveAnalyser() {
+        // QuicSRT override: when the stream panel's analyser dropdown picks
+        // a live input, its measurement-only analyser (window global — no
+        // import cycle) takes precedence over the settings sources.
+        const ssi = (typeof window !== 'undefined' && window.StreamingInputUI) || null;
+        if (ssi && typeof ssi.getVisualAnalyser === 'function') {
+            const node = ssi.getVisualAnalyser();
+            if (node) return node;
+        }
         if (this.source === 'mic') return state.audioAnalyser;
         if (this.source === 'capture') return state.screenAudioAnalyser;
         return state.audioPlayerAnalyser;

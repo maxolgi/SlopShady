@@ -16,7 +16,7 @@
  * Persisted in localStorage (NOT in WS state — credentials-adjacent).
  */
 
-import { getEl, state } from '../state.js';
+import { getEl } from '../state.js';
 import { mountPlayer } from '/static/vendor/QuicSRT-wasm/page/vendor/player/index.js';
 import type { PlayerHandle } from '/static/vendor/QuicSRT-wasm/page/vendor/player/index.js';
 
@@ -89,7 +89,6 @@ interface InputEntry {
     lastRxBytesAt?: number;
     audioMutedForLayer: Map<number, boolean>;
     layerVolumes: Map<number, number>;
-    analyserTap: GainNode | null;
     _analyserConnected: boolean;
     _antiThrottle: { osc: OscillatorNode } | null;
     _presentRaf: number | null;
@@ -108,8 +107,13 @@ export const StreamingInputUI = {
     _selectedInput: 0,
 
     _audioCtx: null as AudioContext | null,
-    _analyser: null as AudioNode | null,
     _analyserSource: 'webamp' as string,
+    // Measurement-only analyser for audio-reactive visuals. Lives in OUR
+    // AudioContext (the source nodes' context — cross-context connect()
+    // throws in Chrome) and its output connects to NOTHING, so by
+    // construction it can neither reach the speakers nor add anything to
+    // the audible path.
+    _quicsrtAnalyser: null as AnalyserNode | null,
 
     init(): void {
         this._renderPanel();
@@ -165,13 +169,19 @@ export const StreamingInputUI = {
         }
     },
 
-    setAnalyser(analyserNode: AudioNode | null): void {
-        this._analyser = analyserNode;
-        this._applyAnalyserRouting();
-    },
-
     setAudioContext(ctx: AudioContext | null): void {
         this._audioCtx = ctx;
+    },
+
+    /**
+     * Analyser node feeding audio-reactive visuals while the stream panel's
+     * analyser source is a QuicSRT input; null otherwise (visuals fall
+     * through to the player/mic/capture sources). Read per-frame by
+     * AudioTexture via the window global — no import cycle.
+     */
+    getVisualAnalyser(): AnalyserNode | null {
+        if (!/^quicsrt:\d+$/.test(this._analyserSource)) return null;
+        return this._quicsrtAnalyser;
     },
 
     // ---------- Public API ----------
@@ -245,10 +255,27 @@ export const StreamingInputUI = {
      * the current `displayedFrame` when no new frame is due yet so the
      * compositor can keep re-uploading it without flicker.
      */
+    /**
+     * Advance the displayed frame against the PTS clock delayed by the
+     * audio output latency (baseLatency + outputLatency of the shared
+     * AudioContext). Audio that left the decoder alongside a video frame
+     * reaches the speakers that much later; delaying video presentation
+     * by the same amount keeps A/V in sync. Without this, video leads
+     * audio by the whole audio output path (typically 20–60 ms).
+     */
+    _audioOutLatencyMs(): number {
+        const ctx = this._audioCtx;
+        if (!ctx) return 0;
+        const base = typeof ctx.baseLatency === 'number' ? ctx.baseLatency : 0;
+        const out = typeof ctx.outputLatency === 'number' && Number.isFinite(ctx.outputLatency) ? ctx.outputLatency : 0;
+        // Sanity cap: a bogus/large report must not stall the ring.
+        return Math.min(250, Math.max(0, (base + out) * 1000));
+    },
+
     _advanceDisplayedFrame(inputIndex: number): void {
         const entry = this._inputs[inputIndex];
         if (!entry || entry.ptsOriginUs === null) return;
-        const nowPtsUs = entry.ptsOriginUs + (performance.now() - entry.wallOriginMs) * 1000;
+        const nowPtsUs = entry.ptsOriginUs + (performance.now() - entry.wallOriginMs) * 1000 - this._audioOutLatencyMs() * 1000;
         while (entry.frameRing.length > 1 && entry.frameRing[0].timestamp < nowPtsUs - LATE_DROP_US) {
             const old = entry.frameRing.shift();
             try { old?.close(); } catch (e) { /* ignore */ }
@@ -409,7 +436,7 @@ export const StreamingInputUI = {
                 audioTrackGenerator: null, audioWriter: null, audioSourceNode: null,
                 layerGains: new Map(), audioMutedForLayer: new Map(),
                 layerVolumes: new Map(),
-                analyserTap: null, _analyserConnected: false,
+                _analyserConnected: false,
                 _antiThrottle: null, _presentRaf: null, lastStats: null,
             };
         }
@@ -612,9 +639,11 @@ export const StreamingInputUI = {
                     entry.audioSourceNode.connect(gain);
                 }
                 if (this._analyserSource === `quicsrt:${inputIndex}`) {
-                    if (!entry.analyserTap) entry.analyserTap = this._ensureAnalyserTap(inputIndex);
-                    try { entry.audioSourceNode.connect(entry.analyserTap!); } catch (e) { /* ignore */ }
-                    entry._analyserConnected = true;
+                    const analyser = this._ensureVisualAnalyser();
+                    if (analyser) {
+                        try { entry.audioSourceNode.connect(analyser); } catch (e) { /* ignore */ }
+                        entry._analyserConnected = true;
+                    }
                 }
             } catch (e) {
                 console.warn(`[stream-input ${inputIndex}] audio source init failed`, e);
@@ -640,35 +669,36 @@ export const StreamingInputUI = {
         return gain;
     },
 
-    _ensureAnalyserTap(inputIndex: number): GainNode | null {
-        const entry = this._inputs[inputIndex];
-        if (!entry) return null;
-        if (entry.analyserTap) return entry.analyserTap;
+    /**
+     * Shared measurement analyser (see _quicsrtAnalyser). fftSize 2048 /
+     * no smoothing to match webamp's analyser so visuals behave the same
+     * whichever source is selected.
+     */
+    _ensureVisualAnalyser(): AnalyserNode | null {
+        if (this._quicsrtAnalyser) return this._quicsrtAnalyser;
         const ctx = this._ensureAudioCtx();
-        const tap = ctx.createGain();
-        tap.gain.value = 1.0;
-        const analyser = this._resolveAnalyser();
-        if (analyser) tap.connect(analyser);
-        entry.analyserTap = tap;
-        return tap;
-    },
-
-    _resolveAnalyser(): AudioNode | null {
-        return this._analyser || (state as Record<string, unknown>).audioPlayerAnalyser as AudioNode | null || null;
+        if (!ctx) return null;
+        try {
+            const an = ctx.createAnalyser();
+            an.fftSize = 2048;
+            an.smoothingTimeConstant = 0;
+            this._quicsrtAnalyser = an;
+            return an;
+        } catch (e) { return null; }
     },
 
     _applyAnalyserRouting(): void {
+        const analyser = this._ensureVisualAnalyser();
         for (let i = 0; i < NUM_INPUTS; i++) {
             const entry = this._inputs[i];
             if (!entry || !entry.audioSourceNode) continue;
-            const should = (this._analyserSource === `quicsrt:${i}`);
+            const should = this._analyserSource === `quicsrt:${i}` && !!analyser;
             const has = entry._analyserConnected;
             if (should && !has) {
-                if (!entry.analyserTap) entry.analyserTap = this._ensureAnalyserTap(i);
-                try { entry.audioSourceNode.connect(entry.analyserTap!); } catch (e) { /* ignore */ }
+                try { entry.audioSourceNode.connect(analyser!); } catch (e) { /* ignore */ }
                 entry._analyserConnected = true;
             } else if (!should && has) {
-                try { entry.audioSourceNode.disconnect(entry.analyserTap!); } catch (e) { /* ignore */ }
+                try { entry.audioSourceNode.disconnect(analyser!); } catch (e) { /* ignore */ }
                 entry._analyserConnected = false;
             }
         }
@@ -682,11 +712,6 @@ export const StreamingInputUI = {
             try { gain.disconnect(); } catch (e) { /* ignore */ }
         }
         entry.layerGains.clear();
-        if (entry.analyserTap) {
-            try { entry.audioSourceNode?.disconnect(entry.analyserTap); } catch (e) { /* ignore */ }
-            try { entry.analyserTap.disconnect(); } catch (e) { /* ignore */ }
-            entry.analyserTap = null;
-        }
         entry._analyserConnected = false;
         if (entry.audioWriter) { try { entry.audioWriter.close(); } catch (e) { /* ignore */ } entry.audioWriter = null; }
         if (entry.audioTrackGenerator) { try { entry.audioTrackGenerator.track.stop(); } catch (e) { /* ignore */ } entry.audioTrackGenerator = null; }
