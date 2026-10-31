@@ -432,7 +432,12 @@ void main() {
     centered /= max(u_zoom, 0.001);
     float angle = u_rotate;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+    // Rotate in pixel-isotropic space (see COMPOSITE_FS) — raw UV rotation
+    // shears feedback trails on non-square canvases.
+    float aspect = iResolution.x / iResolution.y;
+    centered.x *= aspect;
     centered = rot * centered;
+    centered.x /= aspect;
     centered += u_offset;
     vec2 feedbackUv = centered + 0.5;
     vec4 current = texture(u_currentFrame, uv);
@@ -575,7 +580,14 @@ void main() {
                     float angle = u_voiceRotation[i];
                     float cosA = cos(angle);
                     float sinA = sin(angle);
-                    voiceUv = mat2(cosA, -sinA, sinA, cosA) * (voiceUv - 0.5) + 0.5;
+                    // Rotate in pixel-isotropic space (see COMPOSITE_FS) — raw UV
+                    // rotation shears voice content on non-square canvases.
+                    vec2 voiceC = voiceUv - 0.5;
+                    float voiceAspect = iResolution.x / iResolution.y;
+                    voiceC.x *= voiceAspect;
+                    voiceC = mat2(cosA, -sinA, sinA, cosA) * voiceC;
+                    voiceC.x /= voiceAspect;
+                    voiceUv = voiceC + 0.5;
                 }
 
                 _voiceRenderOnce(voiceUv);
@@ -881,7 +893,14 @@ void main() {
     if (abs(u_rotation) > 0.001) {
         float c = cos(u_rotation);
         float s = sin(u_rotation);
-        uv = mat2(c, -s, s, c) * (uv - 0.5) + 0.5;
+        // Rotate in pixel-isotropic space (see COMPOSITE_FS) — raw UV rotation
+        // shears the deflected image on non-square canvases.
+        float deflectAspect = u_resolution.x / u_resolution.y;
+        vec2 rc = uv - 0.5;
+        rc.x *= deflectAspect;
+        rc = mat2(c, -s, s, c) * rc;
+        rc.x /= deflectAspect;
+        uv = rc + 0.5;
     }
     for (int iter = 0; iter < 5; iter++) {
         if (iter >= u_domainWarpIterations) break;
