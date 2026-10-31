@@ -1476,7 +1476,13 @@
                     <input type="number" id="stream-input-latency" value="300" min="20" max="8000" step="10" placeholder="Latency">
                     <button class="tool-btn" id="stream-input-toggle">▶ Start</button>
                     <button class="tool-btn" id="stream-input-toggle-all">▶ Start All</button>
-                    <div></div>
+                    <div class="dropdown" id="stream-decode-dropdown">
+                        <button class="dropdown__selected tool-btn"><span>Hardware</span></button>
+                        <div class="dropdown__menu" id="stream-decode-menu">
+                            <div class="dropdown__item active" data-value="prefer-hardware">Hardware</div>
+                            <div class="dropdown__item" data-value="prefer-software">Software</div>
+                        </div>
+                    </div>
                 </div>
                 <div id="stream-input-status"></div>
                 <div id="stream-input-stats" class="stream-input-stats"></div>

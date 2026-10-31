@@ -22,6 +22,11 @@ import type { PlayerHandle } from '/static/vendor/QuicSRT-wasm/page/vendor/playe
 
 const NUM_INPUTS = 8;
 const LS_PREFIX = 'slopshady.stream.input.';
+// Global (not per-input) decode preference: which VideoDecoder
+// hardwareAcceleration mode QuicSRT inputs mount with.
+const HW_MODE_KEY = 'slopshady.stream.hwMode';
+
+type HwMode = 'prefer-hardware' | 'prefer-software';
 
 // PTS-paced presentation (mirrors vendor/QuicSRT-wasm/page/vendor/render.ts):
 // incoming decoded frames are buffered in a small ring and handed to the
@@ -112,6 +117,7 @@ export const StreamingInputUI = {
         // Show selected input's stored values.
         this._renderSelectedConfig();
         this._renderAnalyserMenu();
+        this._syncDecodeDropdown();
 
         // Wire selector dropdown.
         const selDd = getEl('stream-input-selector');
@@ -132,6 +138,17 @@ export const StreamingInputUI = {
                 try { localStorage.setItem('slopshady.stream.analyserSource', this._analyserSource); } catch (err) { /* ignore */ }
                 this._applyAnalyserRouting();
                 this._syncAnalyserDropdownDisplay();
+            });
+        }
+        // Wire decode-mode dropdown (hw/sw VideoDecoder preference).
+        const decodeMenu = getEl('stream-decode-menu');
+        if (decodeMenu) {
+            decodeMenu.addEventListener('dropdown-select', (e: Event) => {
+                const detail = (e as CustomEvent).detail || {};
+                const mode: HwMode = detail.value === 'prefer-software' ? 'prefer-software' : 'prefer-hardware';
+                try { localStorage.setItem(HW_MODE_KEY, mode); } catch (err) { /* ignore */ }
+                this._syncDecodeDropdown();
+                this._reconnectLiveInputs();
             });
         }
         // Wire Start/Stop toggle + Start-All/Stop-All toggle.
@@ -464,6 +481,7 @@ export const StreamingInputUI = {
             stream,
             certHash: hash,
             latencyMs: cfg.latency,
+            hwMode: this._readHwMode(),
         });
         this._wireHandleEvents(inputIndex, entry.handle);
         entry.handle.connect();
@@ -493,6 +511,32 @@ export const StreamingInputUI = {
         this._setStatus(inputIndex, '');
         this._renderStatsBlock();
         this._syncToggleButton(); this._syncToggleAllButton();
+    },
+
+    /**
+     * Reconnect all running inputs — used when the decode mode changes, so
+     * the new preference reaches the worker-side VideoPipeline (it is fixed
+     * per worker, and the worker is recreated per connection). Refcounts and
+     * manualStart are left untouched: whatever was running keeps running.
+     *
+     * _disconnect() tears the audio graph down, but layer taps are only
+     * re-established by the layer mixer on route changes — so snapshot and
+     * re-apply per-layer volume/mute to rebuild the gains. The analyser tap
+     * self-heals in _handleAudioData when the new source node forms.
+     */
+    _reconnectLiveInputs(): void {
+        for (let i = 0; i < NUM_INPUTS; i++) {
+            const entry = this._inputs[i];
+            if (!entry || !entry.handle) continue;
+            const vols = new Map(entry.layerVolumes);
+            const mutes = new Map(entry.audioMutedForLayer);
+            this._disconnect(i);
+            this._connect(i);
+            for (const [layerIndex, volume] of vols) this.setLayerVolume(i, layerIndex, volume);
+            for (const [layerIndex, muted] of mutes) this.setLayerMute(i, layerIndex, muted);
+        }
+        this._syncToggleButton();
+        this._syncToggleAllButton();
     },
 
     // ---------- SDK event dispatch ----------
@@ -783,6 +827,24 @@ export const StreamingInputUI = {
         }
     },
 
+    _readHwMode(): HwMode {
+        try {
+            return localStorage.getItem(HW_MODE_KEY) === 'prefer-software' ? 'prefer-software' : 'prefer-hardware';
+        } catch (e) { return 'prefer-hardware'; }
+    },
+
+    _syncDecodeDropdown(): void {
+        const mode = this._readHwMode();
+        const span = document.querySelector('#stream-decode-dropdown .dropdown__selected span');
+        if (span) span.textContent = mode === 'prefer-software' ? 'Software' : 'Hardware';
+        const menu = getEl('stream-decode-menu');
+        if (menu) {
+            menu.querySelectorAll('.dropdown__item').forEach(item => {
+                item.classList.toggle('active', (item as HTMLElement).dataset.value === mode);
+            });
+        }
+    },
+
     _readConfig(inputIndex: number): InputConfig {
         // Read from DOM if the selector is currently on this input; else from localStorage.
         if (inputIndex === this._selectedInput) {
@@ -885,7 +947,7 @@ export const StreamingInputUI = {
             ? `${vs.codecString}${vs.codedWidth ? ' · ' + vs.codedWidth + '×' + vs.codedHeight : ''}`
             : '—';
         const audioLine = as?.codec || '—';
-        const framesLine = `${vs?.decodedCount || 0} frames · dropped ${vs?.droppedFrames || 0} · ${vs?.decodeFps ? vs.decodeFps.toFixed(0) + 'fps · ' : ''}${vs?.decoderState || '—'}`;
+        const framesLine = `${vs?.decodedCount || 0} frames · dropped ${vs?.droppedFrames || 0} · ${vs?.decodeFps ? vs.decodeFps.toFixed(0) + 'fps · ' : ''}${vs?.decoderState || '—'} · hw ${vs?.hwAcceleration || '—'}`;
         const transportLine = `rxBytes ${((stats.rxBytes || 0) / 1e6).toFixed(1)}MB · rxAck ${Math.round(stats.rxAck || 0)} · rxNak ${Math.round(stats.rxNak || 0)} · rxBuffered ${Math.round(stats.rxBuffered || 0)}`;
         el.textContent =
             `Video: ${videoLine}\n` +

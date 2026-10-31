@@ -80,6 +80,7 @@ const T = {
     STREAM_INPUT_URL: 'Gateway web URL for the selected input — the page you browse to (e.g. https://host:8443/?stream=name). The WT port and cert hash are discovered automatically from cert-hash.js.',
     STREAM_INPUT_NAME: 'Stream name to subscribe to (?stream=<name>) for the selected input. Must match the name the publisher sends to the gateway.',
     STREAM_INPUT_LATENCY: 'SRT TSBPD latency (ms) for the selected input — rule of thumb: 4× WT RTT',
+    STREAM_INPUT_DECODE: 'Video decode preference for QuicSRT inputs: Hardware uses the GPU decoder (default); Software forces CPU decoding (fallback for GPUs that reject the stream). Applies immediately — running inputs reconnect.',
     STREAM_INPUT_STATUS: 'Live status of the selected input (idle / connecting / live · mbps · RTT · loss)',
     STREAM_INPUT_STATS: 'Detailed stats for the selected input: video codec + dims, audio codec, decode counters, transport counters.',
     STREAM_INPUT_ANALYSER: 'Source node feeding the audio analyser that drives audio-reactive visuals. Webamp = existing path; Input N = decoded QuicSRT audio',
@@ -609,6 +610,7 @@ const STATIC_MAP = [
     ['#stream-input-url', 'STREAM_INPUT_URL'],
     ['#stream-input-name', 'STREAM_INPUT_NAME'],
     ['#stream-input-latency', 'STREAM_INPUT_LATENCY'],
+    ['#stream-decode-dropdown .dropdown__selected', 'STREAM_INPUT_DECODE'],
     ['#stream-input-status', 'STREAM_INPUT_STATUS'],
     ['#stream-input-stats', 'STREAM_INPUT_STATS'],
 
