@@ -463,7 +463,12 @@ void main() {
         blended = mix(current.rgb, fbColor, u_feedbackAmount);
     }
 
-    fragColor = vec4(clamp(blended, 0.0, 2.0), current.a);
+    // Alpha: keep the current frame's coverage, but let decaying history
+    // persist where the current frame is transparent — without this,
+    // feedback on mostly-transparent layers (visualizer lines, text)
+    // discards every trail pixel the moment the live content moves off it.
+    // max() is a no-op for opaque full-frame layers (current.a == 1).
+    fragColor = vec4(clamp(blended, 0.0, 2.0), max(current.a, last.a));
 }`;
 
 // =============== MAX VOICES ===============
