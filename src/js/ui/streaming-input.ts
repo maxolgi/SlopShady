@@ -89,7 +89,9 @@ interface InputEntry {
     lastRxBytesAt?: number;
     audioMutedForLayer: Map<number, boolean>;
     layerVolumes: Map<number, number>;
-    _analyserConnected: boolean;
+    // Measurement-only analyser tap on this input's audio (see
+    // getVisualAnalyser). Output connects to nothing.
+    visualAnalyser: AnalyserNode | null;
     _antiThrottle: { osc: OscillatorNode } | null;
     _presentRaf: number | null;
     lastStats: any;
@@ -107,20 +109,11 @@ export const StreamingInputUI = {
     _selectedInput: 0,
 
     _audioCtx: null as AudioContext | null,
-    _analyserSource: 'webamp' as string,
-    // Measurement-only analyser for audio-reactive visuals. Lives in OUR
-    // AudioContext (the source nodes' context — cross-context connect()
-    // throws in Chrome) and its output connects to NOTHING, so by
-    // construction it can neither reach the speakers nor add anything to
-    // the audible path.
-    _quicsrtAnalyser: null as AnalyserNode | null,
 
     init(): void {
         this._renderPanel();
-        this._loadAll();
         // Show selected input's stored values.
         this._renderSelectedConfig();
-        this._renderAnalyserMenu();
         this._syncDecodeDropdown();
 
         // Wire selector dropdown.
@@ -131,17 +124,6 @@ export const StreamingInputUI = {
                 const m = /^input-(\d+)$/.exec(detail.value || '');
                 if (!m) return;
                 this._selectInput(parseInt(m[1], 10));
-            });
-        }
-        // Wire analyser dropdown.
-        const analyserDd = getEl('stream-input-analyser-dropdown');
-        if (analyserDd) {
-            analyserDd.addEventListener('dropdown-select', (e: Event) => {
-                const detail = (e as CustomEvent).detail || {};
-                this._analyserSource = detail.value || 'webamp';
-                try { localStorage.setItem('slopshady.stream.analyserSource', this._analyserSource); } catch (err) { /* ignore */ }
-                this._applyAnalyserRouting();
-                this._syncAnalyserDropdownDisplay();
             });
         }
         // Wire decode-mode dropdown (hw/sw VideoDecoder preference).
@@ -174,14 +156,17 @@ export const StreamingInputUI = {
     },
 
     /**
-     * Analyser node feeding audio-reactive visuals while the stream panel's
-     * analyser source is a QuicSRT input; null otherwise (visuals fall
-     * through to the player/mic/capture sources). Read per-frame by
-     * AudioTexture via the window global — no import cycle.
+     * Measurement-only analyser for input i's decoded audio — feeds the
+     * audio-reactive visuals when the Settings audio source selects this
+     * input. Created alongside the input's MediaStreamAudioSourceNode in
+     * OUR AudioContext (same context — cross-context connect() throws in
+     * Chrome) with its output connected to NOTHING: by construction it can
+     * neither reach the speakers nor add anything to the audible path.
+     * Null while the input has no audio flowing.
      */
-    getVisualAnalyser(): AnalyserNode | null {
-        if (!/^quicsrt:\d+$/.test(this._analyserSource)) return null;
-        return this._quicsrtAnalyser;
+    getVisualAnalyser(inputIndex: number): AnalyserNode | null {
+        if (inputIndex < 0 || inputIndex >= NUM_INPUTS) return null;
+        return this._inputs[inputIndex]?.visualAnalyser ?? null;
     },
 
     // ---------- Public API ----------
@@ -436,7 +421,7 @@ export const StreamingInputUI = {
                 audioTrackGenerator: null, audioWriter: null, audioSourceNode: null,
                 layerGains: new Map(), audioMutedForLayer: new Map(),
                 layerVolumes: new Map(),
-                _analyserConnected: false,
+                visualAnalyser: null,
                 _antiThrottle: null, _presentRaf: null, lastStats: null,
             };
         }
@@ -638,13 +623,17 @@ export const StreamingInputUI = {
                 for (const [layerIndex, gain] of entry.layerGains) {
                     entry.audioSourceNode.connect(gain);
                 }
-                if (this._analyserSource === `quicsrt:${inputIndex}`) {
-                    const analyser = this._ensureVisualAnalyser();
-                    if (analyser) {
-                        try { entry.audioSourceNode.connect(analyser); } catch (e) { /* ignore */ }
-                        entry._analyserConnected = true;
-                    }
-                }
+                // Measurement-only tap for the audio-reactive visuals
+                // (Settings → audio source → QuicSRT input). Always
+                // connected — inaudible and negligible cost — so switching
+                // the visual source needs no graph rewiring.
+                try {
+                    const an = ctx.createAnalyser();
+                    an.fftSize = 2048;          // match webamp's analyser
+                    an.smoothingTimeConstant = 0;
+                    entry.audioSourceNode.connect(an);
+                    entry.visualAnalyser = an;
+                } catch (e) { /* visuals-only; playback unaffected */ }
             } catch (e) {
                 console.warn(`[stream-input ${inputIndex}] audio source init failed`, e);
                 try { audioData.close(); } catch (err) { /* ignore */ }
@@ -669,41 +658,6 @@ export const StreamingInputUI = {
         return gain;
     },
 
-    /**
-     * Shared measurement analyser (see _quicsrtAnalyser). fftSize 2048 /
-     * no smoothing to match webamp's analyser so visuals behave the same
-     * whichever source is selected.
-     */
-    _ensureVisualAnalyser(): AnalyserNode | null {
-        if (this._quicsrtAnalyser) return this._quicsrtAnalyser;
-        const ctx = this._ensureAudioCtx();
-        if (!ctx) return null;
-        try {
-            const an = ctx.createAnalyser();
-            an.fftSize = 2048;
-            an.smoothingTimeConstant = 0;
-            this._quicsrtAnalyser = an;
-            return an;
-        } catch (e) { return null; }
-    },
-
-    _applyAnalyserRouting(): void {
-        const analyser = this._ensureVisualAnalyser();
-        for (let i = 0; i < NUM_INPUTS; i++) {
-            const entry = this._inputs[i];
-            if (!entry || !entry.audioSourceNode) continue;
-            const should = this._analyserSource === `quicsrt:${i}` && !!analyser;
-            const has = entry._analyserConnected;
-            if (should && !has) {
-                try { entry.audioSourceNode.connect(analyser!); } catch (e) { /* ignore */ }
-                entry._analyserConnected = true;
-            } else if (!should && has) {
-                try { entry.audioSourceNode.disconnect(analyser!); } catch (e) { /* ignore */ }
-                entry._analyserConnected = false;
-            }
-        }
-    },
-
     _teardownAudio(inputIndex: number): void {
         const entry = this._inputs[inputIndex];
         if (!entry) return;
@@ -712,7 +666,7 @@ export const StreamingInputUI = {
             try { gain.disconnect(); } catch (e) { /* ignore */ }
         }
         entry.layerGains.clear();
-        entry._analyserConnected = false;
+        entry.visualAnalyser = null;
         if (entry.audioWriter) { try { entry.audioWriter.close(); } catch (e) { /* ignore */ } entry.audioWriter = null; }
         if (entry.audioTrackGenerator) { try { entry.audioTrackGenerator.track.stop(); } catch (e) { /* ignore */ } entry.audioTrackGenerator = null; }
         if (entry.audioSourceNode) { try { entry.audioSourceNode.disconnect(); } catch (e) { /* ignore */ } entry.audioSourceNode = null; }
@@ -799,19 +753,6 @@ export const StreamingInputUI = {
         this._syncSelectorDisplay();
     },
 
-    _renderAnalyserMenu(): void {
-        const menu = getEl('stream-input-analyser-menu');
-        if (!menu) return;
-        let items = `<div class="dropdown__item${this._analyserSource === 'webamp' ? ' active' : ''}" data-value="webamp">Webamp</div>`;
-        for (let i = 0; i < NUM_INPUTS; i++) {
-            const name = this.getInputName(i) || `Input ${i + 1}`;
-            const v = `quicsrt:${i}`;
-            items += `<div class="dropdown__item${this._analyserSource === v ? ' active' : ''}" data-value="${v}">${name}</div>`;
-        }
-        menu.innerHTML = items;
-        this._syncAnalyserDropdownDisplay();
-    },
-
     _renderSelectedConfig(): void {
         const i = this._selectedInput;
         // Always source from localStorage here. This runs on init AND on
@@ -835,21 +776,8 @@ export const StreamingInputUI = {
         if (urlEl) urlEl.value = cfg.url;
         if (nameEl) nameEl.value = cfg.name;
         if (latEl) latEl.value = String(cfg.latency);
-        // Refresh analyser menu labels too (in case names changed).
-        this._renderAnalyserMenu();
         // Refresh selector label.
         this._syncSelectorDisplay();
-    },
-
-    _syncAnalyserDropdownDisplay(): void {
-        const span = document.querySelector('#stream-input-analyser-dropdown .dropdown__selected span');
-        if (!span) return;
-        if (this._analyserSource === 'webamp') { span.textContent = 'Webamp'; return; }
-        const m = /^quicsrt:(\d+)$/.exec(this._analyserSource);
-        if (m) {
-            const i = parseInt(m[1], 10);
-            span.textContent = this.getInputName(i) || `Input ${i + 1}`;
-        }
     },
 
     _readHwMode(): HwMode {
@@ -896,13 +824,6 @@ export const StreamingInputUI = {
         } catch (e) { return { url: '', name: '', latency: 300 }; }
     },
 
-    _loadAll(): void {
-        try {
-            const src = localStorage.getItem('slopshady.stream.analyserSource');
-            if (src) this._analyserSource = src;
-        } catch (e) { /* ignore */ }
-    },
-
     _saveSelected(): void {
         const i = this._selectedInput;
         try {
@@ -916,9 +837,8 @@ export const StreamingInputUI = {
             if (name) localStorage.setItem(LS_PREFIX + i + '.name', name); else localStorage.removeItem(LS_PREFIX + i + '.name');
             if (lat) localStorage.setItem(LS_PREFIX + i + '.latency', lat);
         } catch (e) { /* ignore */ }
-        // Selector + analyser dropdown labels may have changed.
+        // Selector labels may have changed.
         this._renderPanel();
-        this._renderAnalyserMenu();
     },
 
     _setStatus(inputIndex: number, s: string): void {

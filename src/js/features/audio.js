@@ -6,6 +6,7 @@
 import { state, getEl } from '../state.js';
 import { AUDIO_FFT_SIZE, SETTINGS_KEYS } from '../config.js';
 import { loadFromLocalStorage, saveToLocalStorage } from '../utils.js';
+import { StreamingInputUI } from '../ui/streaming-input.js';
 
 let waveformTex = null;
 let waveformTexW = 0;
@@ -151,12 +152,11 @@ export const AudioTexture = {
     },
 
     _resolveAnalyser() {
-        // QuicSRT override: when the stream panel's analyser dropdown picks
-        // a live input, its measurement-only analyser (window global — no
-        // import cycle) takes precedence over the settings sources.
-        const ssi = (typeof window !== 'undefined' && window.StreamingInputUI) || null;
-        if (ssi && typeof ssi.getVisualAnalyser === 'function') {
-            const node = ssi.getVisualAnalyser();
+        // QuicSRT input: measurement-only analyser owned by the stream
+        // input module. Falls through while that input has no audio
+        // flowing (analyser not built yet).
+        if (this.source && this.source.indexOf('quicsrt:') === 0) {
+            const node = StreamingInputUI.getVisualAnalyser(parseInt(this.source.slice(8), 10));
             if (node) return node;
         }
         if (this.source === 'mic') return state.audioAnalyser;
@@ -167,8 +167,25 @@ export const AudioTexture = {
     _initSourceDropdown() {
         const menu = getEl('audio-source-menu');
         if (!menu) return;
+        // One-time migration from the retired stream-panel analyser
+        // dropdown (its selection now lives here).
+        try {
+            const legacy = localStorage.getItem('slopshady.stream.analyserSource');
+            if (legacy && localStorage.getItem(SETTINGS_KEYS.audioSource) === null) {
+                const migrated = /^quicsrt:\d+$/.test(legacy) ? legacy : 'player';
+                saveToLocalStorage(SETTINGS_KEYS.audioSource, migrated);
+            }
+            localStorage.removeItem('slopshady.stream.analyserSource');
+        } catch (e) { /* ignore */ }
         this.source = loadFromLocalStorage(SETTINGS_KEYS.audioSource, 'player') || 'player';
-        AUDIO_SOURCES.forEach(src => {
+        // Static sources + the 8 QuicSRT inputs (any layer routed to an
+        // input makes that input's audio available as a visual source).
+        this._sources = AUDIO_SOURCES.slice();
+        for (let i = 0; i < 8; i++) {
+            const name = StreamingInputUI.getInputName(i);
+            this._sources.push({ value: `quicsrt:${i}`, label: name ? `QuicSRT ${i + 1} · ${name}` : `QuicSRT Input ${i + 1}` });
+        }
+        this._sources.forEach(src => {
             const item = document.createElement('div');
             item.className = 'dropdown__item' + (this.source === src.value ? ' active' : '');
             item.textContent = src.label;
@@ -186,7 +203,7 @@ export const AudioTexture = {
         const dropdown = getEl('audio-source-dropdown');
         if (!dropdown) return;
         const span = dropdown.querySelector('span');
-        const src = AUDIO_SOURCES.find(s => s.value === this.source);
+        const src = this._sources.find(s => s.value === this.source);
         if (span && src) span.textContent = src.label;
     },
 };
