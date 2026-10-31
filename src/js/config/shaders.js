@@ -37,6 +37,8 @@ uniform float u_maskPosY;
 uniform float u_maskSoftness;
 void main() {
     vec4 base = texture(u_base, vUv);
+    ivec2 texSize = textureSize(u_layer, 0);
+    float aspect = float(texSize.x) / float(texSize.y);
     vec2 layerUv = vUv;
     layerUv -= vec2(u_posX, u_posY);
     float layerS = max(u_scale, 0.001);
@@ -47,15 +49,20 @@ void main() {
     float layerAngle = u_rotation;
     float layerCosA = cos(layerAngle);
     float layerSinA = sin(layerAngle);
-    layerUv = mat2(layerCosA, -layerSinA, layerSinA, layerCosA) * (layerUv - 0.5) + 0.5;
+    // Rotate in pixel-isotropic space: UV space is stretched by the canvas
+    // aspect, so a UV-space rotation compresses/shears layers on non-square
+    // canvases. Scale x by the aspect, rotate, scale back.
+    vec2 layerC = layerUv - 0.5;
+    layerC.x *= aspect;
+    layerC = mat2(layerCosA, -layerSinA, layerSinA, layerCosA) * layerC;
+    layerC.x /= aspect;
+    layerUv = layerC + 0.5;
     if (layerUv.x < 0.0 || layerUv.x > 1.0 || layerUv.y < 0.0 || layerUv.y > 1.0) {
         fragColor = base;
         return;
     }
     vec4 layer = texture(u_layer, layerUv);
     layer.rgb *= u_brightness * u_amount;
-    ivec2 texSize = textureSize(u_layer, 0);
-    float aspect = float(texSize.x) / float(texSize.y);
     vec2 centered = layerUv - (0.5 + vec2(u_maskPosX, u_maskPosY));
     centered.x *= aspect;
     float dist = length(centered);
