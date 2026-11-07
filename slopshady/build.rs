@@ -190,12 +190,48 @@ fn engine_needs_rebuild(repo_root: &Path) -> bool {
     let mut newest = newest_mtime(&sub.join("harness"));
     for extra in [
         sub.join("js").join("engine_shim.c"),
+        sub.join("js").join("vt_queue.cpp"),
+        sub.join("deps").join("libquicsrt").join("CMakeLists.txt"),
         sub.join("build")
             .join("libquicsrt")
             .join("libquicsrt_receiver_core.a"),
         sub.join("build").join("libquicsrt").join("libsrt.a"),
+        sub.join("build").join("libquicsrt").join("libsrttransport.a"),
     ] {
         if let Ok(t) = extra.metadata().and_then(|m| m.modified()) {
+            newest = Some(newest.map_or(t, |n: std::time::SystemTime| n.max(t)));
+        }
+    }
+    // Nested-dep sources ride the submodule pin: a deps-only bump
+    // (libquicsrt / srt) changes nothing under harness/ or js/, so
+    // without watching these the gate would skip the relink and serve
+    // the stale engine. Mirrors the rerun-if-changed set above; dirs
+    // (not the whole js/ tree — the staged .d.ts files would loop it).
+    for dir in [
+        sub.join("deps").join("libquicsrt").join("src"),
+        sub.join("deps").join("libquicsrt").join("include"),
+        sub.join("deps")
+            .join("libquicsrt")
+            .join("deps")
+            .join("srt")
+            .join("srtcore"),
+        sub.join("deps")
+            .join("libquicsrt")
+            .join("deps")
+            .join("srt")
+            .join("common"),
+        sub.join("deps")
+            .join("libquicsrt")
+            .join("deps")
+            .join("srt")
+            .join("logging"),
+        sub.join("deps")
+            .join("libquicsrt")
+            .join("deps")
+            .join("srt")
+            .join("srttransport"),
+    ] {
+        if let Some(t) = newest_mtime(&dir) {
             newest = Some(newest.map_or(t, |n: std::time::SystemTime| n.max(t)));
         }
     }
