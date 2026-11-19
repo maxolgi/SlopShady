@@ -19,6 +19,7 @@
  * Sync.send().
  */
 import { state, getEl } from '../state.js';
+import { discoverGateway } from './gateway-discovery.js';
 import { StreamAudio } from '../features/stream-audio.js';
 
 const TIMER_WORKER_SRC = `
@@ -415,12 +416,13 @@ export const StreamingUI = {
         this._wantStream = true;
 
         // gatewayUrl is the gateway WEB URL (the page the user browses to).
-        // One proxy fetch at that origin yields the cert hash (hex for
-        // self-signed, null for PKI) AND the WT port — both advertised by
-        // cert-hash.js. We build the WT endpoint from the URL's host + the
-        // discovered port, then connect once with the right cert options.
-        // Discovery is mandatory: without an advertised WT port there is no
-        // sane endpoint, so fail loudly instead of guessing a default port.
+        // Discovery yields the cert hash (hex for self-signed, null for PKI)
+        // AND the WT port — advertised by cert-hash.js, fetched via the
+        // backend proxy or directly by the browser when the backend has no
+        // route to the gateway (see gateway-discovery.js). The WT endpoint
+        // is built from the URL's host + the discovered port. Discovery is
+        // mandatory: without an advertised WT port there is no sane
+        // endpoint, so fail loudly instead of guessing a default port.
         let webHost;
         try {
             webHost = new URL(this.gatewayUrl).hostname;
@@ -432,12 +434,7 @@ export const StreamingUI = {
         }
         let hash = null, wtPort = null;
         try {
-            const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(this.gatewayUrl), { cache: 'no-store' });
-            if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
-            const j = await resp.json();
-            if (j.error) throw new Error(j.error);
-            hash = j.hash ?? null;
-            wtPort = j.wtPort ?? null;
+            ({ hash, wtPort } = await discoverGateway(this.gatewayUrl));
         } catch (e) {
             const msg = e && e.message || e;
             console.warn('gateway discovery failed:', msg);
