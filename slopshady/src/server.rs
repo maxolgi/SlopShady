@@ -283,7 +283,7 @@ async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Jso
         Ok(c) => c,
         Err(e) => {
             return axum::Json(
-                serde_json::json!({ "hash": null, "wtPort": null, "error": format!("client build: {e}") }),
+                serde_json::json!({ "hash": null, "wtPort": null, "error": format!("client build: {}", error_chain(&e)) }),
             )
         }
     };
@@ -300,9 +300,23 @@ async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Jso
             serde_json::json!({ "hash": null, "wtPort": null, "error": format!("upstream status {} for {}", r.status(), cert_url) }),
         ),
         Err(e) => axum::Json(
-            serde_json::json!({ "hash": null, "wtPort": null, "error": format!("fetch failed for {cert_url}: {e}") }),
+            serde_json::json!({ "hash": null, "wtPort": null, "error": format!("fetch failed for {cert_url}: {}", error_chain(&e)) }),
         ),
     }
+}
+
+/// Flatten an error's source chain into one string — reqwest's top-level
+/// Display stops at "error sending request for url (…)" and drops the
+/// cause (refused / timeout / TLS), which is the part that names the fix.
+fn error_chain(e: &dyn std::error::Error) -> String {
+    let mut s = e.to_string();
+    let mut cur = e.source();
+    while let Some(inner) = cur {
+        s.push_str(": ");
+        s.push_str(&inner.to_string());
+        cur = inner.source();
+    }
+    s
 }
 
 /// Parse `CERT_HASH = "…" | null` from the cert-hash.js body. Returns the hex
