@@ -318,7 +318,7 @@ fn extract_cert_hash(text: &str) -> Option<String> {
 }
 
 /// Parse `WT_PORT = <number>;` from the cert-hash.js body. None when absent
-/// (older gateways that don't advertise it — caller falls back to 4433).
+/// (older gateways that don't advertise it — the caller treats it as fatal).
 fn extract_wt_port(text: &str) -> Option<u16> {
     let idx = text.find("WT_PORT")?;
     let after = text[idx + "WT_PORT".len()..].trim_start();

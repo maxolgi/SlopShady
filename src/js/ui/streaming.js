@@ -441,7 +441,7 @@ export const StreamingUI = {
         } catch (e) {
             const msg = e && e.message || e;
             console.warn('gateway discovery failed:', msg);
-            this._setStatus('gateway discovery failed: ' + msg);
+            this._setStatus('gateway discovery failed: ' + msg + ' — Gateway URL must be the gateway web origin that serves cert-hash.js');
             this.isStreaming = false;
             this._scheduleReconnect();
             return;

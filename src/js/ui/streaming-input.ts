@@ -483,7 +483,7 @@ export const StreamingInputUI = {
             const msg = e && (e as Error).message || e;
             console.warn(`[stream-input ${inputIndex}] gateway discovery failed:`, msg);
             entry.status = 'error';
-            this._setStatus(inputIndex, 'gateway discovery failed: ' + msg);
+            this._setStatus(inputIndex, 'gateway discovery failed: ' + msg + ' — Gateway URL must be the gateway web origin that serves cert-hash.js');
             this._syncToggleButton(); this._syncToggleAllButton();
             return;
         }

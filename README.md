@@ -103,7 +103,7 @@ Webamp analyser → AudioWorklet → worker: Opus AudioEncoder → TS muxer → 
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Gateway URL** | `https://127.0.0.1:4433/wt` | WebTransport URL of your QuicSRT gateway |
+| **Gateway URL** | `https://127.0.0.1:5173/` | Web origin of your QuicSRT gateway — must serve `cert-hash.js` (the WebTransport port is discovered from it) |
 | **Stream name** | `slopshady` | Viewers connect with `?stream=<name>` |
 | **Codec** | AV1 (auto-detected) | H.264 / HEVC / AV1; codecs are probed on load and filtered to what the local muxer + viewer can carry |
 | **Bitrate** | 8 Mbps | Target video bitrate (live-adjustable when ABR is off) |
