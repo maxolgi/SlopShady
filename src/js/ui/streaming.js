@@ -419,6 +419,8 @@ export const StreamingUI = {
         // self-signed, null for PKI) AND the WT port — both advertised by
         // cert-hash.js. We build the WT endpoint from the URL's host + the
         // discovered port, then connect once with the right cert options.
+        // Discovery is mandatory: without an advertised WT port there is no
+        // sane endpoint, so fail loudly instead of guessing a default port.
         let webHost;
         try {
             webHost = new URL(this.gatewayUrl).hostname;
@@ -433,17 +435,24 @@ export const StreamingUI = {
             const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(this.gatewayUrl), { cache: 'no-store' });
             if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
             const j = await resp.json();
+            if (j.error) throw new Error(j.error);
             hash = j.hash ?? null;
             wtPort = j.wtPort ?? null;
         } catch (e) {
-            // Discovery is best-effort: with a real (PKI) cert the gateway needs
-            // no pinning, so fall back to defaults (no hash, port 4433) instead
-            // of aborting. Only self-signed gateways actually require the hash.
-            console.warn('cert-hash discovery failed, connecting with PKI validation:', e && e.message || e);
-            hash = null;
-            wtPort = null;
+            const msg = e && e.message || e;
+            console.warn('gateway discovery failed:', msg);
+            this._setStatus('gateway discovery failed: ' + msg);
+            this.isStreaming = false;
+            this._scheduleReconnect();
+            return;
         }
-        const wtUrl = `https://${webHost}:${wtPort || 4433}/wt?publish=${encodeURIComponent(this.streamName)}`;
+        if (!wtPort) {
+            this._setStatus('gateway did not advertise a WebTransport port (WT_PORT missing from cert-hash.js)');
+            this.isStreaming = false;
+            this._scheduleReconnect();
+            return;
+        }
+        const wtUrl = `https://${webHost}:${wtPort}/wt?publish=${encodeURIComponent(this.streamName)}`;
         const wtOpts = hash ? { serverCertificateHashes: [{ algorithm: 'sha-256', value: this._hexToBytes(hash) }] } : undefined;
         try {
             this.transport = new WebTransport(wtUrl, wtOpts);

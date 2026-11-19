@@ -467,29 +467,38 @@ export const StreamingInputUI = {
 
         // One proxy fetch at the web origin yields the cert hash (hex for
         // self-signed, null for PKI) AND the WT port — both advertised by
-        // cert-hash.js. We then mount against the WT endpoint directly.
+        // cert-hash.js. Discovery is mandatory: without an advertised WT
+        // port there is no sane endpoint to mount against, so fail loudly
+        // here instead of guessing a default port.
         let hash = null as string | null;
         let wtPort = null as number | null;
         try {
             const resp = await fetch('/api/stream/cert-hash?url=' + encodeURIComponent(cfg.url), { cache: 'no-store' });
             if (!resp.ok) throw new Error('proxy HTTP ' + resp.status);
             const j = await resp.json();
+            if (j.error) throw new Error(String(j.error));
             hash = j.hash ?? null;
             wtPort = j.wtPort ?? null;
         } catch (e) {
-            // Discovery is best-effort: with a real (PKI) cert the gateway needs
-            // no pinning, so fall back to defaults (no hash, port 4433) instead
-            // of aborting. Only self-signed gateways actually require the hash.
-            console.warn('cert-hash discovery failed, connecting with PKI validation:', e && (e as Error).message || e);
-            hash = null;
-            wtPort = null;
+            const msg = e && (e as Error).message || e;
+            console.warn(`[stream-input ${inputIndex}] gateway discovery failed:`, msg);
+            entry.status = 'error';
+            this._setStatus(inputIndex, 'gateway discovery failed: ' + msg);
+            this._syncToggleButton(); this._syncToggleAllButton();
+            return;
+        }
+        if (wtPort === null) {
+            entry.status = 'error';
+            this._setStatus(inputIndex, 'gateway did not advertise a WebTransport port (WT_PORT missing from cert-hash.js)');
+            this._syncToggleButton(); this._syncToggleAllButton();
+            return;
         }
 
         entry.handle = mountPlayer(null, {
             decodeInWorker: true,
             workerUrl: '/static/vendor/QuicSRT-wasm/page/vendor/worker.js',
             host: webUrl.hostname,
-            port: wtPort || 4433,
+            port: wtPort,
             stream,
             certHash: hash,
             latencyMs: cfg.latency,
