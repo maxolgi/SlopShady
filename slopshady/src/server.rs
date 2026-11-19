@@ -265,6 +265,8 @@ async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Jso
         );
     }
     // cert-hash.js is served same-origin on the gateway's web server. The
+    // scheme follows the Gateway URL: closed-network gateways can serve the
+    // web port over plain HTTP, and forcing TLS there breaks discovery. The
     // input side passes a web URL (port in the URL itself); the legacy
     // `web_port` param (publish side, which still passes a WT URL) overrides.
     let host = parsed.host_str().unwrap_or("127.0.0.1");
@@ -272,7 +274,7 @@ async fn api_stream_cert_hash(Query(params): Query<CertHashParams>) -> axum::Jso
         Some(p) => p,
         None => parsed.port_or_known_default().unwrap_or(443),
     };
-    let cert_url = format!("https://{}:{}/cert-hash.js", host, port);
+    let cert_url = format!("{}://{}:{}/cert-hash.js", parsed.scheme(), host, port);
     let client = match reqwest::Client::builder()
         .danger_accept_invalid_certs(closed_network_host(host))
         .timeout(std::time::Duration::from_secs(4))
